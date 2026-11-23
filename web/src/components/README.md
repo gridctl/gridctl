@@ -39,7 +39,7 @@ Creation wizard entry points use "Create new". The header "+" tooltip and the pa
 │   ├── <LogsWorkspace>       /logs
 │   ├── <TracesWorkspace>     /traces (Runs tab at ?view=runs)
 │   └── <ConnectionsWorkspace> /connections
-├── <StatusBar>        connection · servers · sessions · tokens · spec
+├── <StatusBar>        connection · alerts · servers · sessions · tokens
 ├── <CommandPalette>   workspace-scoped via the command registry
 ├── <PreferencesDialog> theme, compact mode, and text size
 ├── <ShortcutsPanel>   keyboard shortcuts (`?`)
@@ -64,9 +64,26 @@ credential (while a credential is held) stay mounted when the window is
 narrow. The left group is `min-w-0 flex-1`; without that
 the nav has no bounded width and the pills stay clipped. Below `sm` the
 logo is shorter, the persistence label is visually hidden, and the
-decorative dividers drop. The status bar stays one row; tokenizer, format
-savings, and sessions hide below 800 px. A disconnected error
+decorative dividers drop.
+
+AppShell's single column is `minmax(0, 1fr)`, not `1fr`: a bare `1fr` cannot
+shrink below the widest row's content, so a full status bar would lay the
+whole shell out wider than the window and clip the header actions. The
+status bar is one 32 px row with `min-w-0` and three parts. The connection
+pill does not shrink. The alert badges (spec, pin drift, findings, pending
+authorization, and rate limits) come next; when space runs out their labels
+truncate with an ellipsis while the icon and status dot stay, and each
+badge's `title` or accessible name keeps the full text. The counters come
+last, ending with "Updated" at the right edge. The counter group has a zero
+flex basis, so it only gets the width left over and empties before any alert
+label truncates. It wraps and clips (`flex-wrap`, `h-full`, `overflow-clip`)
+so a counter that does not fit is hidden whole, "Updated" first. Use
+`overflow-clip`, not `overflow-hidden`: focusing a hidden counter button must
+not scroll the group. The alert group is `empty:hidden` and draws its
+trailing divider as `::after`, so an idle bar shows one divider. Tokenizer,
+format savings, and sessions also hide below 800 px. A disconnected error
 truncates, and its `title` carries the full string.
+`web/shell-layout.browser.mjs` checks this layout in Chromium.
 
 Detached windows (`/sidebar`, `/editor`, `/logs-window`, `/metrics-window`,
 `/traces-window`, `/registry` → `/library-window`) render *outside*

@@ -36,36 +36,57 @@ export function StatusBar() {
   const isConnected = connectionStatus === 'connected';
 
   return (
-    <div className="h-8 bg-surface/80 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-xs relative whitespace-nowrap">
+    <div className="h-8 min-w-0 bg-surface/80 backdrop-blur-xl border-t border-border/50 flex items-center gap-5 px-4 text-xs relative whitespace-nowrap">
       {/* Top accent */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-border/50 to-transparent" />
 
-      <div className="flex items-center gap-5 min-w-0 overflow-hidden">
-        {/* Connection status */}
-        <div className={cn(
-          'flex items-center gap-2 px-2 py-0.5 rounded-full',
-          isConnected ? 'text-status-running' : 'text-status-error'
-        )}>
-          <span className="relative">
-            {isConnected ? <Wifi size={12} /> : <WifiOff size={12} />}
-            {isConnected && (
-              <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-status-running rounded-full animate-pulse" />
-            )}
-          </span>
-          <span
-            className="font-medium truncate min-w-0 max-w-[40vw]"
-            title={isConnected ? 'Connected' : error || 'Disconnected'}
-          >
-            {isConnected ? 'Connected' : error || 'Disconnected'}
-          </span>
-        </div>
+      {/* Connection status */}
+      <div className={cn(
+        'flex items-center gap-2 px-2 py-0.5 rounded-full shrink-0',
+        isConnected ? 'text-status-running' : 'text-status-error'
+      )}>
+        <span className="relative">
+          {isConnected ? <Wifi size={12} /> : <WifiOff size={12} />}
+          {isConnected && (
+            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-status-running rounded-full animate-pulse" />
+          )}
+        </span>
+        <span
+          className="font-medium truncate min-w-0 max-w-[40vw]"
+          title={isConnected ? 'Connected' : error || 'Disconnected'}
+        >
+          {isConnected ? 'Connected' : error || 'Disconnected'}
+        </span>
+      </div>
 
-        {/* Divider */}
-        <div className="w-px h-3 bg-border/50" />
+      {/* Divider */}
+      <div className="w-px h-3 bg-border/50 shrink-0" />
+
+      {/* Alert badges. Each hides itself when idle; :empty then drops the
+          group and its trailing divider (the ::after). Labels truncate only
+          once the counter group beside it has shrunk to nothing. */}
+      <div className="flex items-center gap-5 min-w-0 empty:hidden after:content-[''] after:w-px after:h-3 after:bg-border/50 after:shrink-0">
+        <SpecHealthBadge />
+        <PinDriftBadge />
+        <PinFindingsBadge />
+        {/* Pending downstream authorizations */}
+        <AuthPendingBadge />
+        {/* Rate limit pressure */}
+        <LimitsBadge />
+      </div>
+
+      {/* Counters wrap instead of shrinking: an item that does not fit moves
+          to a second line below the clip edge, so it is hidden whole rather
+          than cut mid-text. overflow-clip (not hidden) keeps a focused
+          hidden button from scrolling that line into view. */}
+      <div className="min-w-0 flex-1 flex flex-wrap content-start items-center gap-x-5 h-full overflow-clip">
+        {/* Zero-width first item, its margin cancelling the gap, so the first
+            counter can wrap too: a flex line always keeps its first item. */}
+        <div aria-hidden="true" className="w-0 h-full -mr-5 shrink-0" />
 
         {/* Server count */}
         {(mcpServers ?? []).length > 0 && (
-          <div className="flex items-center gap-2 text-text-muted">
+          <div className="flex items-center gap-2 h-full text-text-muted">
             <Server size={11} className="text-primary" />
             <span>
               <span className="text-status-running font-semibold">{runningServers}</span>
@@ -84,7 +105,7 @@ export function StatusBar() {
 
         {/* Resource count */}
         {(resources ?? []).length > 0 && (
-          <div className="flex items-center gap-2 text-text-muted">
+          <div className="flex items-center gap-2 h-full text-text-muted">
             <Box size={11} className="text-secondary" />
             <span>
               <span className="text-secondary font-semibold">{runningResources}</span>
@@ -94,22 +115,10 @@ export function StatusBar() {
           </div>
         )}
 
-        {/* Session count */}
-        {/* Hidden at and below the 768px wrap width. md would still show them there. */}
-        {sessions > 0 && (
-          <div className="flex items-center gap-2 text-text-muted max-[800px]:hidden">
-            <Radio size={11} className="text-primary" />
-            <span>
-              <span className="text-primary font-semibold">{sessions}</span>
-              <span className="ml-1">sessions</span>
-            </span>
-          </div>
-        )}
-
         {/* Code Mode indicator — read-only status, not an action (code mode is
             configured in stack.yaml and cannot be toggled at runtime). */}
         {codeMode && codeMode !== 'off' && (
-          <div role="status" className="flex items-center gap-2 text-text-muted">
+          <div role="status" className="flex items-center gap-2 h-full text-text-muted">
             <Code size={11} className="text-primary" />
             <span className="text-primary font-semibold">Code Mode</span>
           </div>
@@ -118,8 +127,20 @@ export function StatusBar() {
         {/* Deferred discovery indicator. Read-only status, not an action
             (tool_discovery is configured in stack.yaml or on the link URL). */}
         {toolDiscovery && toolDiscovery !== 'off' && (
-          <div role="status" className="flex items-center gap-2 text-text-muted">
+          <div role="status" className="flex items-center gap-2 h-full text-text-muted">
             <span className="text-primary font-semibold">Deferred discovery</span>
+          </div>
+        )}
+
+        {/* Session count */}
+        {/* Hidden at and below the 768px wrap width. md would still show them there. */}
+        {sessions > 0 && (
+          <div className="flex items-center gap-2 h-full text-text-muted max-[800px]:hidden">
+            <Radio size={11} className="text-primary" />
+            <span>
+              <span className="text-primary font-semibold">{sessions}</span>
+              <span className="ml-1">sessions</span>
+            </span>
           </div>
         )}
 
@@ -133,7 +154,7 @@ export function StatusBar() {
             onClick={() => navigate('/stack?spec=1')}
             aria-label={`${featureDetails.length} experimental ${featureDetails.length === 1 ? 'flag' : 'flags'} enabled. Open spec pane`}
             title={featureDetails.map((f) => f.name).join(', ')}
-            className="flex items-center gap-2 text-text-muted rounded px-1 -mx-1 hover:bg-surface-highlight/50 hover:text-text-secondary transition-colors"
+            className="flex items-center gap-2 h-full text-text-muted rounded px-1 -mx-1 hover:bg-surface-highlight/50 hover:text-text-secondary transition-colors"
           >
             <FlaskConical size={11} />
             <span>
@@ -149,7 +170,7 @@ export function StatusBar() {
             type="button"
             onClick={() => navigate('/metrics')}
             aria-label="Open Metrics workspace"
-            className="flex items-center gap-2 text-text-muted rounded px-1 -mx-1 hover:bg-surface-highlight/50 hover:text-text-secondary transition-colors"
+            className="flex items-center gap-2 h-full text-text-muted rounded px-1 -mx-1 hover:bg-surface-highlight/50 hover:text-text-secondary transition-colors"
           >
             <Gauge size={11} className="text-primary" />
             <span>
@@ -161,14 +182,14 @@ export function StatusBar() {
 
         {/* Tokenizer mode indicator */}
         {tokenizerName && (
-          <div className="flex items-center gap-2 text-text-muted max-[800px]:hidden">
+          <div className="flex items-center gap-2 h-full text-text-muted max-[800px]:hidden">
             <span className="text-text-muted/60 font-medium">{tokenizerName}</span>
           </div>
         )}
 
         {/* Format savings indicator */}
         {tokenUsage && tokenUsage.format_savings.savings_percent > 0 && (
-          <div className="flex items-center gap-2 text-text-muted max-[800px]:hidden">
+          <div className="flex items-center gap-2 h-full text-text-muted max-[800px]:hidden">
             <ArrowDown size={11} className="text-status-running" />
             <span className="text-status-running font-semibold">
               {Math.round(tokenUsage.format_savings.savings_percent)}% saved
@@ -176,31 +197,14 @@ export function StatusBar() {
           </div>
         )}
 
-        {/* Divider before spec health */}
-        <div className="w-px h-3 bg-border/50" />
-
-        {/* Spec health badge */}
-        <SpecHealthBadge />
-
-        {/* Divider before pin drift */}
-        <div className="w-px h-3 bg-border/50" />
-        <PinDriftBadge />
-        <PinFindingsBadge />
-
-        {/* Pending downstream authorizations (hidden when none) */}
-        <AuthPendingBadge />
-
-        {/* Rate limit pressure (hidden while everything is ok) */}
-        <LimitsBadge />
+        {/* Last update: right-aligned when it fits, and the first to drop */}
+        {lastUpdated && (
+          <div className="flex items-center gap-2 h-full ml-auto text-text-muted">
+            <Clock size={11} className="text-text-muted/60" />
+            <span>Updated {formatRelativeTime(lastUpdated)}</span>
+          </div>
+        )}
       </div>
-
-      {/* Last update */}
-      {lastUpdated && (
-        <div className="flex items-center gap-2 text-text-muted shrink-0">
-          <Clock size={11} className="text-text-muted/60" />
-          <span>Updated {formatRelativeTime(lastUpdated)}</span>
-        </div>
-      )}
     </div>
   );
 }

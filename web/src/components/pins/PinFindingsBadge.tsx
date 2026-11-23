@@ -53,13 +53,13 @@ export function PinFindingsBadge() {
                 : '/pins',
         )
       }
-      className={cn('flex items-center gap-2 transition-colors hover:opacity-80 text-status-pending')}
+      className={cn('flex items-center gap-2 min-w-0 transition-colors hover:opacity-80 text-status-pending')}
       title="Poisoning-scan findings on pinned tools or skills; review in the Pins workspace"
     >
-      <ShieldAlert size={11} />
-      <span className="relative flex items-center gap-1.5">
-        <span className="w-1.5 h-1.5 rounded-full bg-status-pending shadow-[0_0_6px_var(--color-status-pending-glow)]" />
-        <span className="font-medium">{label}</span>
+      <ShieldAlert size={11} className="shrink-0" />
+      <span className="relative flex items-center gap-1.5 min-w-0">
+        <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-status-pending shadow-[0_0_6px_var(--color-status-pending-glow)]" />
+        <span className="font-medium truncate">{label}</span>
       </span>
     </button>
   );

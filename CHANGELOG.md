@@ -4,6 +4,10 @@ All notable changes to gridctl will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- The web UI shell now stays exactly as wide as the window. When the status bar's content was wider than the window (about 1,330 px with most status items present, so 1280 px laptops and side-by-side windows were affected), the whole shell was laid out at that width and clipped on the right with no scrollbar: header actions such as Create new, Refresh, Reload Config, and Preferences were off-screen, the status bar's right side was cut, and Stack's fit-to-view framed nodes partly outside the canvas. The status bar now puts its alert badges (spec health, pin drift, findings, pending authorization, and rate limits) directly after the connection state and before the counters. When the bar runs out of room, "Updated" and then the counters (sessions, tokens, and the rest) are hidden whole, starting from the right, and only after every counter is hidden do alert badge labels shorten with an ellipsis; each badge keeps its icon and status dot, and its tooltip or accessible name carries the full label.
+
 ## [1.0.0-rc.9] - 2026-11-22
 
 ### Features

@@ -17,6 +17,8 @@ export function AuthPendingBadge() {
   const pending = mcpServers.filter((s) => s.authStatus === 'needs_auth');
   if (pending.length === 0) return null;
 
+  const label = `Auth: ${pending.length} pending`;
+
   const handleClick = () => {
     selectNode(`mcp-${pending[0].name}`);
     setSidebarOpen(true);
@@ -26,15 +28,16 @@ export function AuthPendingBadge() {
     <button
       onClick={handleClick}
       aria-label={`Authorization: ${pending.length} pending. Go to ${pending[0].name}`}
+      title={label}
       className={cn(
-        'flex items-center gap-2 transition-colors hover:opacity-80',
+        'flex items-center gap-2 min-w-0 transition-colors hover:opacity-80',
         'text-status-pending'
       )}
     >
-      <KeyRound size={11} />
-      <span className="relative flex items-center gap-1.5">
-        <span className="w-1.5 h-1.5 rounded-full bg-status-pending shadow-[0_0_6px_var(--color-status-pending-glow)]" />
-        <span className="font-medium">{`Auth: ${pending.length} pending`}</span>
+      <KeyRound size={11} className="shrink-0" />
+      <span className="relative flex items-center gap-1.5 min-w-0">
+        <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-status-pending shadow-[0_0_6px_var(--color-status-pending-glow)]" />
+        <span className="font-medium truncate">{label}</span>
       </span>
     </button>
   );
