@@ -67,10 +67,12 @@ export function StackWorkspace() {
     [mcpServers],
   );
 
-  const phase = refreshPhase({ error, hasLoaded: lastUpdated !== null });
+  const hasLoaded = lastUpdated !== null;
+  const phase = refreshPhase({ error, hasLoaded });
   // A re-entered credential sets isLoading again; once a graph has loaded it
-  // stays on screen instead of going behind the loading overlay.
-  const showLoading = phase === 'loading' && isLoading;
+  // stays on screen instead of going behind the loading overlay. Before that,
+  // the loading overlay covers a pending cycle even after a failed first load.
+  const showLoading = !hasLoaded && isLoading;
   const showFailed = phase === 'failed' && !isLoading;
   const overlayUp = showLoading || showFailed;
 

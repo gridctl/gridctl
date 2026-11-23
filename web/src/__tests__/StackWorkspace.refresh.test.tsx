@@ -120,4 +120,18 @@ describe('StackWorkspace refresh states', () => {
     expect(screen.queryByText('Loading stack')).not.toBeInTheDocument();
     expect(inertAncestor(screen.getByTestId('canvas'))).toBeNull();
   });
+
+  it('shows the loading overlay for a pending cycle after a failed first load', () => {
+    useStackStore.setState({
+      error: 'Gateway connection unavailable',
+      connectionStatus: 'error',
+      lastUpdated: null,
+      isLoading: true,
+    });
+    renderStack();
+    expect(screen.getByText('Loading stack')).toBeInTheDocument();
+    expect(screen.queryByText('Stack unavailable')).not.toBeInTheDocument();
+    expect(inertAncestor(screen.getByTestId('canvas'))).not.toBeNull();
+    expect(inertAncestor(screen.getByTestId('spec-pane'))).not.toBeNull();
+  });
 });
