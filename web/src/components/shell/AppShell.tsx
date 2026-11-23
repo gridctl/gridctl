@@ -115,7 +115,7 @@ export function AppShell() {
       style={{
         display: 'grid',
         gridTemplateRows: `${HEADER_HEIGHT}px 1fr ${STATUSBAR_HEIGHT}px`,
-        gridTemplateColumns: '1fr',
+        gridTemplateColumns: 'minmax(0, 1fr)',
       }}
     >
       <Header onRefresh={handleRefresh} isRefreshing={isRefreshing} />

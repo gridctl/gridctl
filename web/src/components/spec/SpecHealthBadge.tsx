@@ -46,18 +46,19 @@ export function SpecHealthBadge() {
   return (
     <button
       onClick={handleClick}
+      title={label}
       className={cn(
-        'flex items-center gap-2 transition-colors hover:opacity-80',
+        'flex items-center gap-2 min-w-0 transition-colors hover:opacity-80',
         colorClass
       )}
     >
-      <FileCheck size={11} />
-      <span className="relative flex items-center gap-1.5">
-        <span className={cn('w-1.5 h-1.5 rounded-full', dotClass)} />
-        <span className="font-medium">{label}</span>
+      <FileCheck size={11} className="shrink-0" />
+      <span className="relative flex items-center gap-1.5 min-w-0">
+        <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', dotClass)} />
+        <span className="font-medium truncate">{label}</span>
       </span>
       {health.override && (
-        <span className="text-text-muted font-normal" title={health.override}>
+        <span className="text-text-muted font-normal truncate min-w-0 max-w-[32ch]" title={health.override}>
           override: {health.override}
         </span>
       )}
