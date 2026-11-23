@@ -15,7 +15,8 @@ import { isTextInputTarget } from '../../lib/dom';
 import { SeparatorBody } from '../ui/SeparatorBody';
 import { IconButton } from '../ui/IconButton';
 import { ZoomControls } from '../ui/ZoomControls';
-import { EmptyState } from '../ui/EmptyState';
+import { EmptyState, FailedState, FailureBanner } from '../ui/EmptyState';
+import { refreshPhase } from '../../lib/refreshPhase';
 import { formatRelativeTime } from '../../lib/time';
 import {
   useTracesStore,
@@ -71,6 +72,8 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
   const setPaused = useTracesStore((s) => s.setPaused);
   const lastLoadedAt = useTracesStore((s) => s.lastLoadedAt);
   const error = useTracesStore((s) => s.error);
+  const hasLoaded = useTracesStore((s) => s.loadedFilters !== null);
+  const phase = refreshPhase({ error, hasLoaded });
   const filters = useTracesStore((s) => s.filters);
   const setFilters = useTracesStore((s) => s.setFilters);
   const selectedTraceId = useTracesStore((s) => s.selectedTraceId);
@@ -519,26 +522,32 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
           panelRef={listPanelRef}
         >
           <div ref={listPaneRef} className="flex flex-col h-full min-h-0 overflow-hidden">
-            {/* Loading skeleton */}
-            {isLoading && displayTraces.length === 0 && (
-              <div className="p-3 space-y-2 animate-pulse">
+            {phase === 'stale' && error && (
+              <FailureBanner
+                message={error}
+                onRetry={load}
+                lastUpdated={lastLoadedAt}
+                className="mx-3 mt-2 mb-2 flex-shrink-0"
+              />
+            )}
+
+            {/* Loading skeleton: first load only */}
+            {phase === 'loading' && isLoading && displayTraces.length === 0 && (
+              <div className="p-3 space-y-2 animate-pulse" data-testid="traces-skeleton">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="h-7 rounded bg-surface-elevated/60 border border-border/20" />
                 ))}
               </div>
             )}
 
-            {/* Error */}
-            {error && !isLoading && (
-              <div className="flex flex-col items-center justify-center flex-1 gap-2 text-xs">
-                <AlertCircle size={20} className="text-status-error" />
-                <span className="text-status-error">{error}</span>
-                <button onClick={load} className="text-primary hover:underline text-xs">Retry</button>
-              </div>
+            {/* Error: nothing loaded for the current server-side filters */}
+            {phase === 'failed' && (
+              <FailedState feature="Traces" message={error ?? undefined} onRetry={load} className="flex-1" />
             )}
 
             {/* Empty states */}
-            {!isLoading && !error && displayTraces.length === 0 && (
+            {(phase === 'ready' || phase === 'stale' || (phase === 'loading' && !isLoading)) &&
+              displayTraces.length === 0 && (
               !tracingEnabled ? (
                 <EmptyState
                   icon={Activity}
@@ -581,7 +590,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
             )}
 
             {/* Table */}
-            {displayTraces.length > 0 && (
+            {phase !== 'failed' && displayTraces.length > 0 && (
               <>
                 <div
                   ref={containerRef}

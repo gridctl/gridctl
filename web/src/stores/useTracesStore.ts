@@ -34,6 +34,13 @@ interface TracesFilters {
   search: string;
 }
 
+/** Server-side filters, the ones a reload sends to the API. */
+type LoadedTraceFilters = Pick<TracesFilters, 'server' | 'errorsOnly' | 'minDuration'>;
+
+function sameServerFilters(a: LoadedTraceFilters, b: LoadedTraceFilters): boolean {
+  return a.server === b.server && a.errorsOnly === b.errorsOnly && a.minDuration === b.minDuration;
+}
+
 interface TracesState {
   traces: TraceSummary[];
   total: number;
@@ -45,6 +52,8 @@ interface TracesState {
   error: string | null;
   /** Wall-clock ms of the last completed load; anchors the time-range filter. */
   lastLoadedAt: number;
+  /** Server-side filters of the last successful load; null before one. */
+  loadedFilters: LoadedTraceFilters | null;
   filters: TracesFilters;
 
   // Selected trace detail
@@ -71,6 +80,7 @@ export const useTracesStore = create<TracesState>()((set, get) => ({
   isPaused: false,
   error: null,
   lastLoadedAt: 0,
+  loadedFilters: null,
   filters: {
     segment: 'tool-calls',
     server: '',
@@ -100,7 +110,14 @@ export const useTracesStore = create<TracesState>()((set, get) => ({
     const generation = useAuthStore.getState().generation;
     if (useAuthStore.getState().authRequired) return;
     const { filters } = get();
-    set({ isLoading: true, error: null });
+    const requested: LoadedTraceFilters = {
+      server: filters.server,
+      errorsOnly: filters.errorsOnly,
+      minDuration: filters.minDuration,
+    };
+    // The error stays until a load succeeds, so a failing poll does not
+    // flicker between the banner and a clean view.
+    set({ isLoading: true });
     try {
       const result = await fetchTraces({
         server: filters.server || undefined,
@@ -116,13 +133,20 @@ export const useTracesStore = create<TracesState>()((set, get) => ({
         bufferSize: result.bufferSize,
         bufferCapacity: result.bufferCapacity,
         isLoading: false,
+        error: null,
+        loadedFilters: requested,
         lastLoadedAt: Date.now(),
       });
     } catch (err) {
       if (useAuthStore.getState().generation !== generation) return;
+      // Rows from other server-side filters are never shown as last-known
+      // data for the requested ones.
+      const loaded = get().loadedFilters;
+      const keep = loaded !== null && sameServerFilters(loaded, requested);
       set({
         error: err instanceof Error ? err.message : 'Failed to fetch traces',
         isLoading: false,
+        ...(keep ? {} : { traces: [], total: 0, loadedFilters: null }),
       });
     }
   },
