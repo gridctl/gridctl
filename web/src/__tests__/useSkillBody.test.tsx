@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { useSkillBody } from '../hooks/useSkillBody';
 import { fetchRegistrySkill } from '../lib/api';
 import type { AgentSkill } from '../types';
@@ -15,6 +15,12 @@ const skill = (body: string): AgentSkill => ({
   body,
   fileCount: 0,
 });
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
+}
 
 describe('useSkillBody', () => {
   beforeEach(() => {
@@ -82,6 +88,103 @@ describe('useSkillBody', () => {
 
     await waitFor(() => expect(result.current.body).toBe('# Second'));
     expect(fetchRegistrySkill).toHaveBeenLastCalledWith('other-skill');
+  });
+
+  // The editor's shape on close and reopen: the closed editor drops the name
+  // and passes a '' seed, then reopens on the same skill.
+  it('drops the previous body and reports loading when re-enabled', async () => {
+    vi.mocked(fetchRegistrySkill).mockResolvedValue(skill('# First'));
+    const { result, rerender } = renderHook(
+      ({ name, on }: { name: string | null; on: boolean }) =>
+        useSkillBody(name, on, on ? undefined : ''),
+      { initialProps: { name: 'incident-triage' as string | null, on: true } },
+    );
+    await waitFor(() => expect(result.current.body).toBe('# First'));
+
+    rerender({ name: null, on: false });
+    const second = deferred<AgentSkill>();
+    vi.mocked(fetchRegistrySkill).mockReturnValue(second.promise);
+    rerender({ name: 'incident-triage', on: true });
+    expect(result.current).toEqual({ body: null, loading: true, error: null });
+
+    second.resolve(skill('# Second'));
+    await waitFor(() => expect(result.current.body).toBe('# Second'));
+    expect(result.current.loading).toBe(false);
+  });
+
+  // The sidebar row's shape: the name stays put and only `enabled` toggles.
+  it('refetches and reports loading when collapsed and re-expanded', async () => {
+    vi.mocked(fetchRegistrySkill).mockResolvedValue(skill('# First'));
+    const { result, rerender } = renderHook(({ on }) => useSkillBody('incident-triage', on), {
+      initialProps: { on: true },
+    });
+    await waitFor(() => expect(result.current.body).toBe('# First'));
+
+    rerender({ on: false });
+    const second = deferred<AgentSkill>();
+    vi.mocked(fetchRegistrySkill).mockReturnValue(second.promise);
+    rerender({ on: true });
+    expect(fetchRegistrySkill).toHaveBeenCalledTimes(2);
+    expect(result.current).toEqual({ body: null, loading: true, error: null });
+
+    second.resolve(skill('# Second'));
+    await waitFor(() => expect(result.current.body).toBe('# Second'));
+  });
+
+  it('refetches on a revision bump while the previous body stays visible', async () => {
+    vi.mocked(fetchRegistrySkill).mockResolvedValue(skill('# First'));
+    const { result, rerender } = renderHook(
+      ({ revision }) => useSkillBody('incident-triage', true, undefined, revision),
+      { initialProps: { revision: 0 } },
+    );
+    await waitFor(() => expect(result.current.body).toBe('# First'));
+
+    const second = deferred<AgentSkill>();
+    vi.mocked(fetchRegistrySkill).mockReturnValue(second.promise);
+    rerender({ revision: 1 });
+    expect(fetchRegistrySkill).toHaveBeenCalledTimes(2);
+    expect(result.current).toEqual({ body: '# First', loading: false, error: null });
+
+    second.resolve(skill('# Second'));
+    await waitFor(() => expect(result.current.body).toBe('# Second'));
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('replaces the visible body with the error when a revision refetch fails', async () => {
+    vi.mocked(fetchRegistrySkill).mockResolvedValue(skill('# First'));
+    const { result, rerender } = renderHook(
+      ({ revision }) => useSkillBody('incident-triage', true, undefined, revision),
+      { initialProps: { revision: 0 } },
+    );
+    await waitFor(() => expect(result.current.body).toBe('# First'));
+
+    vi.mocked(fetchRegistrySkill).mockRejectedValue(new Error('registry offline'));
+    rerender({ revision: 1 });
+    await waitFor(() => expect(result.current.error).toBe('registry offline'));
+    expect(result.current.body).toBeNull();
+    expect(result.current.loading).toBe(false);
+  });
+
+  it('never stores a response superseded by a revision bump', async () => {
+    const first = deferred<AgentSkill>();
+    const second = deferred<AgentSkill>();
+    vi.mocked(fetchRegistrySkill)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    const { result, rerender } = renderHook(
+      ({ revision }) => useSkillBody('incident-triage', true, undefined, revision),
+      { initialProps: { revision: 0 } },
+    );
+
+    rerender({ revision: 1 });
+    second.resolve(skill('# Second'));
+    await waitFor(() => expect(result.current.body).toBe('# Second'));
+
+    first.resolve(skill('# First'));
+    await act(async () => {
+      await first.promise;
+    });
+    expect(result.current.body).toBe('# Second');
   });
 
   it('reports a body of "" when the skill genuinely has none', async () => {
