@@ -74,6 +74,7 @@ function rowFromParsed(
   entry: ParsedEnvEntry,
   defaultSet: string,
   index: number,
+  exists: boolean,
   override?: RowOverride,
 ): RowState {
   return {
@@ -87,7 +88,10 @@ function rowFromParsed(
     // Default new imports to "secret" per Article XII secure default — the
     // user can toggle to plaintext per row if needed.
     isSecret: override?.isSecret ?? entry.isSecret ?? true,
-    skipped: override?.skipped ?? false,
+    // A key that already exists starts skipped: overwriting it destroys the
+    // stored value, so it takes an explicit un-skip. The default is derived
+    // here, never written into overrides, so a user's choice always wins.
+    skipped: override?.skipped ?? exists,
     revealed: override?.revealed ?? false,
 		metadata: entry.metadata,
   };
@@ -137,12 +141,23 @@ export function EnvImportModal({
     [defaultSet, setNames],
   );
 
+  const existingKeys = useMemo(
+    () => new Set(existingVariables.map((v) => v.key)),
+    [existingVariables],
+  );
+
   const rows = useMemo<RowState[]>(
     () =>
       parsed.entries.map((entry, idx) =>
-        rowFromParsed(entry, effectiveDefaultSet, idx, overrides[entry.key]),
+        rowFromParsed(
+          entry,
+          effectiveDefaultSet,
+          idx,
+          existingKeys.has(entry.key),
+          overrides[entry.key],
+        ),
       ),
-    [parsed.entries, effectiveDefaultSet, overrides],
+    [parsed.entries, effectiveDefaultSet, existingKeys, overrides],
   );
 
   // Escape closes; click on backdrop closes; both common in this codebase.
@@ -157,10 +172,6 @@ export function EnvImportModal({
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  const existingKeys = useMemo(
-    () => new Set(existingVariables.map((v) => v.key)),
-    [existingVariables],
-  );
   const counts = useMemo(() => {
     let newCount = 0;
     let conflicts = 0;
@@ -459,12 +470,16 @@ export function EnvImportModal({
                               >
                                 {r.key}
                               </span>
-                              {exists && !r.skipped && (
+                              {exists && (
                                 <span
                                   className="text-3xs font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-status-pending/15 text-status-pending"
-                                  title="A variable with this key already exists; importing will overwrite it"
+                                  title={
+                                    r.skipped
+                                      ? 'A variable with this key already exists; this row is skipped and will not be written'
+                                      : 'A variable with this key already exists; importing will overwrite it'
+                                  }
                                 >
-                                  overwrites
+                                  {r.skipped ? 'exists' : 'overwrites'}
                                 </span>
                               )}
                             </div>
@@ -577,6 +592,15 @@ export function EnvImportModal({
           </div>
         </div>
 
+        {conflictKeys.length > 0 && (
+          <p className="flex-shrink-0 px-5 pt-2 text-3xs text-status-pending">
+            {conflictKeys.length === 1
+              ? '1 key already exists.'
+              : `${conflictKeys.length} keys already exist.`}{' '}
+            Skipped rows are not written. Clear Skip on a row to overwrite it.
+          </p>
+        )}
+
         {/* Footer */}
         <footer className="flex-shrink-0 flex items-center justify-between gap-3 px-5 py-3 border-t border-border-subtle">
           <div className="flex items-center gap-3 text-2xs font-mono text-text-muted">
@@ -638,17 +662,21 @@ export function EnvImportModal({
               }
             >
               <FileUp size={12} />
-              {submitting
-                ? 'Importing...'
-                : counts.newCount + counts.conflicts > 0
-                  ? `Import ${counts.newCount + counts.conflicts}`
-                  : 'Import'}
+              {submitting ? 'Importing...' : importLabel(counts.newCount, counts.conflicts)}
             </Button>
           </div>
         </footer>
       </div>
     </div>
   );
+}
+
+// importLabel names new rows and overwrites separately so an overwrite is
+// never hidden inside a single total. The two counts are disjoint.
+function importLabel(newCount: number, conflicts: number): string {
+  if (conflicts === 0) return newCount > 0 ? `Import ${newCount}` : 'Import';
+  if (newCount === 0) return `Overwrite ${conflicts}`;
+  return `Import ${newCount}, overwrite ${conflicts}`;
 }
 
 function maskValue(value: string): string {
