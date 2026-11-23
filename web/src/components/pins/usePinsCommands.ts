@@ -39,7 +39,8 @@ function clickById(id: string, missingMessage: string): void {
 // approveChordHandler runs Ctrl/Cmd+Enter through the rendered Approve button.
 // Text inputs are not exempt: the reason and evidence fields sit next to the
 // button, and the chord submits from them. Dialogs keep their own keys, and on
-// a link the chord is the browser's open-in-new-tab gesture.
+// a link the chord is the browser's open-in-new-tab gesture. A held chord
+// approves once: auto-repeat keydowns are cancelled and do nothing.
 function approveChordHandler(e: KeyboardEvent): void {
   if (e.defaultPrevented || e.key !== 'Enter' || e.altKey) return;
   if (!e.metaKey && !e.ctrlKey) return;
@@ -53,6 +54,7 @@ function approveChordHandler(e: KeyboardEvent): void {
   const el = document.getElementById(APPROVE_BUTTON_ID);
   if (!(el instanceof HTMLButtonElement) || el.disabled) return;
   e.preventDefault();
+  if (e.repeat) return;
   el.click();
 }
 

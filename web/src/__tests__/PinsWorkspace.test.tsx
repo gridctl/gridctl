@@ -482,6 +482,16 @@ describe('PinsWorkspace', () => {
     );
   });
 
+  it('cancels an auto-repeated Ctrl+Enter without approving', async () => {
+    const approve = vi.spyOn(api, 'approveServerPins').mockResolvedValue(undefined);
+
+    renderWorkspace();
+    await screen.findByText('poisoned_tool');
+
+    expect(fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true, repeat: true })).toBe(false);
+    expect(approve).not.toHaveBeenCalled();
+  });
+
   it('approves with Cmd+Enter from the reason field with the typed reason', async () => {
     const approve = vi.spyOn(api, 'approveServerPins').mockResolvedValue(undefined);
     vi.spyOn(api, 'fetchServerPins').mockResolvedValue({
