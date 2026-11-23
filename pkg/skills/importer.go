@@ -113,6 +113,10 @@ type ImportOptions struct {
 	Force      bool     // Overwrite existing skills
 	Rename     string   // Rename the skill on import
 	Selected   []string // Only import skills with these names (empty = import all)
+	// NoActivateSkills lists skill names imported as draft even when
+	// NoActivate is false. Names match the post-Rename skill name.
+	// PreserveState still takes precedence.
+	NoActivateSkills []string
 	// SelectedAgents imports exactly these agent names. When empty, the
 	// legacy behavior holds: all agents when Selected is also empty, no
 	// agents when a skill selection is present (the web UI picker's
@@ -431,6 +435,11 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 	for _, name := range opts.Selected {
 		selectedSet[name] = true
 	}
+	draftSet := make(map[string]bool, len(opts.NoActivateSkills))
+	for _, name := range opts.NoActivateSkills {
+		draftSet[name] = true
+	}
+	considered := make(map[string]bool)
 
 	lockedSkills := make(map[string]LockedSkill)
 
@@ -448,6 +457,7 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 			if len(opts.Selected) > 0 && !selectedSet[skillName] {
 				continue
 			}
+			considered[skillName] = true
 
 			// Check for existing skill. Git selection still implies overwrite
 			// unless a local source owns the name. Local re-import of an unowned
@@ -545,11 +555,11 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 			}
 
 			// Set state. PreserveState carries over the existing skill's State
-			// across a re-import (used by Update); otherwise NoActivate decides
-			// between draft and active.
+			// across a re-import (used by Update); otherwise NoActivate and
+			// NoActivateSkills decide between draft and active.
 			discovered.Skill.Name = skillName
 			state := registry.StateActive
-			if opts.NoActivate {
+			if opts.NoActivate || draftSet[skillName] {
 				state = registry.StateDraft
 			}
 			if opts.PreserveState {
@@ -661,6 +671,17 @@ func (imp *Importer) Import(ctx context.Context, opts ImportOptions) (*ImportRes
 
 			imp.logger.Info("imported skill", "name", skillName, "supportingFiles", filesCopied)
 		}
+	}
+
+	unmatched := make([]string, 0, len(draftSet))
+	for name := range draftSet {
+		if !considered[name] {
+			unmatched = append(unmatched, name)
+		}
+	}
+	sort.Strings(unmatched)
+	for _, name := range unmatched {
+		importResult.Warnings = append(importResult.Warnings, fmt.Sprintf("%s: noActivateSkills names a skill that was not found in this import", name))
 	}
 
 	lockedAgents, keptAgents := imp.importAgents(ctx, result, opts, sourceName, lf, importResult)
