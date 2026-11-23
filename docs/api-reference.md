@@ -1406,7 +1406,7 @@ Malformed requests and resolution failures return `422` as described for `/api/p
 
 #### `GET /api/stack/plan`
 
-Compares the on-disk stack file against the configuration the daemon loaded and returns a plan diff. Nothing in the UI calls this endpoint. The spec-mode overlay reads drift from [`/api/stack/health`](#get-apistackhealth).
+Compares the on-disk stack file against the configuration the daemon loaded and returns a plan diff. The web UI's Reload Config preview and "Compare to running" render this diff. The spec-mode overlay reads drift from [`/api/stack/health`](#get-apistackhealth).
 
 Optional `override` is the path the daemon merged, omitted when none. A change item adds `override: true` when a detail comes from an overridden field. Store-backed `image`, `url`, and `network` details on an `mcp-server` item are reported as `image changed`, `url changed`, and `network changed`, without old or new values. A `resource` item uses that same form for store-backed `image` and `network`. Other details are unchanged. A candidate that cannot be loaded returns `500` with `Failed to load stack file: ...` and a value-free message. Missing variable names may appear. Resolved values never do.
 

@@ -13,17 +13,17 @@ interface SpecState {
   specLoading: boolean;
   specError: string | null;
 
-  // Last spec the gateway applied (stable baseline for diff)
-  appliedSpec: StackSpec | null;
-
   // Validation
   validation: ValidationResult | null;
 
   // Health
   health: SpecHealth | null;
 
-  // Plan diff (spec vs running)
+  // Plan diff (stack file vs the configuration the gateway loaded), as
+  // returned by GET /api/stack/plan for the open diff modal.
   plan: PlanDiff | null;
+  planLoading: boolean;
+  planError: unknown;
 
   // Compare mode
   compareActive: boolean;
@@ -31,19 +31,20 @@ interface SpecState {
   // Diff modal
   diffModalOpen: boolean;
   diffModalMode: 'apply' | 'compare';
-  pendingSpec: string | null;
 
   // Actions
   setSpec: (spec: StackSpec) => void;
-  setAppliedSpec: (spec: StackSpec) => void;
   setSpecLoading: (loading: boolean) => void;
   setSpecError: (error: string | null) => void;
   setValidation: (result: ValidationResult) => void;
   setHealth: (health: SpecHealth) => void;
   setPlan: (plan: PlanDiff) => void;
+  setPlanLoading: () => void;
+  setPlanError: (error: unknown) => void;
   toggleCompare: () => void;
   setCompareActive: (active: boolean) => void;
-  openDiffModal: (pendingSpec: string) => void;
+  openApplyPlan: (plan: PlanDiff) => void;
+  openApplyError: (error: unknown) => void;
   openCompareModal: () => void;
   closeDiffModal: () => void;
 }
@@ -51,34 +52,39 @@ interface SpecState {
 export const useSpecStore = create<SpecState>()(
   subscribeWithSelector((set) => ({
     spec: null,
-    appliedSpec: null,
     specLoading: false,
     specError: null,
     validation: null,
     health: null,
     plan: null,
+    planLoading: false,
+    planError: null,
     compareActive: false,
     diffModalOpen: false,
     diffModalMode: 'apply',
-    pendingSpec: null,
 
-    setSpec: (spec) => set((s) => ({
-      spec,
-      specError: null,
-      // Set appliedSpec on first load so there's always a baseline
-      appliedSpec: s.appliedSpec ?? spec,
-    })),
-    setAppliedSpec: (spec) => set({ appliedSpec: spec }),
+    setSpec: (spec) => set({ spec, specError: null }),
     setSpecLoading: (specLoading) => set({ specLoading }),
     setSpecError: (specError) => set({ specError }),
     setValidation: (validation) => set({ validation }),
     setHealth: (health) => set({ health }),
-    setPlan: (plan) => set({ plan }),
+    setPlan: (plan) => set({ plan, planLoading: false, planError: null }),
+    setPlanLoading: () => set({ plan: null, planLoading: true, planError: null }),
+    setPlanError: (planError) => set({ plan: null, planLoading: false, planError }),
     toggleCompare: () => set((s) => ({ compareActive: !s.compareActive })),
     setCompareActive: (compareActive) => set({ compareActive }),
-    openDiffModal: (pendingSpec) => set({ diffModalOpen: true, diffModalMode: 'apply', pendingSpec }),
-    openCompareModal: () => set({ diffModalOpen: true, diffModalMode: 'compare', pendingSpec: null }),
-    closeDiffModal: () => set({ diffModalOpen: false, diffModalMode: 'apply', pendingSpec: null }),
+    openApplyPlan: (plan) => set({
+      diffModalOpen: true, diffModalMode: 'apply', plan, planLoading: false, planError: null,
+    }),
+    openApplyError: (planError) => set({
+      diffModalOpen: true, diffModalMode: 'apply', plan: null, planLoading: false, planError,
+    }),
+    openCompareModal: () => set({
+      diffModalOpen: true, diffModalMode: 'compare', plan: null, planLoading: true, planError: null,
+    }),
+    closeDiffModal: () => set({
+      diffModalOpen: false, diffModalMode: 'apply', plan: null, planLoading: false, planError: null,
+    }),
   }))
 );
 

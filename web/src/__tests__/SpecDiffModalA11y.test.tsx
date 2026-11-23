@@ -9,22 +9,22 @@ beforeEach(() => {
   useSpecStore.setState({
     diffModalOpen: false,
     diffModalMode: 'apply',
-    pendingSpec: null,
-    appliedSpec: null,
+    plan: null,
+    planLoading: false,
+    planError: null,
     spec: null,
   });
 });
 
 describe('SpecDiffModal dialog semantics', () => {
   it('exposes a labeled modal dialog and a named close button', () => {
-    useSpecStore.setState({
-      diffModalOpen: true,
-      diffModalMode: 'apply',
-      pendingSpec: 'name: next\n',
-      appliedSpec: { content: 'name: prev\n', path: 'stack.yaml' },
+    useSpecStore.getState().openApplyPlan({
+      hasChanges: true,
+      items: [{ action: 'change', kind: 'mcp-server', name: 'github', details: ['image changed'] }],
+      summary: '1 to change',
     });
     render(<SpecDiffModal onApply={() => undefined} />);
-    const dialog = screen.getByRole('dialog', { name: /configuration changed/i });
+    const dialog = screen.getByRole('dialog', { name: /reload config/i });
     expect(dialog).toHaveAttribute('aria-modal', 'true');
     expect(screen.getByRole('button', { name: /^close$/i })).toHaveAttribute('type', 'button');
   });

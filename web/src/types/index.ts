@@ -994,12 +994,14 @@ export interface DiffItem {
   kind: string;
   name: string;
   details?: string[];
+  override?: boolean;
 }
 
 export interface PlanDiff {
   hasChanges: boolean;
   items: DiffItem[];
   summary: string;
+  override?: string;
 }
 
 export interface ValidationStatus {

@@ -1,86 +1,142 @@
-import { useMemo, useEffect, useCallback, useId } from 'react';
+import { useEffect, useCallback, useId, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, Minus, Plus, Equal, X } from 'lucide-react';
+import { AlertCircle, Loader2, Minus, Pencil, Plus, X } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { fetchStackHealth, fetchStackPlan } from '../../lib/api';
+import { describeError } from '../../lib/describeError';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { useSpecStore } from '../../stores/useSpecStore';
 import { Button } from '../ui/Button';
+import type { DiffAction, DiffItem, PlanDiff } from '../../types';
 
-interface DiffLine {
-  type: 'context' | 'added' | 'removed';
-  lineOld: number | null;
-  lineNew: number | null;
-  text: string;
+const KIND_ORDER = ['mcp-server', 'resource', 'gateway', 'network'];
+
+const KIND_LABELS: Record<string, string> = {
+  'mcp-server': 'MCP servers',
+  resource: 'Resources',
+  gateway: 'Gateway',
+  network: 'Networks',
+};
+
+const ACTION_LABELS: Record<DiffAction, string> = {
+  add: 'Add',
+  remove: 'Remove',
+  change: 'Change',
+};
+
+const ACTION_ICONS = { add: Plus, remove: Minus, change: Pencil } as const;
+
+const ACTION_CLASSES: Record<DiffAction, string> = {
+  add: 'text-status-running',
+  remove: 'text-status-error',
+  change: 'text-status-pending',
+};
+
+const PLAN_LIMITS_NOTE =
+  'This compares the stack file with the configuration the running gateway loaded. ' +
+  'It does not resolve ${secret:} references or run the startup security check, ' +
+  'so a reload can still be refused or require a restart. ' +
+  'Changes to clients, limits, policy, groups, skills, model_preferences, runs, and experimental ' +
+  'are applied by a reload and are not listed.';
+
+function groupByKind(items: DiffItem[]): Array<[string, DiffItem[]]> {
+  const groups = new Map<string, DiffItem[]>();
+  for (const item of items) {
+    const list = groups.get(item.kind) ?? [];
+    list.push(item);
+    groups.set(item.kind, list);
+  }
+  const rank = (kind: string) => {
+    const i = KIND_ORDER.indexOf(kind);
+    return i === -1 ? KIND_ORDER.length : i;
+  };
+  return [...groups.entries()].sort((a, b) => rank(a[0]) - rank(b[0]));
 }
 
-function computeLineDiff(oldText: string, newText: string): DiffLine[] {
-  const oldLines = oldText.split('\n');
-  const newLines = newText.split('\n');
-  const result: DiffLine[] = [];
+function countAction(plan: PlanDiff | null, action: DiffAction): number {
+  return plan?.items?.filter((i) => i.action === action).length ?? 0;
+}
 
-  const m = oldLines.length;
-  const n = newLines.length;
-
-  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (oldLines[i - 1] === newLines[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1;
-      } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
-      }
-    }
-  }
-
-  const diff: Array<{ type: 'context' | 'added' | 'removed'; text: string; oldIdx: number; newIdx: number }> = [];
-  let i = m, j = n;
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
-      diff.unshift({ type: 'context', text: oldLines[i - 1], oldIdx: i, newIdx: j });
-      i--; j--;
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      diff.unshift({ type: 'added', text: newLines[j - 1], oldIdx: 0, newIdx: j });
-      j--;
-    } else {
-      diff.unshift({ type: 'removed', text: oldLines[i - 1], oldIdx: i, newIdx: 0 });
-      i--;
-    }
-  }
-
-  for (const d of diff) {
-    result.push({
-      type: d.type,
-      lineOld: d.type !== 'added' ? d.oldIdx : null,
-      lineNew: d.type !== 'removed' ? d.newIdx : null,
-      text: d.text,
-    });
-  }
-
-  return result;
+function PlanList({ plan }: { plan: PlanDiff }) {
+  return (
+    <div className="space-y-5">
+      {groupByKind(plan.items).map(([kind, items]) => (
+        <section key={kind} aria-label={KIND_LABELS[kind] ?? kind}>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted mb-2">
+            {KIND_LABELS[kind] ?? kind}
+          </h3>
+          <ul className="space-y-2">
+            {items.map((item) => {
+              const Icon = ACTION_ICONS[item.action] ?? Pencil;
+              return (
+                <li
+                  key={`${item.action}:${item.kind}:${item.name}`}
+                  className="rounded-lg border border-border/40 bg-surface-elevated px-3 py-2"
+                >
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className={cn('flex items-center gap-1 text-xs font-medium', ACTION_CLASSES[item.action])}>
+                      <Icon size={12} aria-hidden="true" />
+                      {ACTION_LABELS[item.action] ?? item.action}
+                    </span>
+                    <span className="font-mono text-text-primary">{item.name}</span>
+                    {item.override && (
+                      <span className="px-1.5 py-0.5 rounded-full bg-surface-highlight text-3xs text-text-muted">
+                        from override file
+                      </span>
+                    )}
+                  </div>
+                  {item.details && item.details.length > 0 && (
+                    <ul className="mt-1.5 ml-5 space-y-0.5 font-mono text-xs text-text-secondary">
+                      {item.details.map((detail, i) => (
+                        <li key={i}>{detail}</li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
 }
 
 interface SpecDiffModalProps {
+  /** Runs the reload. Called once, from the confirm or "Reload without preview" button. */
   onApply: () => void;
-  validationErrors?: string[];
+  /** Called when an apply-mode preview is dismissed without reloading. */
+  onDismiss?: () => void;
 }
 
-export function SpecDiffModal({ onApply, validationErrors }: SpecDiffModalProps) {
+export function SpecDiffModal({ onApply, onDismiss }: SpecDiffModalProps) {
   const diffModalOpen = useSpecStore((s) => s.diffModalOpen);
   const titleId = useId();
   const panelRef = useFocusTrap<HTMLDivElement>({ active: diffModalOpen });
   const diffModalMode = useSpecStore((s) => s.diffModalMode);
-  const closeDiffModal = useSpecStore((s) => s.closeDiffModal);
-  const appliedSpec = useSpecStore((s) => s.appliedSpec);
-  const pendingSpec = useSpecStore((s) => s.pendingSpec);
-  const spec = useSpecStore((s) => s.spec);
+  const plan = useSpecStore((s) => s.plan);
+  const planLoading = useSpecStore((s) => s.planLoading);
+  const planError = useSpecStore((s) => s.planError);
+  const [compareAttempt, setCompareAttempt] = useState(0);
 
   const isCompareMode = diffModalMode === 'compare';
 
+  const dismiss = useCallback(() => {
+    const wasApply = useSpecStore.getState().diffModalMode === 'apply';
+    useSpecStore.getState().closeDiffModal();
+    if (wasApply) onDismiss?.();
+  }, [onDismiss]);
+
+  const apply = useCallback(() => {
+    useSpecStore.getState().closeDiffModal();
+    onApply();
+  }, [onApply]);
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeDiffModal();
+      if (e.key === 'Escape') dismiss();
     },
-    [closeDiffModal],
+    [dismiss],
   );
 
   useEffect(() => {
@@ -90,22 +146,43 @@ export function SpecDiffModal({ onApply, validationErrors }: SpecDiffModalProps)
     }
   }, [diffModalOpen, handleKeyDown]);
 
-  const compareSource = isCompareMode ? spec?.content ?? null : pendingSpec;
-
-  const diffLines = useMemo(() => {
-    if (!appliedSpec || compareSource === null) return [];
-    return computeLineDiff(appliedSpec.content, compareSource);
-  }, [appliedSpec, compareSource]);
-
-  const missingBaseline = isCompareMode && !appliedSpec;
-  const hasChanges = diffLines.some((l) => l.type !== 'context');
-  const hasErrors = !isCompareMode && validationErrors && validationErrors.length > 0;
-
-  const addedCount = diffLines.filter((l) => l.type === 'added').length;
-  const removedCount = diffLines.filter((l) => l.type === 'removed').length;
-  const unchangedCount = diffLines.filter((l) => l.type === 'context').length;
+  // Compare mode asks the server on every open and retry. The cleanup marks
+  // the request stale, so a response that lands after close, a mode change,
+  // or a newer request is dropped.
+  useEffect(() => {
+    if (!diffModalOpen || !isCompareMode) return;
+    let stale = false;
+    useSpecStore.getState().setPlanLoading();
+    fetchStackPlan().then(
+      (result) => {
+        if (stale) return;
+        useSpecStore.getState().setPlan(result);
+        fetchStackHealth().then(
+          (health) => {
+            if (!stale) useSpecStore.getState().setHealth(health);
+          },
+          () => undefined,
+        );
+      },
+      (err: unknown) => {
+        if (!stale) useSpecStore.getState().setPlanError(err);
+      },
+    );
+    return () => {
+      stale = true;
+    };
+  }, [diffModalOpen, isCompareMode, compareAttempt]);
 
   if (!diffModalOpen) return null;
+
+  const described = planError
+    ? describeError(planError, isCompareMode ? 'Compare' : 'Reload preview')
+    : null;
+  const showPlan = !planLoading && !described && plan !== null;
+  const hasItems = showPlan && (plan.items?.length ?? 0) > 0;
+  const addedCount = countAction(plan, 'add');
+  const changedCount = countAction(plan, 'change');
+  const removedCount = countAction(plan, 'remove');
 
   return createPortal(
     <div
@@ -115,32 +192,32 @@ export function SpecDiffModal({ onApply, validationErrors }: SpecDiffModalProps)
       aria-labelledby={titleId}
       className="fixed inset-0 z-modal flex flex-col bg-background"
     >
-      {/* Header — pinned */}
+      {/* Header (pinned) */}
       <div className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b border-border/50 bg-surface-elevated">
         <div className="flex items-center gap-4">
           <h2 id={titleId} className="text-sm font-semibold text-text-primary">
-            {isCompareMode ? 'Compare to Running' : 'Configuration Changed'}
+            {isCompareMode ? 'Compare to running' : 'Reload Config'}
           </h2>
-          {hasChanges && (
+          {hasItems && (
             <div className="flex items-center gap-3 text-xs">
               <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-status-running/10 text-status-running">
-                <Plus size={11} />
+                <Plus size={11} aria-hidden="true" />
                 {addedCount} added
               </span>
-              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-status-error/10 text-status-error">
-                <Minus size={11} />
-                {removedCount} removed
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-status-pending/10 text-status-pending">
+                <Pencil size={11} aria-hidden="true" />
+                {changedCount} changed
               </span>
-              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-highlight text-text-muted">
-                <Equal size={11} />
-                {unchangedCount} unchanged
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-status-error/10 text-status-error">
+                <Minus size={11} aria-hidden="true" />
+                {removedCount} removed
               </span>
             </div>
           )}
         </div>
         <button
           type="button"
-          onClick={closeDiffModal}
+          onClick={dismiss}
           aria-label="Close"
           className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors text-text-muted hover:text-text-primary"
         >
@@ -148,101 +225,73 @@ export function SpecDiffModal({ onApply, validationErrors }: SpecDiffModalProps)
         </button>
       </div>
 
-      {/* Diff body — scrollable, takes all remaining space */}
-      <div className="flex-1 min-h-0 overflow-auto scrollbar-dark">
-        {missingBaseline ? (
-          <div className="flex items-center justify-center h-full text-text-muted text-sm">
-            Waiting for the gateway baseline — reload once to capture it.
+      {/* Body (scrollable) */}
+      <div className="flex-1 min-h-0 overflow-auto scrollbar-dark px-6 py-4">
+        {planLoading ? (
+          <div role="status" className="flex items-center justify-center gap-2 h-full text-text-muted text-sm">
+            <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+            Comparing the stack file with the running gateway...
           </div>
-        ) : !hasChanges ? (
-          <div className="flex items-center justify-center h-full text-text-muted text-sm">
-            {isCompareMode
-              ? 'No drift — on-disk spec matches the running gateway.'
-              : 'No changes detected'}
+        ) : described ? (
+          <div
+            role="alert"
+            title={described.fullDetail}
+            className="rounded-lg border border-status-error/30 bg-status-error/[0.06] px-4 py-3 flex items-start gap-2 text-sm text-status-error"
+          >
+            <AlertCircle size={14} className="mt-0.5 flex-shrink-0" aria-hidden="true" />
+            <span className="break-words">{described.text}</span>
           </div>
-        ) : (
-          <table className="w-full font-mono text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-border/30 sticky top-0 bg-surface-elevated z-sticky">
-                <th className="text-right px-3 py-2 text-text-muted font-medium w-14">Old</th>
-                <th className="text-right px-3 py-2 text-text-muted font-medium w-14">New</th>
-                <th className="text-left px-4 py-2 text-text-muted font-medium">Content</th>
-              </tr>
-            </thead>
-            <tbody>
-              {diffLines.map((line, idx) => (
-                <tr
-                  key={idx}
-                  className={cn(
-                    'border-b border-border/10',
-                    line.type === 'added' && 'bg-status-running/[0.08]',
-                    line.type === 'removed' && 'bg-status-error/[0.08]',
-                  )}
-                >
-                  <td className={cn(
-                    'px-3 py-0.5 text-right w-14 select-none',
-                    line.type === 'removed' ? 'text-status-error/60' : 'text-text-muted/40',
-                  )}>
-                    {line.lineOld ?? ''}
-                  </td>
-                  <td className={cn(
-                    'px-3 py-0.5 text-right w-14 select-none',
-                    line.type === 'added' ? 'text-status-running/60' : 'text-text-muted/40',
-                  )}>
-                    {line.lineNew ?? ''}
-                  </td>
-                  <td className="px-4 py-0.5 whitespace-pre">
-                    <span className={cn(
-                      line.type === 'added' && 'text-status-running',
-                      line.type === 'removed' && 'text-status-error line-through',
-                      line.type === 'context' && 'text-text-secondary',
-                    )}>
-                      {line.type === 'added' && '+ '}
-                      {line.type === 'removed' && '- '}
-                      {line.text}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        ) : showPlan ? (
+          <div className="space-y-5">
+            {plan.override && (
+              <p className="text-xs text-text-muted">
+                Override file merged: <span className="font-mono text-text-secondary">{plan.override}</span>
+              </p>
+            )}
+            {hasItems ? (
+              <PlanList plan={plan} />
+            ) : (
+              <p className="text-sm text-text-secondary">
+                Servers, resources, gateway settings, and networks in the stack file match the running gateway.
+              </p>
+            )}
+            <p className="text-xs text-text-muted">{PLAN_LIMITS_NOTE}</p>
+          </div>
+        ) : null}
       </div>
 
-      {/* Footer — pinned */}
+      {/* Footer (pinned) */}
       <div className="flex-shrink-0 border-t border-border/50 bg-surface-elevated px-6 py-3">
-        {hasErrors && (
-          <div className="rounded-lg border border-status-error/30 bg-status-error/[0.06] px-4 py-3 mb-3">
-            <div className="flex items-center gap-2 text-status-error text-xs font-medium mb-2">
-              <AlertCircle size={12} />
-              Validation errors in new spec
-            </div>
-            <ul className="text-xs text-status-error/80 space-y-1">
-              {validationErrors!.map((err, i) => (
-                <li key={i} className="flex items-start gap-1.5">
-                  <span className="text-status-error/50 mt-0.5">-</span>
-                  {err}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
         <div className="flex items-center justify-end gap-3">
-          <Button variant="secondary" onClick={closeDiffModal}>
-            {isCompareMode ? 'Close' : 'Cancel'}
-          </Button>
-          {!isCompareMode && (
-            <Button
-              variant="primary"
-              onClick={() => {
-                onApply();
-                closeDiffModal();
-              }}
-              disabled={!!hasErrors}
-            >
-              Apply Changes
-            </Button>
+          {isCompareMode ? (
+            <>
+              {described && (
+                <Button variant="secondary" onClick={() => setCompareAttempt((n) => n + 1)}>
+                  Retry
+                </Button>
+              )}
+              <Button variant="secondary" onClick={dismiss}>
+                Close
+              </Button>
+            </>
+          ) : described ? (
+            <>
+              <Button variant="secondary" onClick={dismiss}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={apply}>
+                Reload without preview
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={dismiss}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={apply} disabled={!showPlan}>
+                Reload
+              </Button>
+            </>
           )}
         </div>
       </div>
