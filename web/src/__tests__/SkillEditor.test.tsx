@@ -422,6 +422,7 @@ const MIXED_CRITERIA = [
   'line one\nline two',
   'PASS: output is valid JSON',
   'PASS: GIVEN a WHEN b THEN c',
+  'FAIL: output is empty',
 ];
 
 const MIXED_SKILL: AgentSkill = {

@@ -803,6 +803,7 @@ func TestHandleRegistry_Validate_SkillObject_YAMLSignificantDescription(t *testi
 		"# starts with a hash",
 		"[starts with a bracket",
 		"{starts with a brace",
+		"\"quoted\" start",
 	} {
 		t.Run(desc, func(t *testing.T) {
 			rec, result := postValidate(t, srv, map[string]any{
