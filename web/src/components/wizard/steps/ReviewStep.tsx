@@ -367,6 +367,13 @@ export function ReviewStep({
         )}
       </div>
 
+      {nameConflict && (
+        <div className="flex items-start gap-2 px-4 py-3 rounded-xl border border-status-error/20 bg-status-error/5 text-xs text-status-error" role="alert">
+          <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+          <span>A server or resource named '{deployName}' already exists in this stack. Choose a different name.</span>
+        </div>
+      )}
+
       {/* Issues List */}
       {issues.length > 0 && !validating && <IssueList issues={issues} />}
 
@@ -416,13 +423,6 @@ export function ReviewStep({
           )}
         </div>
       </div>
-
-      {nameConflict && (
-        <div className="flex items-start gap-2 px-4 py-3 rounded-xl border border-status-error/20 bg-status-error/5 text-xs text-status-error" role="alert">
-          <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
-          <span>A server or resource named '{deployName}' already exists in this stack. Choose a different name.</span>
-        </div>
-      )}
 
       {resourceType !== 'stack' && deployError && (
         <div ref={deployErrorRef} tabIndex={-1} className="space-y-2 p-4 rounded-xl border border-status-error/20 bg-status-error/5" role="alert">
