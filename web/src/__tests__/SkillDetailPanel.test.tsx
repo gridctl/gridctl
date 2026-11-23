@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { MemoryRouter } from 'react-router';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { SkillDetailPanel } from '../components/registry/SkillDetailPanel';
 import { fetchRegistrySkill, fetchSkillFiles, updateSkillSource } from '../lib/api';
 import type { SkillSourceStatus } from '../types';
@@ -284,6 +284,64 @@ describe('SkillDetailPanel', () => {
       await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/registry offline/i));
       // The "no instructions" hint would be a lie here, so it must not appear.
       expect(screen.queryByText(/this skill has no instructions/i)).not.toBeInTheDocument();
+    });
+
+    // The workspace bumps bodyRevision after an in-window save, take upstream,
+    // or sync. The selected name does not change, so without it the panel would
+    // keep the pre-save body until another skill was selected.
+    it('refetches on a body revision without a loading flash', async () => {
+      vi.mocked(fetchRegistrySkill).mockResolvedValue({ ...SKILL, body: 'First runbook.' });
+      const panel = (bodyRevision: number, skill: AgentSkill = LIST_SKILL) => (
+        <MemoryRouter><SkillDetailPanel
+          skill={skill}
+          onClose={noop}
+          onEdit={noop}
+          onToggle={noop}
+          onDelete={noop}
+          bodyRevision={bodyRevision}
+        /></MemoryRouter>
+      );
+      const { rerender } = render(panel(0));
+      fireEvent.click(screen.getByRole('tab', { name: 'Instructions' }));
+      expect(await screen.findByText('First runbook.')).toBeInTheDocument();
+
+      let resolveFetch: (s: AgentSkill) => void = () => {};
+      vi.mocked(fetchRegistrySkill).mockReturnValue(
+        new Promise<AgentSkill>((resolve) => { resolveFetch = resolve; }),
+      );
+      rerender(panel(1));
+      expect(fetchRegistrySkill).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('First runbook.')).toBeInTheDocument();
+      expect(screen.queryByText('Loading instructions…')).not.toBeInTheDocument();
+
+      resolveFetch({ ...SKILL, body: 'Second runbook.' });
+      expect(await screen.findByText('Second runbook.')).toBeInTheDocument();
+      expect(screen.queryByText('Loading instructions…')).not.toBeInTheDocument();
+      expect(fetchRegistrySkill).toHaveBeenCalledTimes(2);
+    });
+
+    // A registry poll replaces the list object for the selected skill. That is
+    // not a content change, so it must not refetch the body.
+    it('does not refetch when a poll replaces the skill object', async () => {
+      vi.mocked(fetchRegistrySkill).mockResolvedValue({ ...SKILL, body: 'First runbook.' });
+      const panel = (skill: AgentSkill) => (
+        <MemoryRouter><SkillDetailPanel
+          skill={skill}
+          onClose={noop}
+          onEdit={noop}
+          onToggle={noop}
+          onDelete={noop}
+          bodyRevision={3}
+        /></MemoryRouter>
+      );
+      const { rerender } = render(panel(LIST_SKILL));
+      fireEvent.click(screen.getByRole('tab', { name: 'Instructions' }));
+      expect(await screen.findByText('First runbook.')).toBeInTheDocument();
+
+      rerender(panel({ ...LIST_SKILL }));
+      expect(screen.getByText('First runbook.')).toBeInTheDocument();
+      await act(async () => {});
+      expect(fetchRegistrySkill).toHaveBeenCalledTimes(1);
     });
 
     it('renders the honest empty hint when the fetched body really is empty', async () => {
