@@ -347,5 +347,38 @@ describe('VariablesPopover', () => {
       expect(screen.getByRole('button', { name: 'Insert existing' })).toBeInTheDocument();
       expect(screen.getByPlaceholderText('VARIABLE_KEY')).toBeInTheDocument();
     });
+
+    it('shows the server message when the 409 refetch fails', async () => {
+      render(<VariablesPopover onSelect={onSelect} />);
+      fireEvent.click(screen.getByTitle('Insert variable'));
+      fireEvent.click(await screen.findByText('Create New Variable'));
+
+      vi.mocked(api.createVariable).mockRejectedValueOnce(
+        new api.HTTPError(409, 'variable "BRAND_NEW" already exists'),
+      );
+      vi.mocked(api.fetchVariables).mockRejectedValueOnce(new Error('offline'));
+      typeKeyAndValue('BRAND_NEW', 'new-value');
+      fireEvent.click(screen.getByRole('button', { name: /Create & Insert/ }));
+
+      expect(await screen.findByText('variable "BRAND_NEW" already exists')).toBeInTheDocument();
+      expect(screen.queryByText('new-value')).toBeNull();
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(screen.getByPlaceholderText('VARIABLE_KEY')).toBeInTheDocument();
+    });
+
+    it('disarms the confirmation when the popover closes', async () => {
+      await openCreateFormWithStore();
+      typeKeyAndValue('API_TOKEN', 'new-value');
+      fireEvent.click(screen.getByRole('button', { name: 'Replace value…' }));
+      expect(screen.getByRole('group', { name: 'Confirm replacing API_TOKEN' })).toBeInTheDocument();
+
+      fireEvent.keyDown(screen.getByPlaceholderText('secret value'), { key: 'Escape' });
+      expect(screen.queryByPlaceholderText('VARIABLE_KEY')).toBeNull();
+
+      fireEvent.click(screen.getByTitle('Insert variable'));
+      expect(await screen.findByPlaceholderText('VARIABLE_KEY')).toBeInTheDocument();
+      expect(screen.queryByRole('group', { name: /Confirm replacing/ })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Replace value…' })).toBeInTheDocument();
+    });
   });
 });

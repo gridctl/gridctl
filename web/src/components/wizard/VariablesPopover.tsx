@@ -76,6 +76,9 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
   // Drop the stale position when the popover closes (state adjustment during
   // render; commits with the close, no extra frame).
   if (!open && position !== null) setPosition(null);
+  // A replace confirmation never outlives the popover: the list is refetched
+  // on reopen, so the summary it armed against may no longer hold.
+  if (!open && replaceArmed) setReplaceArmed(false);
 
   // Compute position on open; reposition on scroll or resize. Layout effect
   // because the position comes from a DOM measurement and must land before
