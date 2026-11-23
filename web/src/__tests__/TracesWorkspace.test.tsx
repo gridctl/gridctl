@@ -689,4 +689,38 @@ describe('useTracesStore loadTraces', () => {
     expect(useTracesStore.getState().error).toBe('earlier failure');
     expect(useTracesStore.getState().isLoading).toBe(true);
   });
+
+  it('ignores a late failure from a superseded request', async () => {
+    let rejectA: (err: Error) => void = () => {};
+    vi.mocked(fetchTraces).mockReturnValueOnce(new Promise((_, reject) => { rejectA = reject; }));
+    const loadA = useTracesStore.getState().loadTraces();
+
+    useTracesStore.getState().setFilters({ server: 'github' });
+    vi.mocked(fetchTraces).mockResolvedValueOnce(listEnvelope([summary]));
+    await useTracesStore.getState().loadTraces();
+
+    rejectA(new Error('stale request failed'));
+    await loadA;
+    const s = useTracesStore.getState();
+    expect(s.traces).toHaveLength(1);
+    expect(s.error).toBeNull();
+    expect(s.isLoading).toBe(false);
+    expect(s.loadedFilters).toEqual({ server: 'github', errorsOnly: false, minDuration: null });
+  });
+
+  it('ignores a late success from a superseded request', async () => {
+    let resolveA: (value: Awaited<ReturnType<typeof fetchTraces>>) => void = () => {};
+    vi.mocked(fetchTraces).mockReturnValueOnce(new Promise((resolve) => { resolveA = resolve; }));
+    const loadA = useTracesStore.getState().loadTraces();
+
+    useTracesStore.getState().setFilters({ server: 'github' });
+    vi.mocked(fetchTraces).mockResolvedValueOnce(listEnvelope([summary]));
+    await useTracesStore.getState().loadTraces();
+
+    resolveA(listEnvelope([summary, infraSummary]));
+    await loadA;
+    const s = useTracesStore.getState();
+    expect(s.traces).toHaveLength(1);
+    expect(s.loadedFilters).toEqual({ server: 'github', errorsOnly: false, minDuration: null });
+  });
 });

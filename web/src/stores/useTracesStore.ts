@@ -37,6 +37,9 @@ interface TracesFilters {
 /** Server-side filters, the ones a reload sends to the API. */
 type LoadedTraceFilters = Pick<TracesFilters, 'server' | 'errorsOnly' | 'minDuration'>;
 
+// Only the newest list request may write results; a superseded one is dropped.
+let tracesLoadSeq = 0;
+
 function sameServerFilters(a: LoadedTraceFilters, b: LoadedTraceFilters): boolean {
   return a.server === b.server && a.errorsOnly === b.errorsOnly && a.minDuration === b.minDuration;
 }
@@ -109,6 +112,7 @@ export const useTracesStore = create<TracesState>()((set, get) => ({
   loadTraces: async () => {
     const generation = useAuthStore.getState().generation;
     if (useAuthStore.getState().authRequired) return;
+    const seq = ++tracesLoadSeq;
     const { filters } = get();
     const requested: LoadedTraceFilters = {
       server: filters.server,
@@ -125,6 +129,7 @@ export const useTracesStore = create<TracesState>()((set, get) => ({
         minDuration: filters.minDuration ?? undefined,
         limit: 100,
       });
+      if (seq !== tracesLoadSeq) return;
       if (useAuthStore.getState().generation !== generation) return;
       set({
         traces: result.traces,
@@ -138,6 +143,7 @@ export const useTracesStore = create<TracesState>()((set, get) => ({
         lastLoadedAt: Date.now(),
       });
     } catch (err) {
+      if (seq !== tracesLoadSeq) return;
       if (useAuthStore.getState().generation !== generation) return;
       // Rows from other server-side filters are never shown as last-known
       // data for the requested ones.
