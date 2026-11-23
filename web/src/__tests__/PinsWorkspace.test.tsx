@@ -439,7 +439,33 @@ describe('PinsWorkspace', () => {
     }
   });
 
-  it('activates Approve with Enter from the rail', async () => {
+  it('never focuses or clicks Approve on a bare Enter', async () => {
+    const approve = vi.spyOn(api, 'approveServerPins').mockResolvedValue(undefined);
+
+    renderWorkspace();
+    await screen.findByText('poisoned_tool');
+    const approveButton = screen.getByRole('button', { name: /approve/i });
+
+    for (const target of [
+      screen.getByRole('button', { name: 'Servers' }),
+      screen.getByRole('button', { name: /attention/i }),
+    ]) {
+      target.focus();
+      expect(fireEvent.keyDown(target, { key: 'Enter' })).toBe(true);
+      expect(fireEvent.keyDown(target, { key: 'Enter' })).toBe(true);
+      expect(approveButton).not.toHaveFocus();
+    }
+
+    (document.activeElement as HTMLElement).blur();
+    fireEvent.keyDown(document, { key: 'Enter' });
+    fireEvent.keyDown(document, { key: 'Enter' });
+    expect(approveButton).not.toHaveFocus();
+
+    await Promise.resolve();
+    expect(approve).not.toHaveBeenCalled();
+  });
+
+  it('approves the reviewed server with Ctrl+Enter through the Approve button', async () => {
     const approve = vi.spyOn(api, 'approveServerPins').mockResolvedValue(undefined);
     vi.spyOn(api, 'fetchServerPins').mockResolvedValue({
       github: serverPins('pinned'),
@@ -449,16 +475,119 @@ describe('PinsWorkspace', () => {
     renderWorkspace();
     await screen.findByText('poisoned_tool');
 
-    // First Enter moves focus to Approve; useListNav preventDefaults the
-    // keydown, so the second Enter must still activate it.
-    fireEvent.keyDown(document, { key: 'Enter' });
-    const approveButton = screen.getByRole('button', { name: /approve/i });
-    expect(approveButton).toHaveFocus();
-    fireEvent.keyDown(document, { key: 'Enter' });
+    expect(fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true })).toBe(false);
 
     await waitFor(() =>
       expect(approve).toHaveBeenCalledWith('zapier', 'h2:reviewed-live-fingerprint'),
     );
+  });
+
+  it('approves with Cmd+Enter from the reason field with the typed reason', async () => {
+    const approve = vi.spyOn(api, 'approveServerPins').mockResolvedValue(undefined);
+    vi.spyOn(api, 'fetchServerPins').mockResolvedValue({
+      github: serverPins('pinned'),
+      zapier: serverPins('pinned'),
+    });
+
+    renderWorkspace();
+    await screen.findByText('poisoned_tool');
+
+    const reason = screen.getByLabelText('Approval reason');
+    fireEvent.change(reason, { target: { value: 'reviewed upstream release' } });
+    reason.focus();
+    expect(fireEvent.keyDown(reason, { key: 'Enter', metaKey: true })).toBe(false);
+
+    await waitFor(() =>
+      expect(approve).toHaveBeenCalledWith(
+        'zapier',
+        'h2:reviewed-live-fingerprint',
+        'reviewed upstream release',
+      ),
+    );
+  });
+
+  it('opens the approve confirmation from Ctrl+Enter when it applies', async () => {
+    const approve = vi.spyOn(api, 'approveServerPins').mockResolvedValue(undefined);
+    vi.mocked(api.fetchPinsDiff).mockResolvedValue({
+      ...zapierDiff,
+      new_tools: ['a_tool', 'b_tool', 'c_tool', 'd_tool'],
+    });
+
+    renderWorkspace();
+    await screen.findByText('poisoned_tool');
+
+    fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true });
+    const dialog = await screen.findByRole('alertdialog');
+    // The chord is ignored inside the dialog: it keeps its own keys.
+    const inside = within(dialog).getAllByRole('button')[0];
+    expect(fireEvent.keyDown(inside, { key: 'Enter', ctrlKey: true })).toBe(true);
+    expect(approve).not.toHaveBeenCalled();
+  });
+
+  it('ignores Ctrl+Enter when there is nothing to approve', async () => {
+    const approve = vi.spyOn(api, 'approveServerPins').mockResolvedValue(undefined);
+    usePinsStore.setState({
+      pins: { github: serverPins('pinned'), zapier: serverPins('pinned') },
+    });
+
+    renderWorkspace();
+    await screen.findAllByText(/verified/);
+    expect(document.getElementById('pins-approve-button')).toBeNull();
+
+    expect(fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true })).toBe(true);
+    expect(approve).not.toHaveBeenCalled();
+  });
+
+  it('leaves Ctrl+Enter on a link to the browser', async () => {
+    const approve = vi.spyOn(api, 'approveServerPins').mockResolvedValue(undefined);
+
+    renderWorkspace();
+    await screen.findByText('poisoned_tool');
+
+    const link = document.createElement('a');
+    link.href = 'https://example.test/docs';
+    link.textContent = 'docs';
+    document.body.appendChild(link);
+    try {
+      link.focus();
+      expect(fireEvent.keyDown(link, { key: 'Enter', ctrlKey: true })).toBe(true);
+      await Promise.resolve();
+      expect(approve).not.toHaveBeenCalled();
+    } finally {
+      link.remove();
+    }
+  });
+
+  it('shows the approve chord next to the Approve button and on the palette command', async () => {
+    renderWorkspace();
+    await screen.findByText('poisoned_tool');
+
+    const approveButton = screen.getByRole('button', { name: /approve/i });
+    expect(approveButton).toHaveAttribute('aria-keyshortcuts', 'Control+Enter Meta+Enter');
+    const hint = approveButton.nextElementSibling as HTMLElement;
+    expect(hint.textContent).toBe('⌘Enter');
+
+    const command = registryProbe?.commands.find((c) => c.id === 'pins:approve');
+    expect(command?.shortcut).toEqual(['⌘', 'Enter']);
+  });
+
+  it('moves focus with the selection after a rail row is clicked', async () => {
+    renderWorkspace();
+    await screen.findByText('poisoned_tool');
+    fireEvent.click(screen.getByRole('button', { name: /attention/i }));
+
+    const zapierRow = screen.getByRole('button', { name: /^zapier/ });
+    fireEvent.click(zapierRow);
+    zapierRow.focus();
+    fireEvent.keyDown(zapierRow, { key: 'ArrowDown' });
+
+    const githubRow = screen.getByRole('button', { name: /^github/ });
+    await waitFor(() => expect(githubRow).toHaveAttribute('aria-current', 'true'));
+    expect(githubRow).toHaveFocus();
+
+    fireEvent.click(document.activeElement as HTMLElement);
+    expect(githubRow).toHaveAttribute('aria-current', 'true');
+    expect(zapierRow).toHaveAttribute('aria-current', 'false');
   });
 
   it('pins the automatic selection into the URL so it survives filter changes', async () => {

@@ -34,20 +34,25 @@ import {
 import { FindingsList } from './PinFindings';
 import { SchemaDiffModal } from './SchemaDiffModal';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { ShortcutKeys } from '../ui/ShortcutKeys';
+import { PINS_APPROVE_KEYS } from '../../lib/shortcuts';
 import { copyWithToast, showToast } from '../ui/Toast';
 import { describeError, isCancellation } from '../../lib/describeError';
 import { ApprovalFields } from './PinApprovalHistory';
 import { credentialRefusalText, splitEvidence } from './pinApproval';
 import { downloadTextFile, pinsDiffExportFilename } from '../../lib/download';
 
-// Stable DOM ids: the workspace scrolls to the section for ?view=drift, the
-// rail's Enter binding focuses Approve, and the palette commands dispatch by
-// clicking these buttons so every entry point runs the same gated handler.
+// Stable DOM ids: the workspace scrolls to the section for ?view=drift, and
+// the Ctrl/Cmd+Enter chord and the palette commands dispatch by clicking these
+// buttons so every entry point runs the same gated handler.
 export const DRIFT_SECTION_ID = 'pins-drift-section';
 export const APPROVE_BUTTON_ID = 'pins-approve-button';
 export const REVERIFY_BUTTON_ID = 'pins-reverify-button';
 export const EXPORT_BUTTON_ID = 'pins-export-button';
 export const COPY_HASH_BUTTON_ID = 'pins-copy-hash-button';
+
+// The approve chord as announced on both Approve buttons.
+export const APPROVE_ARIA_KEYSHORTCUTS = 'Control+Enter Meta+Enter';
 
 // Approve interposes a confirmation past either threshold: a large change
 // set, or any warn-or-critical finding on the new definitions.
@@ -255,6 +260,7 @@ export function DriftSection({ serverName }: { serverName: string }) {
           // it, stranding keyboard users at the document root.
           disabled={diff === null}
           aria-busy={isApproving}
+          aria-keyshortcuts={APPROVE_ARIA_KEYSHORTCUTS}
           title={
             diff === null
               ? 'Review the changes below before approving'
@@ -279,6 +285,9 @@ export function DriftSection({ serverName }: { serverName: string }) {
             </>
           )}
         </button>
+        <span aria-hidden="true" title="Ctrl or Cmd + Enter approves">
+          <ShortcutKeys keys={PINS_APPROVE_KEYS} />
+        </span>
       </div>
 
       {error && (

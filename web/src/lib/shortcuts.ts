@@ -14,6 +14,7 @@ export const SHORTCUT_SCOPE = {
   library: 'Library',
   traces: 'Traces',
   logs: 'Logs',
+  pins: 'Pins',
 } as const;
 
 export const SHORTCUT_SCOPE_ORDER: readonly string[] = [
@@ -24,7 +25,11 @@ export const SHORTCUT_SCOPE_ORDER: readonly string[] = [
   SHORTCUT_SCOPE.library,
   SHORTCUT_SCOPE.traces,
   SHORTCUT_SCOPE.logs,
+  SHORTCUT_SCOPE.pins,
 ];
+
+// Ctrl/Cmd+Enter approves the selected Pins drift (usePinsCommands).
+export const PINS_APPROVE_KEYS = ['⌘', 'Enter'];
 
 // One static table. Scope follows the handler that fires the chord, not the
 // palette hint. Workspace rows are generated so a new workspace cannot drift.
@@ -64,4 +69,5 @@ export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
   { keys: ['['], label: 'Toggle trace list', scope: SHORTCUT_SCOPE.traces },
   { keys: ['/'], label: 'Search', scope: SHORTCUT_SCOPE.logs },
   { keys: ['Enter'], label: 'Expand', scope: SHORTCUT_SCOPE.logs },
+  { keys: PINS_APPROVE_KEYS, label: 'Approve drift', scope: SHORTCUT_SCOPE.pins },
 ];
