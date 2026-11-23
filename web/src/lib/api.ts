@@ -1189,8 +1189,9 @@ export async function deleteSkillFile(skillName: string, filePath: string): Prom
 
 // --- Skill Validation ---
 
-export async function validateSkillContent(content: string): Promise<SkillValidationResult> {
-  return mutateJSON<SkillValidationResult>('/api/registry/skills/validate', 'POST', { content });
+// Validates the exact object a save would send, so the verdict matches PUT.
+export async function validateSkill(skill: AgentSkill): Promise<SkillValidationResult> {
+  return mutateJSON<SkillValidationResult>('/api/registry/skills/validate', 'POST', { skill });
 }
 
 
