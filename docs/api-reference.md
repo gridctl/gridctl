@@ -3479,25 +3479,40 @@ Returns `409 Conflict` if a skill with the same name already exists.
 
 #### `POST /api/registry/skills/validate`
 
-Validates SKILL.md content without saving.
+Validates a skill without saving. Send exactly one of these fields:
+
+| Field | Description |
+|---|---|
+| `content` | Raw `SKILL.md` text. It is parsed as frontmatter plus body, then validated; a parse failure returns `valid: false` with a `Failed to parse SKILL.md: ...` error. |
+| `skill` | A skill object in the same JSON shape as the `PUT /api/registry/skills/{name}` body. It is validated exactly as a save would validate it, with no YAML step, so the verdict matches what `PUT` enforces. The web skill editor sends this field. |
+
+A request with both `skill` and a non-empty `content` returns `400 Bad Request` with a JSON `error`. A request with only `content` behaves as it did before `skill` was added.
 
 **Auth:** Yes
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/registry/skills/validate \
   -H "Content-Type: application/json" \
-  -d '{"content": "---\nname: test\n---\n# Test Skill"}'
+  -d '{"content": "---\nname: test\ndescription: A test skill\n---\n# Test Skill"}'
 ```
 
-**Response:**
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/registry/skills/validate \
+  -H "Content-Type: application/json" \
+  -d '{"skill": {"name": "test", "description": "Trigger when user mentions: deploy", "state": "draft", "body": "# Test Skill", "acceptanceCriteria": ["PASS: output is valid JSON"]}}'
+```
+
+**Response** (both examples):
 ```json
 {
   "valid": true,
-  "errors": [],
-  "warnings": [],
+  "errors": null,
+  "warnings": null,
   "parsed": { ... }
 }
 ```
+
+`errors` and `warnings` are lists of message strings, each starting with the field it concerns (for example `description is required`); an empty list may be sent as `null`. `parsed` is the skill that was validated: the parse result for `content`, or the submitted object for `skill`.
 
 #### `PUT /api/registry/skills/batch`
 
