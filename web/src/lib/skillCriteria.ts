@@ -27,3 +27,17 @@ export function parseAcceptanceCriterion(raw: string): ParsedCriterion {
   }
   return { given: raw, when: '', then: '', matched: false, raw };
 }
+
+/** The canonical string the editor writes for a three-part criterion. */
+export function formatAcceptanceCriterion(given: string, when: string, then: string): string {
+  return `GIVEN ${given} WHEN ${when} THEN ${then}`;
+}
+
+/**
+ * True when `raw` is exactly reproducible from its parsed parts, so the
+ * editor can show it as three fields without rewriting it on save.
+ */
+export function isCanonicalCriterion(raw: string): boolean {
+  const parsed = parseAcceptanceCriterion(raw);
+  return parsed.matched && formatAcceptanceCriterion(parsed.given, parsed.when, parsed.then) === raw;
+}

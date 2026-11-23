@@ -31,11 +31,16 @@ import { ConfirmDialog } from '../ui/ConfirmDialog';
 import {
   createRegistrySkill,
   updateRegistrySkill,
-  validateSkillContent,
+  validateSkill,
   resetSkill,
   detachSkill,
 } from '../../lib/api';
-import { parseAcceptanceCriterion } from '../../lib/skillCriteria';
+import {
+  formatAcceptanceCriterion,
+  isCanonicalCriterion,
+  parseAcceptanceCriterion,
+} from '../../lib/skillCriteria';
+import { Popover } from '../ui/Popover';
 import { extractRepoInfo } from '../../lib/repo';
 import { applyMarkdownAction, type MarkdownAction } from '../../lib/markdownEdit';
 import { cn } from '../../lib/cn';
@@ -60,93 +65,70 @@ interface MetadataEntry {
   value: string;
 }
 
-interface CriterionEntry {
-  id: number;
-  given: string;
-  when: string;
-  then: string;
+// A criterion row is three fields only when the stored string is exactly
+// reproducible from them; anything else is kept verbatim as free text.
+type CriterionEntry =
+  | { id: number; kind: 'structured'; given: string; when: string; then: string }
+  | { id: number; kind: 'text'; text: string };
+
+type CriterionField = 'given' | 'when' | 'then' | 'text';
+
+const SEED_WHEN = 'the skill is called';
+
+function seedCriterion(id: number): CriterionEntry {
+  return { id, kind: 'structured', given: '', when: SEED_WHEN, then: '' };
 }
 
-// --- Frontmatter builder ---
+function criterionFromString(raw: string, id: number): CriterionEntry {
+  if (isCanonicalCriterion(raw)) {
+    const parsed = parseAcceptanceCriterion(raw);
+    return { id, kind: 'structured', given: parsed.given, when: parsed.when, then: parsed.then };
+  }
+  return { id, kind: 'text', text: raw };
+}
 
-function buildSkillMDContent(fields: {
-  name: string;
-  description: string;
-  license?: string;
-  compatibility?: string;
-  allowedTools?: string;
-  metadata?: Record<string, string>;
-  acceptanceCriteria?: string[];
-  state: string;
-  body: string;
-}): string {
-  const lines: string[] = [];
-  lines.push(`name: ${fields.name}`);
-  lines.push(`description: ${fields.description}`);
-  if (fields.license) lines.push(`license: ${fields.license}`);
-  if (fields.compatibility) lines.push(`compatibility: ${fields.compatibility}`);
-  if (fields.allowedTools) lines.push(`allowed-tools: ${fields.allowedTools}`);
-  if (fields.metadata && Object.keys(fields.metadata).length > 0) {
-    lines.push('metadata:');
-    for (const [k, v] of Object.entries(fields.metadata)) {
-      // Escape for a YAML double-quoted scalar; imported values may carry
-      // embedded quotes (e.g. nested metadata coerced to JSON strings).
-      if (k) lines.push(`  ${k}: "${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`);
+// The only path from rows to stored strings: save, fork, the dirty check,
+// validation, and the summary count all go through it.
+function serializeCriteria(entries: CriterionEntry[]): string[] {
+  const out: string[] = [];
+  for (const c of entries) {
+    if (c.kind === 'text') {
+      if (c.text !== '') out.push(c.text);
+    } else if (c.given && c.when && c.then) {
+      out.push(formatAcceptanceCriterion(c.given, c.when, c.then));
     }
   }
-  if (fields.acceptanceCriteria && fields.acceptanceCriteria.length > 0) {
-    lines.push('acceptance_criteria:');
-    for (const c of fields.acceptanceCriteria) {
-      lines.push(`  - ${c}`);
-    }
-  }
-  if (fields.state) lines.push(`state: ${fields.state}`);
-  return `---\n${lines.join('\n')}\n---\n\n${fields.body}`;
+  return out;
+}
+
+// A partly filled structured row is not saved. The untouched seed row and
+// fully blank rows are dropped silently instead.
+function isIncompleteCriterion(c: CriterionEntry): boolean {
+  if (c.kind !== 'structured') return false;
+  const filled = [c.given, c.when, c.then].filter(Boolean).length;
+  if (filled === 0 || filled === 3) return false;
+  return !(c.given === '' && c.then === '' && c.when === SEED_WHEN);
+}
+
+function incompleteCriteriaKey(entries: CriterionEntry[]): string[][] {
+  return entries.flatMap((c) =>
+    c.kind === 'structured' && isIncompleteCriterion(c) ? [[c.given, c.when, c.then]] : [],
+  );
 }
 
 // --- Debounced validation ---
 
-interface ValidationFields {
-  name: string;
-  description: string;
-  license: string;
-  compatibility: string;
-  allowedTools: string;
-  metadata: MetadataEntry[];
-  criteria: CriterionEntry[];
-  state: string;
-  body: string;
-}
-
 function createDebouncedValidator(
   ms: number,
   onResult: (result: SkillValidationResult) => void,
-): { trigger: (fields: ValidationFields) => void; cancel: () => void } {
+): { trigger: (skill: AgentSkill) => void; cancel: () => void } {
   let timer: ReturnType<typeof setTimeout>;
   return {
-    trigger: (fields: ValidationFields) => {
+    trigger: (skill: AgentSkill) => {
       clearTimeout(timer);
       timer = setTimeout(async () => {
-        const metaRecord: Record<string, string> = {};
-        for (const entry of fields.metadata ?? []) {
-          if (entry.key) metaRecord[entry.key] = entry.value;
-        }
-        const criteriaStrings = (fields.criteria ?? [])
-          .filter((c) => c.given && c.when && c.then)
-          .map((c) => `GIVEN ${c.given} WHEN ${c.when} THEN ${c.then}`);
-        const content = buildSkillMDContent({
-          name: fields.name,
-          description: fields.description,
-          license: fields.license,
-          compatibility: fields.compatibility,
-          allowedTools: fields.allowedTools,
-          metadata: metaRecord,
-          acceptanceCriteria: criteriaStrings.length > 0 ? criteriaStrings : undefined,
-          state: fields.state,
-          body: fields.body,
-        });
         try {
-          const result = await validateSkillContent(content);
+          const result = await validateSkill(skill);
           onResult(result);
         } catch {
           // Validation API error - don't block editing
@@ -231,7 +213,7 @@ function AcceptanceCriteriaEditor({
   entries: CriterionEntry[];
   onAdd: () => void;
   onRemove: (id: number) => void;
-  onUpdate: (id: number, field: 'given' | 'when' | 'then', val: string) => void;
+  onUpdate: (id: number, field: CriterionField, val: string) => void;
 }) {
   return (
     <div>
@@ -239,6 +221,7 @@ function AcceptanceCriteriaEditor({
         <label className="text-xs text-text-muted uppercase tracking-wider">Acceptance Criteria</label>
         <button
           onClick={onAdd}
+          aria-label="Add acceptance criterion"
           className="text-xs text-primary hover:text-primary/80 flex items-center gap-0.5 transition-colors"
         >
           <Plus size={12} /> Add
@@ -248,7 +231,32 @@ function AcceptanceCriteriaEditor({
         <p className="text-xs text-text-muted italic">No acceptance criteria defined</p>
       )}
       <div className="space-y-3">
-        {(entries ?? []).map((entry, i) => (
+        {(entries ?? []).map((entry, i) => entry.kind === 'text' ? (
+          <div key={entry.id} className="rounded-lg border border-border/30 bg-background/40 p-3">
+            <div className="flex items-start gap-2">
+              <span className="text-3xs text-text-muted uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
+                TEXT
+              </span>
+              {/* A textarea, not an input: inputs strip newlines, and the
+                  stored string must survive a save unchanged. */}
+              <textarea
+                value={entry.text}
+                onChange={(e) => onUpdate(entry.id, 'text', e.target.value)}
+                aria-label={`Criterion ${i + 1}`}
+                rows={Math.min(Math.max(entry.text.split('\n').length, 2), 8)}
+                className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50 resize-y transition-colors"
+              />
+              <button
+                type="button"
+                onClick={() => onRemove(entry.id)}
+                aria-label={`Remove test case ${i + 1}`}
+                className="p-1 text-text-muted hover:text-status-error transition-colors mt-1 flex-shrink-0"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          </div>
+        ) : (
           <div key={entry.id} className="rounded-lg border border-border/30 bg-background/40 p-3 space-y-2">
             <div className="flex items-start gap-2">
               <span className="text-3xs text-text-muted uppercase tracking-wider w-12 pt-2.5 flex-shrink-0 font-mono">
@@ -296,6 +304,12 @@ function AcceptanceCriteriaEditor({
               />
               <div className="w-6 flex-shrink-0" />
             </div>
+            {isIncompleteCriterion(entry) && (
+              <p className="text-3xs text-status-pending flex items-center gap-1 pl-14">
+                <AlertTriangle size={10} className="flex-shrink-0" />
+                Incomplete: fill GIVEN, WHEN, and THEN, or this row is not saved
+              </p>
+            )}
           </div>
         ))}
       </div>
@@ -324,9 +338,7 @@ function buildSkillData(fields: SkillDataFields): AgentSkill {
   for (const entry of fields.metadata) {
     if (entry.key) metadataRecord[entry.key] = entry.value;
   }
-  const criteriaStrings = fields.criteria
-    .filter((c) => c.given && c.when && c.then)
-    .map((c) => `GIVEN ${c.given} WHEN ${c.when} THEN ${c.then}`);
+  const criteriaStrings = serializeCriteria(fields.criteria);
   return {
     name: fields.name,
     description: fields.description,
@@ -356,7 +368,7 @@ function fieldsFromSkill(skill: AgentSkill | undefined, body: string): SkillData
       compatibility: '',
       allowedTools: '',
       metadata: [],
-      criteria: [{ id: 0, given: '', when: 'the skill is called', then: '' }],
+      criteria: [seedCriterion(0)],
     };
   }
   return {
@@ -373,10 +385,7 @@ function fieldsFromSkill(skill: AgentSkill | undefined, body: string): SkillData
       key,
       value,
     })),
-    criteria: (skill.acceptanceCriteria ?? []).map((raw, index) => {
-      const parsed = parseAcceptanceCriterion(raw);
-      return { id: index + 1, given: parsed.given, when: parsed.when, then: parsed.then };
-    }),
+    criteria: (skill.acceptanceCriteria ?? []).map((raw, index) => criterionFromString(raw, index + 1)),
     extra: skill.extra,
   };
 }
@@ -459,13 +468,20 @@ export function SkillEditor({
   const [showPreview, setShowPreview] = useState(editorPrefs.showPreview);
   const [saving, setSaving] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // Which action waits on the incomplete-criteria confirm, if any.
+  const [confirmIncomplete, setConfirmIncomplete] = useState<'save' | 'fork' | null>(null);
   const [wasOpen, setWasOpen] = useState(isOpen);
   if (wasOpen !== isOpen) {
     setWasOpen(isOpen);
-    if (!isOpen) setConfirmDiscard(false);
+    if (!isOpen) {
+      setConfirmDiscard(false);
+      setConfirmIncomplete(null);
+    }
   }
   const [error, setError] = useState<string | null>(null);
   const [validation, setValidation] = useState<SkillValidationResult | null>(null);
+  const [showMessages, setShowMessages] = useState(false);
+  const messagesTriggerRef = useRef<HTMLButtonElement>(null);
 
   const toggleFrontmatter = useCallback(() => {
     setShowFrontmatter((prev) => {
@@ -494,7 +510,7 @@ export function SkillEditor({
   // One-line frontmatter summary shown while the section is collapsed.
   const frontmatterSummary = useMemo(() => {
     const metaCount = metadata.filter((m) => m.key).length;
-    const criteriaCount = criteria.filter((c) => c.given && c.when && c.then).length;
+    const criteriaCount = serializeCriteria(criteria).length;
     const parts = [
       license || 'no license',
       `${metaCount} metadata`,
@@ -527,15 +543,7 @@ export function SkillEditor({
       );
       setAllowedTools(skill.allowedTools ?? '');
       setCriteria(
-        (skill.acceptanceCriteria ?? []).map((c) => {
-          const parsed = parseAcceptanceCriterion(c);
-          return {
-            id: ++idCounter.current,
-            given: parsed.given,
-            when: parsed.when,
-            then: parsed.then,
-          };
-        }),
+        (skill.acceptanceCriteria ?? []).map((c) => criterionFromString(c, ++idCounter.current)),
       );
       setState(skill.state);
       // The body may not be loaded yet (the registry list omits it). Seed with
@@ -551,7 +559,7 @@ export function SkillEditor({
       setCompatibility('');
       setMetadata([]);
       setAllowedTools('');
-      setCriteria([{ id: ++idCounter.current, given: '', when: 'the skill is called', then: '' }]);
+      setCriteria([seedCriterion(++idCounter.current)]);
       setState('draft');
       setBody('');
       setOriginalBody('');
@@ -563,6 +571,8 @@ export function SkillEditor({
     setHydratedFor(null);
     setError(null);
     setValidation(null);
+    setShowMessages(false);
+    setConfirmIncomplete(null);
     // A new skill always opens with frontmatter expanded (its required fields
     // must be reachable); an existing skill honors the persisted preference.
     setShowFrontmatter(skill ? useUIStore.getState().editorPrefs.showFrontmatter : true);
@@ -609,29 +619,37 @@ export function SkillEditor({
 
   // Baseline derives from originalBody, which hydration adopts during render,
   // so a fetched body is the clean state rather than a snapshot taken before it landed.
-  const baseline = useMemo(
-    () => JSON.stringify(buildSkillData(fieldsFromSkill(skill, originalBody))),
-    [skill, originalBody],
-  );
-  const current = useMemo(
+  // Incomplete rows are not saved, but they are unsaved work, so they count
+  // toward the dirty comparison.
+  const baseline = useMemo(() => {
+    const fields = fieldsFromSkill(skill, originalBody);
+    return JSON.stringify([buildSkillData(fields), incompleteCriteriaKey(fields.criteria)]);
+  }, [skill, originalBody]);
+  // Unmodeled frontmatter keys pass through untouched; dropping them here
+  // would undo the backend's preservation on the first save. This one object
+  // is what save sends, what validation checks, and the dirty check's current side.
+  const saveData = useMemo(
     () =>
-      JSON.stringify(
-        buildSkillData({
-          name,
-          description,
-          body,
-          state,
-          fileCount: skill?.fileCount ?? 0,
-          license,
-          compatibility,
-          allowedTools,
-          metadata,
-          criteria,
-          extra: skill?.extra,
-        }),
-      ),
+      buildSkillData({
+        name,
+        description,
+        body,
+        state,
+        fileCount: skill?.fileCount ?? 0,
+        license,
+        compatibility,
+        allowedTools,
+        metadata,
+        criteria,
+        extra: skill?.extra,
+      }),
     [name, description, body, state, skill, license, compatibility, allowedTools, metadata, criteria],
   );
+  const current = useMemo(
+    () => JSON.stringify([saveData, incompleteCriteriaKey(criteria)]),
+    [saveData, criteria],
+  );
+  const incompleteCount = useMemo(() => criteria.filter(isIncompleteCriterion).length, [criteria]);
   // Name is immutable on an existing skill, so a mismatch means the reset
   // effect has not seeded the fields yet. That frame is not an edit.
   const fieldsSeeded = !skill || name === skill.name;
@@ -655,15 +673,21 @@ export function SkillEditor({
   // --- Criteria management ---
 
   const addCriterion = useCallback(() => {
-    setCriteria((prev) => [...prev, { id: ++idCounter.current, given: '', when: 'the skill is called', then: '' }]);
+    setCriteria((prev) => [...prev, seedCriterion(++idCounter.current)]);
   }, []);
 
   const removeCriterion = useCallback((entryId: number) => {
     setCriteria((prev) => prev.filter((c) => c.id !== entryId));
   }, []);
 
-  const updateCriterion = useCallback((entryId: number, field: 'given' | 'when' | 'then', val: string) => {
-    setCriteria((prev) => prev.map((c) => (c.id === entryId ? { ...c, [field]: val } : c)));
+  const updateCriterion = useCallback((entryId: number, field: CriterionField, val: string) => {
+    setCriteria((prev) =>
+      prev.map((c) => {
+        if (c.id !== entryId) return c;
+        if (c.kind === 'text') return field === 'text' ? { ...c, text: val } : c;
+        return field === 'text' ? c : { ...c, [field]: val };
+      }),
+    );
   }, []);
 
   // --- Debounced validation ---
@@ -675,14 +699,18 @@ export function SkillEditor({
 
   useEffect(() => {
     if (name || description || body) {
-      validator.trigger({ name, description, license, compatibility, allowedTools, metadata, criteria, state, body });
+      validator.trigger(saveData);
     }
     return () => validator.cancel();
-  }, [name, description, body, license, compatibility, allowedTools, metadata, criteria, state, validator]);
+  }, [name, description, body, saveData, validator]);
+
+  // Another confirm (discard, reset, detach, compare) is open; a new one must
+  // not stack on it.
+  const otherConfirmOpen = pendingAction !== null || showCompare || confirmDiscard || confirmIncomplete !== null;
 
   // --- Save handler ---
 
-  const handleSave = useCallback(async () => {
+  const performSave = useCallback(async () => {
     // Refuse to write unless the body is known: it is '' until the fetch
     // lands, and until it fails, so saving either state would silently erase
     // the skill's instructions.
@@ -690,21 +718,7 @@ export function SkillEditor({
     setSaving(true);
     setError(null);
     try {
-      // Unmodeled frontmatter keys pass through untouched; dropping them
-      // here would undo the backend's preservation on the first save.
-      const skillData = buildSkillData({
-        name,
-        description,
-        body,
-        state,
-        fileCount: skill?.fileCount ?? 0,
-        license,
-        compatibility,
-        allowedTools,
-        metadata,
-        criteria,
-        extra: skill?.extra,
-      });
+      const skillData = saveData;
 
       if (isNew) {
         await createRegistrySkill(skillData);
@@ -731,7 +745,18 @@ export function SkillEditor({
     } finally {
       setSaving(false);
     }
-  }, [saving, bodySettling, name, description, metadata, criteria, body, originalBody, state, skill, license, compatibility, allowedTools, isNew, isRemote, onSaved, onClose]);
+  }, [saving, bodySettling, name, description, saveData, body, originalBody, skill, isNew, isRemote, onSaved, onClose]);
+
+  // Save button and Cmd/Ctrl+S. Incomplete criteria rows are dropped by the
+  // save, so ask first; the confirm then calls performSave directly.
+  const handleSave = useCallback(() => {
+    if (saving || bodySettling || !name || !description) return;
+    if (incompleteCount > 0) {
+      if (!otherConfirmOpen) setConfirmIncomplete('save');
+      return;
+    }
+    void performSave();
+  }, [saving, bodySettling, name, description, incompleteCount, otherConfirmOpen, performSave]);
 
   // --- Markdown toolbar ---
 
@@ -800,7 +825,7 @@ export function SkillEditor({
     }
   }, [source, skill, onSaved, onClose]);
 
-  const handleFork = useCallback(async () => {
+  const performFork = useCallback(async () => {
     const newName = forkName.trim();
     if (!newName) return;
     setReconciling(true);
@@ -835,16 +860,46 @@ export function SkillEditor({
     }
   }, [forkName, description, body, state, license, compatibility, metadata, allowedTools, criteria, skill, onSaved, onClose]);
 
+  const handleFork = useCallback(() => {
+    if (!forkName.trim()) return;
+    if (incompleteCount > 0) {
+      if (!otherConfirmOpen) setConfirmIncomplete('fork');
+      return;
+    }
+    void performFork();
+  }, [forkName, incompleteCount, otherConfirmOpen, performFork]);
+
+  const confirmIncompleteAction = useCallback(() => {
+    const action = confirmIncomplete;
+    setConfirmIncomplete(null);
+    if (action === 'save') void performSave();
+    else if (action === 'fork') void performFork();
+  }, [confirmIncomplete, performSave, performFork]);
+
   // No-op while another confirm is open so two focus traps never stack.
   // Programmatic closes (save, reset, detach, fork, compare-take) call onClose directly.
   const requestClose = useCallback(() => {
-    if (pendingAction !== null || showCompare || confirmDiscard) return;
+    if (otherConfirmOpen) return;
     if (dirty && !saving) {
       setConfirmDiscard(true);
       return;
     }
     onClose();
-  }, [pendingAction, showCompare, confirmDiscard, dirty, saving, onClose]);
+  }, [otherConfirmOpen, dirty, saving, onClose]);
+
+  // --- Validation messages ---
+
+  // The incomplete-rows line is local: it shows even before the server has
+  // answered, and when the server result is clean.
+  const errorMessages = validation?.errors ?? [];
+  const warningMessages = [
+    ...(validation?.warnings ?? []),
+    ...(incompleteCount > 0
+      ? [`${incompleteCount} incomplete acceptance ${incompleteCount === 1 ? 'criterion' : 'criteria'} will not be saved`]
+      : []),
+  ];
+  const hasMessages = errorMessages.length > 0 || warningMessages.length > 0;
+  if (!hasMessages && showMessages) setShowMessages(false);
 
   // --- Keyboard shortcut: Cmd/Ctrl+S to save ---
 
@@ -1224,23 +1279,76 @@ export function SkillEditor({
         {/* Bottom status bar */}
         <div className="flex items-center justify-between px-5 py-2 border-t border-border/30 bg-surface/50 flex-shrink-0">
           <div className="flex items-center gap-3">
-            {/* Validation indicator */}
-            {validation && (
-              <span
-                className={cn(
-                  'text-xs flex items-center gap-1',
-                  validation.valid ? 'text-status-running' : 'text-status-error',
-                )}
-              >
-                {validation.valid ? <Check size={12} /> : <AlertCircle size={12} />}
-                {validation.valid ? 'Valid' : `${(validation.errors ?? []).length} error(s)`}
-              </span>
-            )}
-            {/* Warnings */}
-            {(validation?.warnings ?? []).length > 0 && (
-              <span className="text-xs text-status-pending flex items-center gap-1">
-                <AlertTriangle size={12} />
-                {(validation?.warnings ?? []).length} warning(s)
+            {/* Validation indicator: a button opening the full message list
+                whenever there is anything to read. */}
+            {hasMessages ? (
+              <div className="relative">
+                <button
+                  ref={messagesTriggerRef}
+                  type="button"
+                  onClick={() => setShowMessages((v) => !v)}
+                  aria-haspopup="dialog"
+                  aria-expanded={showMessages}
+                  aria-label={`Validation messages: ${errorMessages.length} error(s), ${warningMessages.length} warning(s)`}
+                  className="flex items-center gap-3 rounded-md px-1 -mx-1 hover:bg-surface-highlight transition-colors"
+                >
+                  {validation && (
+                    <span
+                      className={cn(
+                        'text-xs flex items-center gap-1',
+                        validation.valid ? 'text-status-running' : 'text-status-error',
+                      )}
+                    >
+                      {validation.valid ? <Check size={12} /> : <AlertCircle size={12} />}
+                      {validation.valid ? 'Valid' : `${errorMessages.length} error(s)`}
+                    </span>
+                  )}
+                  {warningMessages.length > 0 && (
+                    <span className="text-xs text-status-pending flex items-center gap-1">
+                      <AlertTriangle size={12} />
+                      {warningMessages.length} warning(s)
+                    </span>
+                  )}
+                </button>
+                <Popover
+                  open={showMessages}
+                  onClose={() => setShowMessages(false)}
+                  triggerRef={messagesTriggerRef}
+                  aria-label="Validation messages"
+                  className="absolute bottom-full left-0 mb-1 w-96 max-w-[80vw] max-h-64 overflow-y-auto scrollbar-dark p-3 space-y-3"
+                >
+                  {errorMessages.length > 0 && (
+                    <div>
+                      <p className="text-3xs text-text-muted uppercase tracking-wider mb-1">Errors</p>
+                      <ul className="space-y-1">
+                        {errorMessages.map((msg, i) => (
+                          <li key={`e${i}`} className="text-xs text-status-error flex items-start gap-1.5 break-words">
+                            <AlertCircle size={12} className="flex-shrink-0 mt-0.5" />
+                            <span className="min-w-0">{msg}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {warningMessages.length > 0 && (
+                    <div>
+                      <p className="text-3xs text-text-muted uppercase tracking-wider mb-1">Warnings</p>
+                      <ul className="space-y-1">
+                        {warningMessages.map((msg, i) => (
+                          <li key={`w${i}`} className="text-xs text-status-pending flex items-start gap-1.5 break-words">
+                            <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
+                            <span className="min-w-0">{msg}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </Popover>
+              </div>
+            ) : validation?.valid && (
+              <span className="text-xs flex items-center gap-1 text-status-running">
+                <Check size={12} />
+                Valid
               </span>
             )}
           </div>
@@ -1308,6 +1416,23 @@ export function SkillEditor({
         message={<p>This skill has unsaved edits. Discard them?</p>}
         confirmLabel="Discard"
         variant="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={confirmIncomplete !== null}
+        onClose={() => setConfirmIncomplete(null)}
+        onConfirm={confirmIncompleteAction}
+        title="Incomplete acceptance criteria"
+        message={
+          <p>
+            {incompleteCount === 1
+              ? '1 acceptance criterion is incomplete and will not be saved.'
+              : `${incompleteCount} acceptance criteria are incomplete and will not be saved.`}{' '}
+            Fill GIVEN, WHEN, and THEN to keep {incompleteCount === 1 ? 'it' : 'them'}.
+          </p>
+        }
+        confirmLabel={confirmIncomplete === 'fork' ? 'Fork anyway' : 'Save anyway'}
+        autoFocus="cancel"
       />
     </Modal>
   );

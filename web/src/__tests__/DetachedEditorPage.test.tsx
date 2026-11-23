@@ -17,7 +17,7 @@ vi.mock('../lib/api', () => ({
   fetchRegistrySkills: vi.fn().mockResolvedValue([]),
   updateRegistrySkill: vi.fn().mockResolvedValue({}),
   createRegistrySkill: vi.fn().mockResolvedValue({}),
-  validateSkillContent: vi.fn().mockResolvedValue({ valid: true, errors: [], warnings: [] }),
+  validateSkill: vi.fn().mockResolvedValue({ valid: true, errors: [], warnings: [] }),
   resetSkill: vi.fn().mockResolvedValue({}),
   detachSkill: vi.fn().mockResolvedValue({}),
 }));

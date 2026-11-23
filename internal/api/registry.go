@@ -474,14 +474,32 @@ func (s *Server) handleRegistrySkillFileDelete(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleRegistryValidate validates SKILL.md content without saving.
+// handleRegistryValidate validates a skill without saving. The request carries
+// either raw SKILL.md content or a skill object in the PUT body shape; the
+// latter is validated exactly as a save would validate it.
 // POST /api/registry/skills/validate
 func (s *Server) handleRegistryValidate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Content string `json:"content"` // Raw SKILL.md content
+		Content string               `json:"content"` // Raw SKILL.md content
+		Skill   *registry.AgentSkill `json:"skill"`   // Save payload, as sent to PUT
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Skill != nil {
+		if req.Content != "" {
+			writeJSONError(w, "Send either content or skill, not both", http.StatusBadRequest)
+			return
+		}
+		result := registry.ValidateSkillFull(req.Skill)
+		writeJSON(w, map[string]any{
+			"valid":    result.Valid(),
+			"errors":   result.Errors,
+			"warnings": result.Warnings,
+			"parsed":   req.Skill,
+		})
 		return
 	}
 
