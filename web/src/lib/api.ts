@@ -852,7 +852,12 @@ export async function triggerReload(): Promise<ReloadResult> {
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.error || `Reload failed: ${response.status}`);
+    const message = typeof data?.error === 'string' && data.error
+      ? data.error
+      : typeof data?.message === 'string' && data.message
+        ? data.message
+        : `Reload failed: ${response.status}`;
+    throw new Error(message);
   }
 
   return data;
@@ -1620,7 +1625,23 @@ export async function initializeStack(name: string): Promise<{ success: boolean;
  * GET /api/stack/plan
  */
 export async function fetchStackPlan(): Promise<PlanDiff> {
-  return fetchJSON<PlanDiff>('/api/stack/plan');
+  const response = await fetch(`${API_BASE}/api/stack/plan`, {
+    headers: buildHeaders(),
+  });
+
+  if (response.status === 401) throw new AuthError('Authentication required');
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new HTTPError(
+      response.status,
+      typeof data?.error === 'string' && data.error
+        ? data.error
+        : `API error: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  return response.json();
 }
 
 /**
