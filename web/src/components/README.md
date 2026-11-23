@@ -39,7 +39,7 @@ Creation wizard entry points use "Create new". The header "+" tooltip and the pa
 │   ├── <LogsWorkspace>       /logs
 │   ├── <TracesWorkspace>     /traces (Runs tab at ?view=runs)
 │   └── <ConnectionsWorkspace> /connections
-├── <StatusBar>        connection · servers · sessions · tokens · spec
+├── <StatusBar>        connection · alerts · servers · sessions · tokens
 ├── <CommandPalette>   workspace-scoped via the command registry
 ├── <PreferencesDialog> theme, compact mode, and text size
 ├── <ShortcutsPanel>   keyboard shortcuts (`?`)
