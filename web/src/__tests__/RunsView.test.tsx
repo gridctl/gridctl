@@ -73,6 +73,8 @@ describe('RunsView', () => {
       partial: false,
       status: null,
       isLoading: false,
+      hasLoaded: false,
+      loadedFilters: null,
       error: null,
       selectedId: null,
       filters: { server: '', tool: '', disposition: '', requested: '', client: '', access: '', attempt: '', parent: '', root: '', previous: '', trace: '', since: '', until: '' },
@@ -245,5 +247,137 @@ describe('RunsView', () => {
     const row = screen.getByRole('row', { name: /github/i });
     fireEvent.keyDown(row, { key: 'Enter' });
     expect(screen.getByLabelText('Run detail')).toBeInTheDocument();
+  });
+
+  it('keeps rows and shows the real error when a refresh fails', async () => {
+    render(
+      <MemoryRouter>
+        <RunsView servers={['github']} />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText(/github › create_issue/)).toBeInTheDocument());
+    vi.mocked(fetchRuns).mockRejectedValue(new Error('runs store offline'));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh run records' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('runs store offline');
+    expect(screen.getByText(/github › create_issue/)).toBeInTheDocument();
+    expect(screen.getByRole('grid', { name: 'Run records' })).toBeInTheDocument();
+    expect(screen.queryByText('Run history unavailable')).not.toBeInTheDocument();
+    expect(screen.getByText(/History: refresh failed/)).toBeInTheDocument();
+
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [record], warnings: [], partial: false, wipeEpoch: 0 });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  });
+
+  it('keeps rows when Load older fails', async () => {
+    vi.mocked(fetchRuns).mockResolvedValue({
+      records: [record],
+      warnings: [],
+      partial: false,
+      wipeEpoch: 0,
+      nextCursor: { sequence: 1 } as never,
+    });
+    render(
+      <MemoryRouter>
+        <RunsView servers={['github']} />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText(/github › create_issue/)).toBeInTheDocument());
+    vi.mocked(fetchRuns).mockRejectedValue(new Error('older page failed'));
+    fireEvent.click(screen.getByRole('button', { name: 'Load older' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('older page failed');
+    expect(screen.getByText(/github › create_issue/)).toBeInTheDocument();
+    expect(useRunsStore.getState().records).toHaveLength(1);
+  });
+
+  it('shows the failed state with the real error on a failed first load', async () => {
+    vi.mocked(fetchRuns).mockRejectedValue(new Error('disk read failed'));
+    render(
+      <MemoryRouter>
+        <RunsView servers={[]} />
+      </MemoryRouter>,
+    );
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Run history unavailable');
+    expect(alert).toHaveTextContent(/unreadable/);
+    expect(alert).toHaveTextContent('disk read failed');
+    expect(screen.getByText(/History: unreadable/)).toBeInTheDocument();
+  });
+
+  it('does not show rows from other filters after a failed filter change', async () => {
+    render(
+      <MemoryRouter>
+        <RunsView servers={['github']} />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText(/github › create_issue/)).toBeInTheDocument());
+    vi.mocked(fetchRuns).mockRejectedValue(new Error('filtered read failed'));
+    act(() => {
+      useRunsStore.getState().setFilters({ tool: 'list_repos' });
+    });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Run history unavailable');
+    expect(alert).toHaveTextContent('filtered read failed');
+    expect(screen.queryByText(/github › create_issue/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('grid', { name: 'Run records' })).not.toBeInTheDocument();
+    expect(useRunsStore.getState().hasLoaded).toBe(false);
+  });
+});
+
+describe('useRunsStore load failures', () => {
+  beforeEach(() => {
+    useRunsStore.setState({
+      records: [],
+      warnings: [],
+      partial: false,
+      nextCursor: null,
+      status: null,
+      isLoading: false,
+      hasLoaded: false,
+      loadedFilters: null,
+      error: null,
+      filters: { server: '', tool: '', disposition: '', requested: '', client: '', access: '', attempt: '', parent: '', root: '', previous: '', trace: '', since: '', until: '' },
+      loadSeq: 0,
+    });
+    vi.mocked(fetchRunsStatus).mockResolvedValue(status());
+  });
+
+  it('keeps records on a failed refresh under unchanged filters', async () => {
+    vi.mocked(fetchRuns).mockResolvedValueOnce({ records: [record], warnings: [], partial: false, wipeEpoch: 0 });
+    await useRunsStore.getState().load();
+    expect(useRunsStore.getState().hasLoaded).toBe(true);
+
+    vi.mocked(fetchRuns).mockRejectedValueOnce(new Error('boom'));
+    await useRunsStore.getState().load();
+    const s = useRunsStore.getState();
+    expect(s.records).toHaveLength(1);
+    expect(s.hasLoaded).toBe(true);
+    expect(s.error).toBe('boom');
+  });
+
+  it('drops records on a failed load under changed filters', async () => {
+    vi.mocked(fetchRuns).mockResolvedValueOnce({ records: [record], warnings: [], partial: false, wipeEpoch: 0 });
+    await useRunsStore.getState().load();
+    useRunsStore.getState().setFilters({ server: 'other' });
+
+    vi.mocked(fetchRuns).mockRejectedValueOnce(new Error('boom'));
+    await useRunsStore.getState().load();
+    const s = useRunsStore.getState();
+    expect(s.records).toHaveLength(0);
+    expect(s.hasLoaded).toBe(false);
+    expect(s.error).toBe('boom');
+  });
+
+  it('keeps records on a failed append', async () => {
+    vi.mocked(fetchRuns).mockResolvedValueOnce({ records: [record], warnings: [], partial: false, wipeEpoch: 0 });
+    await useRunsStore.getState().load();
+    vi.mocked(fetchRuns).mockRejectedValueOnce(new Error('boom'));
+    await useRunsStore.getState().load({ append: true });
+    expect(useRunsStore.getState().records).toHaveLength(1);
+    expect(useRunsStore.getState().hasLoaded).toBe(true);
   });
 });
