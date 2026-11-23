@@ -1,16 +1,18 @@
 import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { useSearchParams } from 'react-router';
-import { AlertCircle, RefreshCw, WifiOff } from 'lucide-react';
 import { Sidebar } from '../layout/Sidebar';
 import { Canvas } from '../graph/Canvas';
 import { AccessLens } from '../stack/AccessLens';
 import { SpecPane } from '../spec/SpecPane';
 import { ResizeHandle } from '../ui/ResizeHandle';
+import { FailedState, FailureBanner } from '../ui/EmptyState';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { usePollingRefresh } from '../../hooks/usePolling';
 import { WORKSPACE_LABELS } from '../../types/workspace';
+import { cn } from '../../lib/cn';
+import { refreshPhase } from '../../lib/refreshPhase';
 
 const SIDEBAR_DEFAULT = 320;
 const SIDEBAR_MIN = 280;
@@ -55,6 +57,8 @@ export function StackWorkspace() {
 
   const isLoading = useStackStore((s) => s.isLoading);
   const error = useStackStore((s) => s.error);
+  const connectionStatus = useStackStore((s) => s.connectionStatus);
+  const lastUpdated = useStackStore((s) => s.lastUpdated);
   const mcpServers = useStackStore((s) => s.mcpServers);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
 
@@ -62,6 +66,13 @@ export function StackWorkspace() {
     () => [...mcpServers].sort((a, b) => a.name.localeCompare(b.name)),
     [mcpServers],
   );
+
+  const phase = refreshPhase({ error, hasLoaded: lastUpdated !== null });
+  // A re-entered credential sets isLoading again; once a graph has loaded it
+  // stays on screen instead of going behind the loading overlay.
+  const showLoading = phase === 'loading' && isLoading;
+  const showFailed = phase === 'failed' && !isLoading;
+  const overlayUp = showLoading || showFailed;
 
   const refresh = usePollingRefresh();
 
@@ -90,7 +101,7 @@ export function StackWorkspace() {
         >
           <div className="relative overflow-hidden">
             {/* Loading State */}
-            {isLoading && (
+            {showLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-background/90 backdrop-blur-sm z-overlay">
                 <div className="text-center space-y-5 animate-fade-in-scale">
                   <div className="relative mx-auto w-16 h-16">
@@ -109,50 +120,51 @@ export function StackWorkspace() {
               </div>
             )}
 
-            {/* Error State */}
-            {error && !isLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-background/90 backdrop-blur-sm z-overlay">
-                <div className="text-center space-y-5 max-w-md p-8 animate-fade-in-scale">
-                  <div className="relative mx-auto w-20 h-20">
-                    <div className="absolute inset-0 bg-status-error/20 rounded-2xl blur-xl" />
-                    <div className="relative w-full h-full bg-status-error/10 rounded-2xl border border-status-error/20 flex items-center justify-center">
-                      {error.includes('unavailable') ? (
-                        <WifiOff size={32} className="text-status-error" />
-                      ) : (
-                        <AlertCircle size={32} className="text-status-error" />
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-semibold text-text-primary">
-                      {error.includes('unavailable') ? 'Gateway Unavailable' : 'Connection Error'}
-                    </h2>
-                    <p className="text-sm text-text-muted mt-2 leading-relaxed">{error}</p>
-                    {error.includes('unavailable') && (
-                      <p className="text-xs text-text-muted mt-3">
-                        The gateway may have been shut down or restarted. It will reconnect automatically when available.
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    onClick={handleRefresh}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-primary to-primary-dark text-background font-semibold rounded-lg hover:from-primary-light hover:to-primary transition-all shadow-glow-primary hover:shadow-[0_0_30px_--alpha(var(--color-primary)/30%)]"
-                  >
-                    <RefreshCw size={16} />
-                    Retry Connection
-                  </button>
-                </div>
+            {/* Error State: nothing loaded yet */}
+            {showFailed && error && (
+              <div className="absolute inset-0 flex items-center justify-center bg-background z-overlay">
+                <FailedState
+                  feature="Stack"
+                  message={
+                    connectionStatus === 'disconnected'
+                      ? `${error} The gateway may have been shut down or restarted. It will reconnect automatically when available.`
+                      : error
+                  }
+                  onRetry={handleRefresh}
+                />
               </div>
             )}
 
-            <Canvas />
+            {/* Overlays stay outside this wrapper so their Retry stays usable
+                while everything they cover is inert. */}
+            <div inert={overlayUp} className="absolute inset-0 flex flex-col">
+              {phase === 'stale' && error && (
+                <FailureBanner
+                  message={error}
+                  onRetry={handleRefresh}
+                  lastUpdated={lastUpdated}
+                  className="mx-3 mt-2 mb-2 flex-shrink-0"
+                />
+              )}
+              <div className="relative flex-1 min-h-0">
+                {/* Desaturate only the graph; the spec and Access Lens editors stay at full color. */}
+                <div
+                  className={cn(
+                    'absolute inset-0 transition motion-reduce:transition-none',
+                    phase === 'stale' && 'grayscale opacity-70',
+                  )}
+                >
+                  <Canvas />
+                </div>
 
-            {/* Access Lens authoring surface: header toggle, slide-over editor,
-                action bar, commit gate, and dirty-exit guard. Mounted in the
-                canvas column so its absolute overlays anchor to the canvas. */}
-            <AccessLens servers={accessServers} />
+                {/* Access Lens authoring surface: header toggle, slide-over editor,
+                    action bar, commit gate, and dirty-exit guard. Mounted beside
+                    the canvas so its absolute overlays anchor to the canvas. */}
+                <AccessLens servers={accessServers} />
 
-            {specOpen && <SpecPane onClose={closeSpec} />}
+                {specOpen && <SpecPane onClose={closeSpec} />}
+              </div>
+            </div>
           </div>
 
           {sidebarOpen && (

@@ -42,7 +42,7 @@ describe('StackWorkspace sidebar track', () => {
         <StackWorkspace />
       </MemoryRouter>,
     );
-    const grid = screen.getByTestId('canvas').parentElement?.parentElement as HTMLElement;
+    const grid = screen.getByTestId('canvas').closest('.grid') as HTMLElement;
     expect(grid.style.gridTemplateColumns).toContain('min(320px, 60%)');
 
     Object.defineProperty(grid, 'clientWidth', { value: 390, configurable: true });
