@@ -427,6 +427,9 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 		// importer's legacy contract).
 		SelectedAgents []string     `json:"selectedAgents,omitempty"`
 		Auth           *AuthRequest `json:"auth,omitempty"`
+		// NoActivateSkills names skills imported as draft. When Selected is
+		// non-empty, every name must also appear in Selected.
+		NoActivateSkills []string `json:"noActivateSkills,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -436,6 +439,19 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 	if req.Repo == "" {
 		writeJSONError(w, "repo is required", http.StatusBadRequest)
 		return
+	}
+
+	if len(req.Selected) > 0 {
+		selected := make(map[string]bool, len(req.Selected))
+		for _, name := range req.Selected {
+			selected[name] = true
+		}
+		for _, name := range req.NoActivateSkills {
+			if !selected[name] {
+				writeJSONError(w, fmt.Sprintf("noActivateSkills names %q, which is not in selected", name), http.StatusBadRequest)
+				return
+			}
+		}
 	}
 
 	authCfg, err := req.Auth.toAuthConfig(s.vaultStore)
@@ -474,16 +490,17 @@ func (s *Server) handleSkillSourceAdd(w http.ResponseWriter, r *http.Request) {
 	imp := skills.NewImporter(store, registryDir, lockPath, logger)
 	imp.SetCredentialResolver(s.credentialResolver())
 	result, err := imp.Import(r.Context(), skills.ImportOptions{
-		Repo:           req.Repo,
-		Ref:            req.Ref,
-		Path:           req.Path,
-		Kind:           kind,
-		KnownName:      knownName,
-		Trust:          req.Trust,
-		NoActivate:     req.NoActivate,
-		Selected:       req.Selected,
-		SelectedAgents: req.SelectedAgents,
-		Auth:           authCfg,
+		Repo:             req.Repo,
+		Ref:              req.Ref,
+		Path:             req.Path,
+		Kind:             kind,
+		KnownName:        knownName,
+		Trust:            req.Trust,
+		NoActivate:       req.NoActivate,
+		NoActivateSkills: req.NoActivateSkills,
+		Selected:         req.Selected,
+		SelectedAgents:   req.SelectedAgents,
+		Auth:             authCfg,
 	})
 	if err != nil {
 		if errors.Is(err, skills.ErrSourceConflict) {

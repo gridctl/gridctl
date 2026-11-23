@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useId } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -51,6 +51,10 @@ export function SkillImportWizard() {
   // settings, so the trust grant needs its own visible consent instead of
   // riding silently on a checked box.
   const [agentsTrustAck, setAgentsTrustAck] = useState(false);
+  // Explicit acknowledgment before flagged skills install, given on the
+  // configure step. Cleared whenever the skill selection or preview changes
+  // so consent never carries over to a different set of skills.
+  const [skillsTrustAck, setSkillsTrustAck] = useState(false);
 
   // Install state
   const [installing, setInstalling] = useState(false);
@@ -98,6 +102,7 @@ export function SkillImportWizard() {
       setSelected(autoSelected);
       setSelectedAgents(autoAgents);
       setAgentsTrustAck(false);
+      setSkillsTrustAck(false);
       setConfigs(configMap);
       setInstallError('');
       setStep('browse');
@@ -105,22 +110,49 @@ export function SkillImportWizard() {
     [],
   );
 
+  const flaggedSkills = previews.filter(
+    (p) => selected.has(p.name) && (p.findings?.length ?? 0) > 0,
+  );
+  const flaggedSkillsSelected = flaggedSkills.length > 0;
+  const flaggedAgentsSelected = agentPreviews.some(
+    (a) => selectedAgents.has(a.name) && (a.findings?.length ?? 0) > 0,
+  );
+  // Skills with findings or a name collision route through the configure
+  // step. Agents have no per-item settings (their findings show inline in
+  // the browse section), so only selected skills count.
+  const routesToConfigure =
+    selected.size > 0 &&
+    previews.some((p) => selected.has(p.name) && ((p.findings?.length ?? 0) > 0 || p.exists));
+
+  const handleSkillSelectionChange = useCallback((next: Set<string>) => {
+    setSelected(next);
+    setSkillsTrustAck(false);
+  }, []);
+
+  const handleAgentSelectionChange = useCallback((next: Set<string>) => {
+    setSelectedAgents(next);
+    setAgentsTrustAck(false);
+  }, []);
+
   const handleInstall = useCallback(async () => {
     setInstalling(true);
     setInstallResult(null);
     setInstallError('');
 
     try {
-      const hasFlagged =
-        previews.some((p) => selected.has(p.name) && (p.findings?.length ?? 0) > 0) ||
-        agentPreviews.some((a) => selectedAgents.has(a.name) && (a.findings?.length ?? 0) > 0);
+      // Trust is request-wide on the server, so it is granted only from an
+      // acknowledgment the operator ticked, never from findings alone.
+      const trust =
+        (flaggedSkillsSelected && skillsTrustAck) || (flaggedAgentsSelected && agentsTrustAck);
+      const noActivateSkills = [...selected].filter((name) => configs.get(name)?.activate === false);
 
       const result = await addSkillSource({
         repo: repoUrl,
         ref: ref || undefined,
         path: path || undefined,
-        trust: hasFlagged,
+        trust,
         noActivate: false,
+        noActivateSkills: noActivateSkills.length > 0 ? noActivateSkills : undefined,
         selected: [...selected],
         selectedAgents: [...selectedAgents],
         auth,
@@ -174,11 +206,19 @@ export function SkillImportWizard() {
     } finally {
       setInstalling(false);
     }
-  }, [repoUrl, ref, path, previews, selected, agentPreviews, selectedAgents, auth]);
-
-  const flaggedAgentsSelected = agentPreviews.some(
-    (a) => selectedAgents.has(a.name) && (a.findings?.length ?? 0) > 0,
-  );
+  }, [
+    repoUrl,
+    ref,
+    path,
+    selected,
+    selectedAgents,
+    configs,
+    auth,
+    flaggedSkillsSelected,
+    skillsTrustAck,
+    flaggedAgentsSelected,
+    agentsTrustAck,
+  ]);
 
   const canGoNext = () => {
     switch (step) {
@@ -190,7 +230,7 @@ export function SkillImportWizard() {
           (!flaggedAgentsSelected || agentsTrustAck)
         );
       case 'configure':
-        return true;
+        return !flaggedSkillsSelected || skillsTrustAck;
       default:
         return false;
     }
@@ -198,15 +238,7 @@ export function SkillImportWizard() {
 
   const goNext = () => {
     if (step === 'browse') {
-      // Skip configure if no configuration needed. Agents have no per-item
-      // settings (their findings show inline in the browse section), so
-      // only selected skills route through the configure step.
-      const needsConfig =
-        selected.size > 0 &&
-        previews.some(
-          (p) => selected.has(p.name) && ((p.findings?.length ?? 0) > 0 || p.exists),
-        );
-      if (!needsConfig) {
+      if (!routesToConfigure) {
         handleInstall();
         return;
       }
@@ -268,14 +300,14 @@ export function SkillImportWizard() {
               <BrowseStep
                 previews={previews}
                 selected={selected}
-                onSelectionChange={setSelected}
+                onSelectionChange={handleSkillSelectionChange}
               />
             )}
             {agentPreviews.length > 0 && (
               <AgentsBrowseSection
                 previews={agentPreviews}
                 selected={selectedAgents}
-                onSelectionChange={setSelectedAgents}
+                onSelectionChange={handleAgentSelectionChange}
               />
             )}
             {flaggedAgentsSelected && (
@@ -288,7 +320,8 @@ export function SkillImportWizard() {
                 />
                 <span className="text-xs text-text-secondary">
                   Import the flagged agents anyway. This grants the import trust to proceed
-                  despite the security findings listed above.
+                  despite the security findings listed above. Trust applies to every item in this
+                  import, including skills.
                 </span>
               </label>
             )}
@@ -300,6 +333,9 @@ export function SkillImportWizard() {
             previews={previews.filter((p) => selected.has(p.name))}
             configs={configs}
             onConfigChange={setConfigs}
+            flagged={flaggedSkills}
+            trustAck={skillsTrustAck}
+            onTrustAckChange={setSkillsTrustAck}
           />
         )}
 
@@ -342,7 +378,10 @@ export function SkillImportWizard() {
                     <Loader2 size={14} className="animate-spin" />
                     Installing...
                   </>
-                ) : step === 'configure' || (step === 'browse' && (selected.size > 0 || selectedAgents.size > 0)) ? (
+                ) : step === 'configure' ||
+                  (step === 'browse' &&
+                    !routesToConfigure &&
+                    (selected.size > 0 || selectedAgents.size > 0)) ? (
                   <>
                     <Download size={14} />
                     Install{' '}
@@ -368,19 +407,24 @@ export function SkillImportWizard() {
   );
 }
 
-// Configure step — per-skill accordion with settings
+// Configure step — per-skill activation and the trust acknowledgment for
+// flagged skills
 function ConfigureStep({
   previews,
   configs,
   onConfigChange,
+  flagged,
+  trustAck,
+  onTrustAckChange,
 }: {
   previews: SkillPreview[];
   configs: Map<string, SkillConfig>;
   onConfigChange: (configs: Map<string, SkillConfig>) => void;
+  flagged: SkillPreview[];
+  trustAck: boolean;
+  onTrustAckChange: (ack: boolean) => void;
 }) {
-  const [expanded, setExpanded] = useState<string | null>(
-    previews.length > 0 ? previews[0].name : null,
-  );
+  const trustId = useId();
 
   const updateConfig = (name: string, updates: Partial<SkillConfig>) => {
     const next = new Map(configs);
@@ -400,72 +444,89 @@ function ConfigureStep({
 
       {previews.map((preview) => {
         const config = configs.get(preview.name) ?? { name: preview.name, activate: true };
-        const isExpanded = expanded === preview.name;
-        const hasFindings = (preview.findings?.length ?? 0) > 0;
+        const findingsCount = preview.findings?.length ?? 0;
 
         return (
           <div
             key={preview.name}
-            className="rounded-xl border border-border/20 bg-surface-overlay-1 overflow-hidden"
+            className="flex items-center gap-3 px-4 py-3 rounded-xl border border-border/20 bg-surface-overlay-1"
           >
-            <button
-              onClick={() => setExpanded(isExpanded ? null : preview.name)}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-overlay-1 transition-colors"
-            >
-              <span className="text-xs font-medium text-text-primary flex-1 text-left">
-                {preview.name}
+            <span className="text-xs font-medium text-text-primary flex-1 min-w-0 truncate">
+              {preview.name}
+            </span>
+            {findingsCount > 0 && (
+              <span className="text-3xs px-1.5 py-0.5 rounded-full bg-status-pending/10 text-status-pending flex items-center gap-1">
+                <AlertTriangle size={8} />
+                {findingsCount} finding{findingsCount !== 1 ? 's' : ''}
               </span>
-              {hasFindings && (
-                <span className="text-3xs px-1.5 py-0.5 rounded-full bg-status-pending/10 text-status-pending flex items-center gap-1">
-                  <AlertTriangle size={8} />
-                  {preview.findings?.length} finding{(preview.findings?.length ?? 0) !== 1 ? 's' : ''}
-                </span>
-              )}
-              {preview.exists && (
-                <span className="text-3xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
-                  exists
-                </span>
-              )}
-            </button>
-
-            {isExpanded && (
-              <div className="px-4 pb-4 pt-1 border-t border-border/10 space-y-3">
-                {/* Activate toggle */}
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={config.activate}
-                    onChange={(e) => updateConfig(preview.name, { activate: e.target.checked })}
-                    className="rounded border-border/40 bg-background/60 text-primary focus:ring-primary/50"
-                  />
-                  <span className="text-xs text-text-secondary">Activate after import</span>
-                </label>
-
-                {/* Security findings */}
-                {hasFindings && (
-                  <div className="space-y-1">
-                    <span className="text-3xs text-text-muted uppercase tracking-wider">Security Findings</span>
-                    {preview.findings?.map((f, i) => (
-                      <div
-                        key={i}
-                        className={cn(
-                          'text-3xs px-2 py-1.5 rounded-lg flex items-start gap-1.5',
-                          f.severity === 'danger'
-                            ? 'bg-status-error/10 text-status-error'
-                            : 'bg-status-pending/10 text-status-pending',
-                        )}
-                      >
-                        <AlertTriangle size={10} className="flex-shrink-0 mt-0.5" />
-                        <span>{f.description}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
             )}
+            {preview.exists && (
+              <span className="text-3xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                exists
+              </span>
+            )}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.activate}
+                onChange={(e) => updateConfig(preview.name, { activate: e.target.checked })}
+                aria-label={`Activate ${preview.name} after import`}
+                className="rounded border-border/40 bg-background/60 text-primary focus:ring-primary/50"
+              />
+              <span className="text-xs text-text-secondary">Activate after import</span>
+            </label>
           </div>
         );
       })}
+
+      {flagged.length > 0 && (
+        <div
+          role="group"
+          aria-label="Security findings"
+          className="mt-3 rounded-xl border border-status-pending/30 bg-status-pending/5 p-4 space-y-3"
+        >
+          <p className="flex items-center gap-1.5 text-xs text-status-pending font-medium">
+            <AlertTriangle size={13} aria-hidden="true" /> Security findings
+          </p>
+          <ul className="space-y-2">
+            {flagged.map((preview) => (
+              <li key={preview.name} className="space-y-1">
+                <span className="text-xs font-medium text-text-primary">{preview.name}</span>
+                {(preview.findings ?? []).map((f, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      'text-3xs px-2 py-1.5 rounded-lg flex items-start gap-1.5',
+                      f.severity === 'danger'
+                        ? 'bg-status-error/10 text-status-error'
+                        : 'bg-status-pending/10 text-status-pending',
+                    )}
+                  >
+                    <AlertTriangle size={10} className="flex-shrink-0 mt-0.5" />
+                    <span>
+                      {f.description}
+                      {f.stepId && <span className="text-text-muted ml-1">({f.stepId})</span>}
+                    </span>
+                  </div>
+                ))}
+              </li>
+            ))}
+          </ul>
+          <label htmlFor={trustId} className="flex items-start gap-2 cursor-pointer">
+            <input
+              id={trustId}
+              type="checkbox"
+              checked={trustAck}
+              onChange={(e) => onTrustAckChange(e.target.checked)}
+              className="mt-0.5 rounded border-border/40 bg-background/60 text-primary focus:ring-primary/50"
+            />
+            <span className="text-xs text-text-secondary">
+              Import the flagged skills anyway, despite the security findings listed above.
+              Trust applies to every item in this import, not only the skills listed here.
+            </span>
+          </label>
+        </div>
+      )}
     </div>
   );
 }

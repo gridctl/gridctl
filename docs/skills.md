@@ -163,6 +163,8 @@ Supported auth flows for private repos:
 
 gridctl does not read `~/.ssh/config`, and a daemonized gridctl inherits `SSH_AUTH_SOCK` only from the shell that started it, so an SSH URL that works with the `git` CLI can still fail. A user service does not inherit the shell agent. See [troubleshooting](troubleshooting.md#ssh-agent-not-available) and [Run as a service](installation.md#run-as-a-service).
 
+The Library import wizard is the web form of `skill add` for git sources. When a selected skill has scan findings or the name of an existing skill, Browse leads to a Configure step (the footer button reads Next); otherwise Install imports the selection from Browse as `active`. On Configure, each skill row has its own "Activate after import" checkbox, and a skill left unticked imports as `draft` through the `noActivateSkills` request field. Every flagged selected skill is listed with its findings in one block, and Install stays disabled until that block's acknowledgment is ticked. The wizard sends `trust` only from a ticked skill or agent acknowledgment, and trust covers every skill and agent in the import, as `--trust` does. Changing the skill or agent selection clears the matching acknowledgment. A skill with no findings is labeled "no findings", which is not a claim that it is safe. See [`POST /api/skills/sources`](api-reference.md#post-apiskillssources).
+
 ### Reconciling local edits (web UI)
 
 A `SKILL.md` imported from git can be edited in the Library workspace. An edited

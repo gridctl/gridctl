@@ -337,10 +337,13 @@ describe('SkillImportWizard install failures', () => {
     vi.mocked(addSkillSource)
       .mockRejectedValueOnce(new Error('clone failed'))
       .mockRejectedValueOnce(new Error('still failing'));
-    const next = await scanToBrowse();
-    fireEvent.click(next);
+    render(<SkillImportWizard />);
+    fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repo'), { target: { value: REPO } });
+    fireEvent.click(screen.getByText('Scan for Skills'));
+    fireEvent.click(await screen.findByRole('button', { name: /Next/ }));
     expect(await screen.findByText('Configure Skills')).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole('checkbox', { name: /Import the flagged skills anyway/ }));
     fireEvent.click(screen.getByRole('button', { name: /Install 1 Skill/ }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Import failed: clone failed.');
@@ -366,5 +369,203 @@ describe('SkillImportWizard install failures', () => {
     expect(screen.getByText('test-skill')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(showToast).toHaveBeenCalledWith('success', 'Imported 1 skill');
+  });
+});
+
+describe('SkillImportWizard activation and trust', () => {
+  const REPO = 'https://github.com/owner/repo';
+  const flaggedPreviews = () => [
+    makePreview({ name: 'clean-skill', body: 'clean body' }),
+    makePreview({
+      name: 'flagged-one',
+      findings: [{ stepId: 'body', pattern: 'p1', severity: 'danger', description: 'piped curl to shell execution' }],
+    }),
+    makePreview({
+      name: 'flagged-two',
+      findings: [{ stepId: 'body', pattern: 'p2', severity: 'warning', description: 'world-writable permissions' }],
+    }),
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(addSkillSource).mockResolvedValue({ imported: [] } as never);
+  });
+
+  async function scan(preview: unknown) {
+    vi.mocked(previewSkillSource).mockResolvedValue(preview as never);
+    render(<SkillImportWizard />);
+    fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repo'), { target: { value: REPO } });
+    fireEvent.click(screen.getByText('Scan for Skills'));
+    await screen.findByText(/found$/);
+  }
+
+  async function toConfigure() {
+    await scan({ skills: flaggedPreviews() });
+    const next = screen.getByRole('button', { name: /Next/ });
+    expect(screen.queryByRole('button', { name: /Install/ })).not.toBeInTheDocument();
+    fireEvent.click(next);
+    await screen.findByText('Configure Skills');
+  }
+
+  const ack = () => screen.getByRole('checkbox', { name: /Import the flagged skills anyway/ });
+  const install = () => screen.getByRole('button', { name: /Install 3 Skills/ });
+
+  it('lists every flagged skill and gates Install on the acknowledgment', async () => {
+    await toConfigure();
+
+    const group = screen.getByRole('group', { name: 'Security findings' });
+    expect(group).toHaveTextContent('flagged-one');
+    expect(group).toHaveTextContent('piped curl to shell execution');
+    expect(group).toHaveTextContent('flagged-two');
+    expect(group).toHaveTextContent('world-writable permissions');
+    expect(group).not.toHaveTextContent('clean-skill');
+    expect(ack()).toHaveAccessibleName(expect.stringContaining('Trust applies to every item in this import'));
+
+    expect(install()).toBeDisabled();
+    fireEvent.click(ack());
+    expect(install()).not.toBeDisabled();
+  });
+
+  it('sends trust and the unticked skill as noActivateSkills', async () => {
+    await toConfigure();
+
+    for (const name of ['clean-skill', 'flagged-one', 'flagged-two']) {
+      expect(screen.getByRole('checkbox', { name: `Activate ${name} after import` })).toBeChecked();
+    }
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Activate flagged-two after import' }));
+    fireEvent.click(ack());
+    fireEvent.click(install());
+
+    await waitFor(() => expect(addSkillSource).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(addSkillSource).mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        trust: true,
+        noActivateSkills: ['flagged-two'],
+        selected: ['clean-skill', 'flagged-one', 'flagged-two'],
+      }),
+    );
+  });
+
+  it('omits noActivateSkills when every skill stays active', async () => {
+    await toConfigure();
+    fireEvent.click(ack());
+    fireEvent.click(install());
+
+    await waitFor(() => expect(addSkillSource).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(addSkillSource).mock.calls[0][0].noActivateSkills).toBeUndefined();
+  });
+
+  it('clears the acknowledgment when the skill selection changes', async () => {
+    await toConfigure();
+    fireEvent.click(ack());
+    expect(ack()).toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: /Back/ }));
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Select flagged-two' }));
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }));
+    await screen.findByText('Configure Skills');
+
+    expect(ack()).not.toBeChecked();
+    expect(screen.getByRole('button', { name: /Install 2 Skills/ })).toBeDisabled();
+    expect(screen.getByRole('group', { name: 'Security findings' })).not.toHaveTextContent('flagged-two');
+  });
+
+  it('clears the acknowledgment when a new preview loads', async () => {
+    await toConfigure();
+    fireEvent.click(ack());
+    expect(ack()).toBeChecked();
+
+    fireEvent.click(screen.getByRole('button', { name: /Back/ }));
+    await screen.findByRole('checkbox', { name: 'Select flagged-two' });
+    fireEvent.click(screen.getByRole('button', { name: /Back/ }));
+    fireEvent.change(await screen.findByPlaceholderText('https://github.com/owner/repo'), { target: { value: REPO } });
+    fireEvent.click(screen.getByText('Scan for Skills'));
+    await waitFor(() => expect(previewSkillSource).toHaveBeenCalledTimes(2));
+    fireEvent.click(await screen.findByRole('button', { name: /Next/ }));
+    await screen.findByText('Configure Skills');
+
+    expect(ack()).not.toBeChecked();
+    expect(install()).toBeDisabled();
+  });
+
+  it('installs clean skills from Browse without trust', async () => {
+    await scan({ skills: [makePreview({ name: 'clean-a' }), makePreview({ name: 'clean-b' })] });
+    fireEvent.click(screen.getByRole('button', { name: /Install 2 Skills/ }));
+
+    await waitFor(() => expect(addSkillSource).toHaveBeenCalledTimes(1));
+    const req = vi.mocked(addSkillSource).mock.calls[0][0];
+    expect(req.trust).toBeFalsy();
+    expect(req.noActivateSkills).toBeUndefined();
+  });
+
+  it('states request-wide trust on the agent acknowledgment and clears it on selection change', async () => {
+    await scan({
+      skills: [makePreview({ name: 'clean-skill' })],
+      agents: [
+        {
+          name: 'risky-agent',
+          description: 'flagged agent',
+          body: '',
+          valid: true,
+          exists: false,
+          findings: [{ stepId: 'body', pattern: 'p', severity: 'danger', description: 'piped curl to shell execution' }],
+        },
+        { name: 'calm-agent', description: 'clean agent', body: '', valid: true, exists: false, findings: [] },
+      ],
+    });
+
+    const agentAck = screen.getByRole('checkbox', { name: /Import the flagged agents anyway/ });
+    expect(agentAck).toHaveAccessibleName(
+      expect.stringContaining('Trust applies to every item in this import, including skills.'),
+    );
+    const installBtn = screen.getByRole('button', { name: /Install 1 Skill, 2 Agents/ });
+    expect(installBtn).toBeDisabled();
+
+    fireEvent.click(agentAck);
+    expect(agentAck).toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox', { name: /calm-agent/ }));
+    expect(screen.getByRole('checkbox', { name: /Import the flagged agents anyway/ })).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /Import the flagged agents anyway/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Install 1 Skill, 1 Agent/ }));
+    await waitFor(() => expect(addSkillSource).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(addSkillSource).mock.calls[0][0]).toEqual(
+      expect.objectContaining({ trust: true, selectedAgents: ['risky-agent'] }),
+    );
+  });
+});
+
+describe('BrowseStep scan badge and keyboard preview', () => {
+  it('labels a clean scan "no findings" and never "safe"', () => {
+    render(<BrowseStep previews={[makePreview()]} selected={new Set()} onSelectionChange={vi.fn()} />);
+    expect(screen.queryByText('safe')).toBeNull();
+    const badge = screen.getByText('no findings');
+    expect(badge).toHaveAttribute('title', expect.stringContaining('Heuristic scan of SKILL.md'));
+    expect(badge.className).not.toMatch(/status-running/);
+  });
+
+  it('changes the preview from a focusable button on each row', () => {
+    render(
+      <BrowseStep
+        previews={[
+          makePreview({ name: 'first-skill', body: 'first body' }),
+          makePreview({ name: 'second-skill', body: 'second body' }),
+        ]}
+        selected={new Set()}
+        onSelectionChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Preview first-skill' })).toHaveAttribute('aria-current', 'true');
+    expect(screen.queryByText('second body')).toBeNull();
+
+    const second = screen.getByRole('button', { name: 'Preview second-skill' });
+    expect(second).not.toHaveAttribute('aria-current');
+    second.focus();
+    expect(second).toHaveFocus();
+    fireEvent.click(second);
+
+    expect(screen.getByText('second body')).toBeInTheDocument();
+    expect(second).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByRole('button', { name: 'Preview first-skill' })).not.toHaveAttribute('aria-current');
   });
 });
