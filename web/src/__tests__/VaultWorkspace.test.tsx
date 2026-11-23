@@ -481,6 +481,82 @@ describe('VaultWorkspace — inspector selection', () => {
       await screen.findByRole('option', { name: /REDIS_URL/i, selected: true }),
     ).toBeInTheDocument();
   });
+
+  it('selects the last row on ArrowUp with nothing selected', async () => {
+    renderWorkspace();
+    await screen.findByRole('option', { name: /POSTGRES_URL/i });
+
+    fireEvent.keyDown(document.body, { key: 'ArrowUp' });
+    expect(
+      await screen.findByRole('option', { name: /REDIS_URL/i, selected: true }),
+    ).toBeInTheDocument();
+  });
+
+  it('edits the highlighted row after a click and an arrow move', async () => {
+    vi.mocked(api.getVariable).mockClear();
+    renderWorkspace();
+    const postgres = await screen.findByRole('option', { name: /POSTGRES_URL/i });
+    fireEvent.click(postgres);
+    postgres.focus();
+
+    fireEvent.keyDown(postgres, { key: 'ArrowDown' });
+    const redis = await screen.findByRole('option', { name: /REDIS_URL/i, selected: true });
+    expect(redis).toHaveFocus();
+
+    expect(fireEvent.keyDown(document.activeElement!, { key: 'Enter' })).toBe(false);
+    expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'REDIS_URL' })).toBeInTheDocument();
+    expect(api.getVariable).toHaveBeenCalledWith('REDIS_URL');
+    expect(api.getVariable).not.toHaveBeenCalledWith('POSTGRES_URL');
+  });
+
+  it('selects and edits a focused row that was not selected', async () => {
+    vi.mocked(api.getVariable).mockClear();
+    renderWorkspace();
+    const redis = await screen.findByRole('option', { name: /REDIS_URL/i });
+    redis.focus();
+
+    expect(fireEvent.keyDown(redis, { key: 'Enter' })).toBe(false);
+    expect(
+      await screen.findByRole('option', { name: /REDIS_URL/i, selected: true }),
+    ).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(api.getVariable).toHaveBeenCalledWith('REDIS_URL');
+    expect(api.getVariable).toHaveBeenCalledTimes(1);
+  });
+
+  it('edits a focused row, not the previously selected one', async () => {
+    vi.mocked(api.getVariable).mockClear();
+    renderWorkspace();
+    fireEvent.click(await screen.findByRole('option', { name: /POSTGRES_URL/i }));
+    await screen.findByRole('heading', { name: 'POSTGRES_URL' });
+
+    const redis = screen.getByRole('option', { name: /REDIS_URL/i });
+    redis.focus();
+    fireEvent.keyDown(redis, { key: 'Enter' });
+
+    expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'REDIS_URL' })).toBeInTheDocument();
+    expect(api.getVariable).toHaveBeenCalledWith('REDIS_URL');
+    expect(api.getVariable).not.toHaveBeenCalledWith('POSTGRES_URL');
+  });
+
+  it('leaves Enter on a toolbar button to the button', async () => {
+    vi.mocked(api.getVariable).mockClear();
+    renderWorkspace();
+    const postgres = await screen.findByRole('option', { name: /POSTGRES_URL/i });
+    fireEvent.click(postgres);
+    await screen.findByRole('heading', { name: 'POSTGRES_URL' });
+
+    const importButton = screen.getAllByRole('button', { name: /import \.env/i })[0];
+    importButton.focus();
+    expect(fireEvent.keyDown(importButton, { key: 'Enter' })).toBe(true);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+    expect(api.getVariable).not.toHaveBeenCalled();
+  });
 });
 
 describe('VaultWorkspace — unassigned filter', () => {

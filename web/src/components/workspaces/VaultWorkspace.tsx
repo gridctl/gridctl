@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -40,7 +41,7 @@ import { WORKSPACE_LABELS } from '../../types/workspace';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useVaultManager } from '../../hooks/useVaultManager';
-import { useListNav } from '../../hooks/useListNav';
+import { listNavProps, useListNav } from '../../hooks/useListNav';
 import { useRevealedValues } from '../../hooks/useRevealedValues';
 import { usePageFileDrop } from '../../hooks/usePageFileDrop';
 import { isImportableFile } from '../../lib/parseFile';
@@ -507,6 +508,29 @@ export function VaultWorkspace() {
     setEditSignal((s) => s + 1);
   }, []);
 
+  // Enter on a focused row selects it and opens it for editing. The selection
+  // lives in the URL, and router navigations commit in a transition, so the
+  // edit request waits for that row to become the selection; requesting it
+  // in the same handler would edit the previously selected variable. A
+  // selection that moves elsewhere first drops the request.
+  const selectedKeyRef = useRef(selectedKey);
+  useLayoutEffect(() => {
+    selectedKeyRef.current = selectedKey;
+  }, [selectedKey]);
+  const [pendingEdit, setPendingEdit] = useState<{ key: string; from: string | null } | null>(null);
+  if (pendingEdit !== null) {
+    if (pendingEdit.key === selectedKey) {
+      setPendingEdit(null);
+      setEditSignal((s) => s + 1);
+    } else if (pendingEdit.from !== selectedKey) {
+      setPendingEdit(null);
+    }
+  }
+  const activateVariable = useCallback((key: string) => {
+    setPendingEdit({ key, from: selectedKeyRef.current });
+    setSelectedKey(key);
+  }, [setSelectedKey]);
+
   const selectedIndex = useMemo(
     () => filteredBySearch.findIndex((v) => v.key === selectedKey),
     [filteredBySearch, selectedKey],
@@ -800,6 +824,7 @@ export function VaultWorkspace() {
                     usage={usage}
                     selectedKey={selectedKey}
                     onSelect={setSelectedKey}
+                    onActivate={activateVariable}
                     compact={compact}
                   />
                 )}
@@ -1249,6 +1274,7 @@ interface VariableListProps {
   usage: Record<string, Consumer[]>;
   selectedKey: string | null;
   onSelect: (key: string) => void;
+  onActivate: (key: string) => void;
   compact: boolean;
 }
 
@@ -1261,12 +1287,13 @@ function VariableList({
   usage,
   selectedKey,
   onSelect,
+  onActivate,
   compact,
 }: VariableListProps) {
   const headerLabel =
     'text-3xs uppercase tracking-[0.24em] text-text-muted/50';
   return (
-    <div role="listbox" aria-label="Variables" className="pb-4">
+    <div role="listbox" aria-label="Variables" className="pb-4" {...listNavProps}>
       <div
         aria-hidden="true"
         className={cn(
@@ -1287,6 +1314,7 @@ function VariableList({
           variable={variable}
           selected={variable.key === selectedKey}
           onSelect={onSelect}
+          onActivate={onActivate}
           preview={
             variable.is_secret
               ? SECRET_PREVIEW
