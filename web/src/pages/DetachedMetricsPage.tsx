@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BarChart3, AlertCircle, Maximize2, Minimize2, Users, Server, Wrench } from 'lucide-react';
+import { BarChart3, Maximize2, Minimize2, Users, Server, Wrench } from 'lucide-react';
 import { IconButton } from '../components/ui/IconButton';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
+import { FailedState, FailureBanner } from '../components/ui/EmptyState';
+import { refreshPhase } from '../lib/refreshPhase';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { useSharedStatus } from '../hooks/useSharedStatus';
 import { formatCompactNumber } from '../lib/format';
@@ -58,10 +60,12 @@ function DetachedMetricsPageContent() {
   // pipeline the Tools workspace and Metrics Tools scope consume.
   const { usage: toolUsageData, error: toolUsageError } = useToolUsage(true);
 
-  const { metricsData, isLoading, error, reload, clear } = useMetricsSeries({
+  const { metricsData, error, lastLoadedAt, reload, clear } = useMetricsSeries({
     timeRange,
     paused: isPaused,
   });
+  const phase = refreshPhase({ error, hasLoaded: metricsData !== null });
+  const showContent = phase === 'ready' || phase === 'stale';
 
   const handleSort = (column: BreakdownSortColumn) => {
     if (sortColumn === column) setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -165,7 +169,7 @@ function DetachedMetricsPageContent() {
 
       {/* Content */}
       <main className="flex-1 overflow-auto bg-background scrollbar-dark min-h-0 p-4">
-        {isLoading && !metricsData && (
+        {phase === 'loading' && (
           <div className="space-y-4 animate-pulse">
             <div className="grid grid-cols-4 gap-3">
               {[1, 2, 3, 4].map((i) => (
@@ -176,17 +180,20 @@ function DetachedMetricsPageContent() {
           </div>
         )}
 
-        {error && !isLoading && (
-          <div className="flex flex-col items-center justify-center h-full gap-3">
-            <AlertCircle size={24} className="text-status-error" />
-            <span className="text-xs text-status-error">{error}</span>
-            <button onClick={reload} className="text-xs text-primary hover:underline">
-              Retry
-            </button>
-          </div>
+        {phase === 'failed' && (
+          <FailedState feature="Metrics" message={error ?? undefined} onRetry={reload} />
         )}
 
-        {!isLoading && !error && !hasData && (
+        {phase === 'stale' && error && (
+          <FailureBanner
+            message={error}
+            onRetry={reload}
+            lastUpdated={lastLoadedAt}
+            className="mx-0 mt-0 mb-4"
+          />
+        )}
+
+        {showContent && !hasData && (
           <div className="flex flex-col items-center justify-center h-full text-text-muted gap-2">
             <BarChart3 size={32} className="text-text-muted/30" />
             <span className="text-sm">No token data yet</span>
@@ -194,7 +201,7 @@ function DetachedMetricsPageContent() {
           </div>
         )}
 
-        {!error && hasData && !(isLoading && !metricsData) && (
+        {showContent && hasData && (
           <div className="space-y-4">
             <MetricsKpiRow kpis={kpis} windowTotals={windowTotals} windowLabel={windowLabel} />
             <TokenChart data={chartData} metricsData={metricsData} heightClass="h-48" />

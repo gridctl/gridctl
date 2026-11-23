@@ -403,4 +403,62 @@ describe('MetricsWorkspace', () => {
     fireEvent.keyDown(document, { key: '/' });
     expect(screen.getByLabelText('Filter tools by name or server')).toHaveFocus();
   });
+
+  it('keeps the dashboard under a banner when a refresh fails', async () => {
+    mockSeries(seededTokenSeries);
+    renderAt();
+    expect(await screen.findByText('1.8k')).toBeInTheDocument();
+
+    vi.mocked(fetchTokenMetrics).mockRejectedValue(new Error('Gateway connection unavailable'));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Gateway connection unavailable');
+    expect(alert).toHaveTextContent('Last updated');
+    expect(screen.queryByText('Metrics unavailable')).not.toBeInTheDocument();
+    expect(screen.getByText('1.8k')).toBeInTheDocument();
+    expect(screen.getByText('Total Tokens')).toBeInTheDocument();
+
+    mockSeries(seededTokenSeries);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+  });
+
+  it('shows the failed state when the first load fails', async () => {
+    vi.mocked(fetchTokenMetrics).mockRejectedValue(new Error('Gateway connection unavailable'));
+    renderAt();
+    expect(await screen.findByText('Metrics unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Gateway connection unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('Total Tokens')).not.toBeInTheDocument();
+  });
+
+  it('shows loading, not the previous range error, while a range switch is in flight', async () => {
+    mockSeries(seededTokenSeries);
+    const { container } = renderAt();
+    expect(await screen.findByText('1.8k')).toBeInTheDocument();
+
+    vi.mocked(fetchTokenMetrics).mockRejectedValue(new Error('live window failed'));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByText('live window failed')).toBeInTheDocument();
+
+    let rejectSwitch: (err: Error) => void = () => {};
+    vi.mocked(fetchTokenMetrics).mockImplementation(
+      () => new Promise<TokenMetricsResponse>((_resolve, reject) => { rejectSwitch = reject; }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '24h' }));
+
+    await waitFor(() => {
+      expect(vi.mocked(fetchTokenMetrics)).toHaveBeenLastCalledWith('24h');
+    });
+    expect(screen.queryByText('live window failed')).not.toBeInTheDocument();
+    expect(screen.queryByText('Metrics unavailable')).not.toBeInTheDocument();
+    expect(screen.queryByText('1.8k')).not.toBeInTheDocument();
+    expect(container.querySelector('.animate-pulse')).not.toBeNull();
+
+    rejectSwitch(new Error('day window failed'));
+    expect(await screen.findByText('Metrics unavailable')).toBeInTheDocument();
+    expect(screen.getByText('day window failed')).toBeInTheDocument();
+  });
 });

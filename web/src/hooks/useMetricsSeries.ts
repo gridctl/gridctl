@@ -46,7 +46,10 @@ interface UseMetricsSeriesArgs {
 interface UseMetricsSeriesResult {
   metricsData: TokenMetricsResponse | null;
   isLoading: boolean;
+  /** Error for the selected range only; a previous range's error reads as null. */
   error: string | null;
+  /** Epoch ms of the last successful load; 0 before the first. */
+  lastLoadedAt: number;
   reload: () => void;
   clear: () => Promise<void>;
 }
@@ -65,6 +68,8 @@ export function useMetricsSeries({
   const [metricsData, setMetricsData] = useState<TokenMetricsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorRange, setErrorRange] = useState<string | null>(null);
+  const [lastLoadedAt, setLastLoadedAt] = useState(0);
 
   const apiRange = apiRangeFor(timeRange);
 
@@ -79,9 +84,14 @@ export function useMetricsSeries({
       const data = await fetchTokenMetrics(apiRange);
       if (!current()) return;
       setMetricsData(data);
+      setLastLoadedAt(Date.now());
       setError(null);
+      setErrorRange(null);
     } catch (err) {
-      if (current()) setError(err instanceof Error ? err.message : 'Failed to fetch metrics');
+      if (current()) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch metrics');
+        setErrorRange(apiRange);
+      }
     } finally {
       if (current()) setIsLoading(false);
     }
@@ -122,10 +132,15 @@ export function useMetricsSeries({
   const currentMetrics = metricsData && metricsData.range === apiRange ? metricsData : null;
   const rangeSwitching = !error && metricsData !== null && currentMetrics === null;
 
+  // An error raised under another range must not label the new one; until
+  // the switch resolves the caller sees a plain loading state.
+  const rangeError = error !== null && errorRange === apiRange ? error : null;
+
   return {
     metricsData: currentMetrics,
     isLoading: isLoading || rangeSwitching,
-    error,
+    error: rangeError,
+    lastLoadedAt,
     reload,
     clear,
   };

@@ -18,7 +18,8 @@ import {
   type MetricsTimeRange,
 } from '../../hooks/useMetricsSeries';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
-import { EmptyState, FailedState } from '../ui/EmptyState';
+import { EmptyState, FailedState, FailureBanner } from '../ui/EmptyState';
+import { refreshPhase } from '../../lib/refreshPhase';
 import { PopoutButton } from '../ui/PopoutButton';
 import { PersistedFromMarker } from '../telemetry/PersistedFromMarker';
 import { MetricsControls } from '../metrics/MetricsControls';
@@ -238,10 +239,12 @@ export function MetricsWorkspace() {
   // Polite announcement for range/refresh, read by screen readers.
   const [liveMsg, setLiveMsg] = useState('');
 
-  const { metricsData, isLoading, error, reload, clear } = useMetricsSeries({
+  const { metricsData, error, lastLoadedAt, reload, clear } = useMetricsSeries({
     timeRange,
     paused: isPaused,
   });
+  const phase = refreshPhase({ error, hasLoaded: metricsData !== null });
+  const showContent = phase === 'ready' || phase === 'stale';
 
   // Per-tool usage powers the Tools scope (and its rail count badge), so the
   // poll runs whenever the workspace is mounted — same 15s cadence Audit Mode
@@ -477,18 +480,28 @@ export function MetricsWorkspace() {
           </header>
 
           <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-6 py-4 flex flex-col">
-            {/* Mutually exclusive states: error → skeleton → empty → data.
-                The headline numbers are window-scoped, so the skeleton holds
-                until the ranged series lands (or a range switch resolves) —
-                rendering zeros from an unresolved fetch would present
-                "loading" as "no activity". */}
-            {error && !isLoading && (
-              <FailedState feature="Metrics" message={error} onRetry={reload} className="flex-1" />
+            {/* Mutually exclusive states by refresh phase: failed, loading,
+                then empty or data (with a banner when stale). The headline
+                numbers are window-scoped, so the skeleton holds until the
+                ranged series lands (or a range switch resolves); rendering
+                zeros from an unresolved fetch would present "loading" as
+                "no activity". */}
+            {phase === 'failed' && (
+              <FailedState feature="Metrics" message={error ?? undefined} onRetry={reload} className="flex-1" />
             )}
 
-            {!error && isLoading && !metricsData && <LoadingState />}
+            {phase === 'loading' && <LoadingState />}
 
-            {!error && !hasData && !(isLoading && !metricsData) && (
+            {phase === 'stale' && error && (
+              <FailureBanner
+                message={error}
+                onRetry={reload}
+                lastUpdated={lastLoadedAt}
+                className="mx-0 mt-0 mb-4 max-w-7xl flex-shrink-0"
+              />
+            )}
+
+            {showContent && !hasData && (
               <EmptyState
                 icon={BarChart3}
                 tone="primary"
@@ -498,7 +511,7 @@ export function MetricsWorkspace() {
               />
             )}
 
-            {!error && hasData && !(isLoading && !metricsData) && (
+            {showContent && hasData && (
               <div className="space-y-4 max-w-7xl">
                 <PersistedFromMarker serverName={null} signal="metrics" />
                 <MetricsKpiRow kpis={kpis} windowTotals={windowTotals} windowLabel={windowLabel} focusLine={focusLine} />
