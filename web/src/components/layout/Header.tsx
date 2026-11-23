@@ -1,12 +1,12 @@
 import { RefreshCw, RotateCcw, Plus, Command, LogOut, SlidersHorizontal } from 'lucide-react';
-import { Suspense, lazy, useState, useCallback } from 'react';
+import { Suspense, lazy, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 import { cn } from '../../lib/cn';
 import { IconButton } from '../ui/IconButton';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
-import { triggerReload, fetchStackSpec, validateStackSpec } from '../../lib/api';
+import { triggerReload, fetchStackPlan, fetchStackHealth } from '../../lib/api';
 import { describeError, isCancellation } from '../../lib/describeError';
 import { showToast } from '../ui/Toast';
 import { useAuthStore } from '../../stores/useAuthStore';
@@ -15,6 +15,7 @@ import { HeaderTelemetryPill } from '../telemetry/HeaderTelemetryPill';
 import { useSpecStore } from '../../stores/useSpecStore';
 import { useWizardStore } from '../../stores/useWizardStore';
 import { LogoWordmark } from './LogoWordmark';
+import type { PlanDiff } from '../../types';
 import { ThemePicker } from '../shell/ThemePicker';
 import { WorkspaceSwitcher } from '../shell/WorkspaceSwitcher';
 
@@ -36,66 +37,79 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   // Global Context dialog, reachable from the creation wizard's tile.
   const [showGlobalContext, setShowGlobalContext] = useState(false);
   const wizardOpen = useWizardStore((s) => s.isOpen);
-  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  // Synchronous re-entry guard for the whole reload flow: pre-flight, the
+  // preview modal, and the reload. State updates are not visible to a second
+  // click in the same tick; isReloading drives the disabled spin.
+  const reloadGuard = useRef(false);
+  const reloadFlow = useRef(0);
+
+  const releaseReload = useCallback(() => {
+    reloadGuard.current = false;
+    setIsReloading(false);
+  }, []);
+
+  // Best-effort health refresh so Spec mode agrees with the preview. The
+  // result is written only while the flow that asked for it is current.
+  const refreshHealth = useCallback((flow: number, isCurrent: () => boolean = () => true) => {
+    fetchStackHealth().then(
+      (health) => {
+        if (reloadFlow.current === flow && isCurrent()) useSpecStore.getState().setHealth(health);
+      },
+      () => undefined,
+    );
+  }, []);
 
   const executeReload = useCallback(async () => {
+    reloadGuard.current = true;
     setIsReloading(true);
+    const flow = reloadFlow.current;
 
     try {
       const result = await triggerReload();
       showToast(result.success ? 'success' : 'error', result.message);
-      // On successful reload, promote the pending spec (what the user approved)
-      // to the applied baseline. Fall back to current spec for direct reloads.
-      if (result.success) {
-        const store = useSpecStore.getState();
-        const applied = store.pendingSpec
-          ? { path: store.spec?.path ?? '', content: store.pendingSpec }
-          : store.spec;
-        if (applied) {
-          store.setAppliedSpec(applied);
-        }
-      }
     } catch (err) {
       if (!isCancellation(err)) {
         const described = describeError(err, 'Reload');
         showToast('error', described.text, { detail: described.fullDetail });
       }
     } finally {
-      setIsReloading(false);
+      refreshHealth(flow);
+      releaseReload();
     }
-  }, []);
+  }, [refreshHealth, releaseReload]);
 
   const handleReload = useCallback(async () => {
-    // Fetch the new spec from disk and diff against the applied baseline
+    if (reloadGuard.current) return;
+    reloadGuard.current = true;
+    setIsReloading(true);
+    const flow = ++reloadFlow.current;
+
+    let plan: PlanDiff;
     try {
-      const newSpec = await fetchStackSpec();
-      const store = useSpecStore.getState();
-
-      // Seed appliedSpec on first use (e.g. user never opened Spec tab)
-      if (!store.appliedSpec) {
-        store.setAppliedSpec(newSpec);
-      }
-
-      const appliedSpec = useSpecStore.getState().appliedSpec;
-
-      // If the disk spec differs from what the gateway last applied, show diff
-      if (appliedSpec && newSpec.content !== appliedSpec.content) {
-        // Validate the new spec
-        const result = await validateStackSpec(newSpec.content);
-        const errors = (result.issues ?? [])
-          .filter((i) => i.severity === 'error')
-          .map((i) => `${i.field}: ${i.message}`);
-        setValidationErrors(errors);
-        useSpecStore.getState().openDiffModal(newSpec.content);
+      plan = await fetchStackPlan();
+    } catch (err) {
+      if (isCancellation(err)) {
+        releaseReload();
         return;
       }
-
-    } catch {
-      // If spec fetch fails, fall through to direct reload
+      // The guard stays held until the modal is dismissed or a reload runs.
+      useSpecStore.getState().openApplyError(err);
+      return;
     }
 
-    executeReload();
-  }, [executeReload]);
+    // An empty plan does not mean a reload is a no-op: reload also applies
+    // blocks the plan does not cover and rotated secrets.
+    if (!plan.hasChanges) {
+      await executeReload();
+      return;
+    }
+
+    useSpecStore.getState().openApplyPlan(plan);
+    refreshHealth(flow, () => {
+      const { diffModalOpen, diffModalMode } = useSpecStore.getState();
+      return diffModalOpen && diffModalMode === 'apply';
+    });
+  }, [executeReload, refreshHealth, releaseReload]);
 
   // Connection state and server health are surfaced continuously in the global
   // StatusBar; the header no longer mirrors them. We keep `isConnected` only to
@@ -179,10 +193,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
           tooltip="Reload Config"
         />
       </div>
-      <SpecDiffModal
-        onApply={executeReload}
-        validationErrors={validationErrors}
-      />
+      <SpecDiffModal onApply={executeReload} onDismiss={releaseReload} />
       {wizardOpen && (
         <Suspense fallback={null}>
           <CreationWizard
