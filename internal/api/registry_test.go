@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -771,6 +772,142 @@ func TestHandleRegistry_Validate_InvalidJSON(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", rec.Code)
+	}
+}
+
+func postValidate(t *testing.T, srv *Server, payload any) (*httptest.ResponseRecorder, map[string]any) {
+	t.Helper()
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	req := loopbackRequest(http.MethodPost, "/api/registry/skills/validate", bytes.NewReader(raw))
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	var result map[string]any
+	if rec.Code == http.StatusOK {
+		if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+			t.Fatalf("invalid JSON: %v; body: %s", err, rec.Body.String())
+		}
+	}
+	return rec, result
+}
+
+// Descriptions that broke the old client-side YAML rendering validate clean
+// when the save payload is sent as an object.
+func TestHandleRegistry_Validate_SkillObject_YAMLSignificantDescription(t *testing.T) {
+	srv, _ := setupRegistryTestServer(t)
+
+	for _, desc := range []string{
+		"Trigger when user mentions: deploy\nsecond line",
+		"# starts with a hash",
+		"[starts with a bracket",
+		"{starts with a brace",
+	} {
+		t.Run(desc, func(t *testing.T) {
+			rec, result := postValidate(t, srv, map[string]any{
+				"skill": map[string]any{
+					"name":        "test-skill",
+					"description": desc,
+					"state":       "draft",
+					"body":        "# Body",
+				},
+			})
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+			}
+			if result["valid"] != true {
+				t.Errorf("expected valid=true, got %v (errors %v)", result["valid"], result["errors"])
+			}
+			if errs, _ := result["errors"].([]any); len(errs) != 0 {
+				t.Errorf("expected no errors, got %v", errs)
+			}
+			parsed, _ := result["parsed"].(map[string]any)
+			if parsed["description"] != desc {
+				t.Errorf("parsed description = %q, want %q", parsed["description"], desc)
+			}
+		})
+	}
+}
+
+func TestHandleRegistry_Validate_SkillObject_MissingDescription(t *testing.T) {
+	srv, _ := setupRegistryTestServer(t)
+
+	rec, result := postValidate(t, srv, map[string]any{"skill": map[string]any{"name": "test-skill"}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+	if result["valid"] != false {
+		t.Errorf("expected valid=false, got %v", result["valid"])
+	}
+	errs, _ := result["errors"].([]any)
+	found := false
+	for _, e := range errs {
+		if e == "description is required" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected %q in errors, got %v", "description is required", errs)
+	}
+}
+
+// The skill verdict matches what PUT enforces: an invalid state is rejected
+// by both, and the validate errors carry the same message.
+func TestHandleRegistry_Validate_SkillObject_MatchesPut(t *testing.T) {
+	srv, regServer := setupRegistryTestServer(t)
+	seedSkill(t, regServer, "test-skill", registry.StateActive)
+
+	skill := map[string]any{
+		"name":        "test-skill",
+		"description": "A test",
+		"state":       "bogus",
+		"body":        "# Body",
+	}
+	rec, result := postValidate(t, srv, map[string]any{"skill": skill})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+	if result["valid"] != false {
+		t.Fatalf("expected valid=false, got %v", result["valid"])
+	}
+	errs, _ := result["errors"].([]any)
+	if len(errs) != 1 {
+		t.Fatalf("expected one error, got %v", errs)
+	}
+
+	raw, _ := json.Marshal(skill)
+	req := loopbackRequest(http.MethodPut, "/api/registry/skills/test-skill", bytes.NewReader(raw))
+	putRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(putRec, req)
+	if putRec.Code != http.StatusBadRequest {
+		t.Fatalf("PUT: expected 400, got %d", putRec.Code)
+	}
+	var putErr map[string]string
+	if err := json.Unmarshal(putRec.Body.Bytes(), &putErr); err != nil {
+		t.Fatalf("PUT: invalid JSON error body: %v", err)
+	}
+	if !strings.Contains(putErr["error"], errs[0].(string)) {
+		t.Errorf("PUT error %q does not contain validate error %q", putErr["error"], errs[0])
+	}
+}
+
+func TestHandleRegistry_Validate_SkillAndContentRejected(t *testing.T) {
+	srv, _ := setupRegistryTestServer(t)
+
+	rec, _ := postValidate(t, srv, map[string]any{
+		"skill":   map[string]any{"name": "test-skill", "description": "A test"},
+		"content": "---\nname: test-skill\ndescription: A test\n---\n",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("expected a JSON error body, got %q", rec.Body.String())
+	}
+	if envelope["error"] == nil {
+		t.Errorf("expected an error field, got %v", envelope)
 	}
 }
 
