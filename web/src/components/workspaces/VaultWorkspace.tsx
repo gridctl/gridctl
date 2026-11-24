@@ -560,6 +560,11 @@ export function VaultWorkspace() {
     from: string | null;
     activate: boolean;
   } | null>(null);
+  // A selection cleared underneath the confirm (deleted key, locked store)
+  // already took the edit with it, so the prompt no longer describes anything.
+  if (pendingSelect !== null && pendingSelect.from !== selectedKey) {
+    setPendingSelect(null);
+  }
   const requestSelect = useCallback((key: string | null) => {
     if (editDirtyRef.current && key !== selectedKeyRef.current) {
       setPendingSelect({ key, from: selectedKeyRef.current, activate: false });

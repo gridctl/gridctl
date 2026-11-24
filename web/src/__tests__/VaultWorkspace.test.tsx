@@ -1524,6 +1524,38 @@ describe('VaultWorkspace — unsaved inline edit', () => {
     expect(screen.getByRole('heading', { name: 'POSTGRES_URL' })).toBeInTheDocument();
   });
 
+  it('confirms Enter on another row, then opens that row for editing', async () => {
+    renderWorkspace();
+    await openEdit();
+    const redis = screen.getByRole('option', { name: /REDIS_URL/i });
+    redis.focus();
+    fireEvent.keyDown(redis, { key: 'Enter' });
+
+    expect(await screen.findByRole('alertdialog', { name: 'Discard changes' })).toHaveTextContent(
+      'POSTGRES_URL has unsaved edits',
+    );
+    expect(screen.getByRole('heading', { name: 'POSTGRES_URL' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(await screen.findByRole('heading', { name: 'REDIS_URL' })).toBeInTheDocument();
+    const input = await screen.findByPlaceholderText<HTMLInputElement>('secret value');
+    await waitFor(() => expect(input.value).toBe('seed'));
+    expect(api.updateVariable).not.toHaveBeenCalled();
+  });
+
+  it('drops the confirm when the edited key disappears underneath it', async () => {
+    renderWorkspace();
+    await openEdit();
+    fireEvent.click(screen.getByRole('option', { name: /REDIS_URL/i }));
+    await screen.findByRole('alertdialog', { name: 'Discard changes' });
+
+    act(() => {
+      useVaultStore.setState({ variables: [testVariables[1]] });
+    });
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(screen.queryByRole('heading', { name: 'REDIS_URL' })).toBeNull();
+  });
+
   it('holds a consumer jump to Stack behind the shared confirm', async () => {
     renderGuarded();
     await openEdit();
