@@ -27,21 +27,32 @@ let nextOrder = 0;
 
 function isAbove(a: Layer, b: Layer): boolean {
   if (a.modal !== b.modal) return a.modal;
-  const ae = a.ref?.current;
-  const be = b.ref?.current;
-  // React runs a child's effects before its parent's, so a nested layer that
-  // opens in the same commit as its host registers first. Containment ranks it.
-  if (ae && be && ae !== be) {
-    if (be.contains(ae)) return true;
-    if (ae.contains(be)) return false;
-  }
   return a.order > b.order;
 }
 
+function nestedIn(inner: Layer, outer: Layer): boolean {
+  const ie = inner.ref?.current;
+  const oe = outer.ref?.current;
+  return !!ie && !!oe && ie !== oe && oe.contains(ie);
+}
+
+// React runs a child's effects before its parent's, so a nested layer that
+// opens in the same commit as its host registers first. The pick takes the
+// latest layer of the highest rank, then descends into any same-rank layer
+// nested in it. Each step moves to a strictly smaller subtree, so it ends.
 function topLayer(): Layer | undefined {
   let top: Layer | undefined;
   for (const layer of layers) {
     if (!top || isAbove(layer, top)) top = layer;
+  }
+  while (top) {
+    let next: Layer | undefined;
+    for (const layer of layers) {
+      if (layer.modal !== top.modal || !nestedIn(layer, top)) continue;
+      if (!next || layer.order > next.order) next = layer;
+    }
+    if (!next) break;
+    top = next;
   }
   return top;
 }

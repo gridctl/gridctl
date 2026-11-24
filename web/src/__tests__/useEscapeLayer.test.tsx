@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { useState } from 'react';
-import { flushSync } from 'react-dom';
+import { useRef, useState, type RefObject } from 'react';
+import { createPortal, flushSync } from 'react-dom';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { Modal } from '../components/ui/Modal';
 import { SlideOver } from '../components/ui/SlideOver';
+import { SpecDiffModal } from '../components/spec/SpecDiffModal';
 import { useEscapeLayer } from '../hooks/useEscapeLayer';
+import { useSpecStore } from '../stores/useSpecStore';
 
 beforeEach(() => cleanup());
 afterEach(() => {
@@ -137,8 +139,57 @@ describe('useEscapeLayer with a SlideOver and a Modal', () => {
   });
 });
 
-function RawLayer({ onEscape, modal = true }: { onEscape: () => void; modal?: boolean }) {
-  useEscapeLayer({ active: true, onEscape, modal });
+describe('useEscapeLayer with a SlideOver and the SpecDiffModal', () => {
+  beforeEach(() => {
+    useSpecStore.setState({
+      diffModalOpen: false,
+      diffModalMode: 'apply',
+      plan: null,
+      planLoading: false,
+      planError: null,
+      spec: null,
+    });
+  });
+
+  it('dismisses only the diff', () => {
+    const onSlide = vi.fn();
+    const onDismiss = vi.fn();
+    render(
+      <>
+        <SlideOver isOpen onClose={onSlide} title="Slide">
+          <input aria-label="Slide field" />
+        </SlideOver>
+        <SpecDiffModal onApply={() => undefined} onDismiss={onDismiss} />
+      </>,
+    );
+    act(() => {
+      useSpecStore.getState().openApplyPlan({
+        hasChanges: true,
+        items: [{ action: 'change', kind: 'mcp-server', name: 'github', details: ['image changed'] }],
+        summary: '1 to change',
+      });
+    });
+    expect(screen.getByRole('dialog', { name: /reload config/i })).toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByLabelText('Slide field'), { key: 'Escape' });
+    expect(useSpecStore.getState().diffModalOpen).toBe(false);
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(onSlide).not.toHaveBeenCalled();
+  });
+});
+
+function RawLayer({
+  onEscape,
+  modal = true,
+  layerRef,
+  closeFromFields,
+}: {
+  onEscape: () => void;
+  modal?: boolean;
+  layerRef?: RefObject<HTMLElement | null>;
+  closeFromFields?: boolean;
+}) {
+  useEscapeLayer({ active: true, onEscape, modal, ref: layerRef, closeFromFields });
   return null;
 }
 
@@ -232,5 +283,46 @@ describe('useEscapeLayer dispatch', () => {
     });
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes from a field when closeFromFields is set', () => {
+    const onEscape = vi.fn();
+    render(
+      <>
+        <RawLayer onEscape={onEscape} closeFromFields />
+        <input aria-label="Field" />
+      </>,
+    );
+    const field = screen.getByLabelText('Field');
+    field.focus();
+    fireEvent.keyDown(field, { key: 'Escape' });
+    expect(onEscape).toHaveBeenCalledTimes(1);
+    expect(field).toHaveFocus();
+  });
+
+  it('ranks a nested layer above its host when a portaled sibling registers between them', () => {
+    const onHost = vi.fn();
+    const onNested = vi.fn();
+    const onPortaled = vi.fn();
+    function Host() {
+      const hostRef = useRef<HTMLDivElement>(null);
+      const nestedRef = useRef<HTMLDivElement>(null);
+      const portaledRef = useRef<HTMLDivElement>(null);
+      // Effects run children first, so registration is nested, portaled, host.
+      useEscapeLayer({ active: true, onEscape: onHost, modal: true, ref: hostRef });
+      return (
+        <div ref={hostRef}>
+          <div ref={nestedRef} />
+          <RawLayer onEscape={onNested} layerRef={nestedRef} />
+          {createPortal(<div ref={portaledRef} />, document.body)}
+          <RawLayer onEscape={onPortaled} layerRef={portaledRef} />
+        </div>
+      );
+    }
+    render(<Host />);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(onNested).toHaveBeenCalledTimes(1);
+    expect(onHost).not.toHaveBeenCalled();
+    expect(onPortaled).not.toHaveBeenCalled();
   });
 });
