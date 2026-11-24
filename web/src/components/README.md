@@ -153,7 +153,7 @@ workspaces. Reach for them before duplicating UI:
 |---|---|---|
 | `CanvasBase` | `components/canvas/` | Stack `graph/Canvas.tsx` |
 | `InspectorHeader` | `components/inspector/` | Inspectors that need the standard icon + title + close/popout strip |
-| `InspectorSection` | `components/inspector/` | Stack `Sidebar.tsx`, `DetachedSidebarPage.tsx` (collapsible section pattern) |
+| `InspectorSection` | `components/inspector/` | Stack `Sidebar.tsx`, `GatewaySidebar.tsx`, `DetachedSidebarPage.tsx` (collapsible section pattern; contents mount on first open) |
 | `Tabs` / `Tab` / `TabPanel` | `components/ui/` | Keyboard-operable tab lists. Arrow keys move and select. `InspectorTabList` / `InspectorTabButton` are wrappers that keep inspector chrome |
 | `EmptyState` | `components/ui/` | Anywhere a "no items / no selection" affordance is needed |
 | `FailedState` | `components/ui/` | Failed fetch with nothing loaded. Title is `<feature> unavailable`, with Retry when `onRetry` is set. Not a spinner or an empty collection |
