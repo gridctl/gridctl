@@ -239,4 +239,18 @@ describe('useSharedStatus error and refresh', () => {
     expect(view.result.current.error).toEqual(expect.stringContaining('down'));
     view.unmount();
   });
+
+  it('does not report a cancelled fetch as an error', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchStatus).mockRejectedValue(
+      Object.assign(new Error('aborted'), { name: 'AbortError' }),
+    );
+    const view = renderHook(() => useSharedStatus({ enabled: true }), { wrapper });
+    await act(async () => {
+      await view.result.current.refresh();
+    });
+    expect(view.result.current.settled).toBe(true);
+    expect(view.result.current.error).toBeNull();
+    view.unmount();
+  });
 });
