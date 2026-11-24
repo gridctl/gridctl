@@ -210,4 +210,30 @@ describe('ContextPinReviewModal', () => {
     expect(reset).toHaveBeenCalledWith('style');
     expect(onClose).toHaveBeenCalled();
   });
+
+  it('shows a loading line, not a missing record, while the fetch is pending', () => {
+    vi.spyOn(api, 'fetchContextPins').mockReturnValue(new Promise(() => {}));
+    render(<ContextPinReviewModal name="style" onClose={vi.fn()} />);
+    expect(screen.getByText('Loading pin record…')).toBeInTheDocument();
+    expect(screen.queryByText(/No pin record/)).not.toBeInTheDocument();
+  });
+
+  it('shows a failed state with Retry when the fetch fails', async () => {
+    const fetch = vi.spyOn(api, 'fetchContextPins').mockRejectedValue(new Error('offline'));
+    render(<ContextPinReviewModal name="style" onClose={vi.fn()} />);
+    expect(await screen.findByText('Pin record unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Load pin record failed: offline.')).toBeInTheDocument();
+    expect(screen.queryByText(/No pin record/)).not.toBeInTheDocument();
+
+    fetch.mockResolvedValue({ style: pin('drift') });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('button', { name: 'Reset' })).toBeInTheDocument();
+    expect(screen.queryByText('Pin record unavailable')).not.toBeInTheDocument();
+  });
+
+  it('says there is no pin record only after a successful load without one', async () => {
+    vi.spyOn(api, 'fetchContextPins').mockResolvedValue({});
+    render(<ContextPinReviewModal name="style" onClose={vi.fn()} />);
+    expect(await screen.findByText('No pin record for style.')).toBeInTheDocument();
+  });
 });

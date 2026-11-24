@@ -20,6 +20,7 @@ vi.mock('../lib/api', async () => {
   };
 });
 
+import { AuthError } from '../lib/gatewayRequest';
 import {
   fetchGlobalContext,
   initGlobalContext,
@@ -284,5 +285,57 @@ describe('GlobalContextDialog', () => {
     const after = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(after);
     expect(after.defaultPrevented).toBe(false);
+  });
+});
+
+describe('GlobalContextDialog load failures', () => {
+  it('shows a failed state with Retry on the first load, then recovers', async () => {
+    vi.mocked(fetchGlobalContext).mockRejectedValueOnce(new Error('offline'));
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Global context unavailable');
+    expect(alert).toHaveTextContent('Load global context failed: offline.');
+    expect(screen.queryByText('Loading global context…')).not.toBeInTheDocument();
+
+    vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(screen.queryByText('Global context unavailable')).not.toBeInTheDocument();
+    expect(await screen.findByText('Claude Code')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('never shows the loading line and the failed state together', async () => {
+    useContextStore.setState({ doc: null, loading: true, error: 'Load global context failed: offline.' });
+    vi.mocked(fetchGlobalContext).mockReturnValue(new Promise(() => {}));
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    expect(screen.getByText('Loading global context…')).toBeInTheDocument();
+    expect(screen.queryByText('Global context unavailable')).not.toBeInTheDocument();
+  });
+
+  it('describes a credential failure instead of the raw message', async () => {
+    vi.mocked(fetchGlobalContext).mockRejectedValueOnce(new AuthError('Authentication required'));
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Load global context paused. Verify your gateway credential to resume.');
+    expect(alert).not.toHaveTextContent('Authentication required');
+  });
+
+  it('keeps the editor under a banner with Retry when a refresh fails', async () => {
+    useContextStore.setState({ doc: readyDoc, loading: false, error: null });
+    vi.mocked(fetchGlobalContext).mockRejectedValueOnce(new Error('offline'));
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Load global context failed: offline.');
+    expect(alert).not.toHaveTextContent('Refresh failed');
+    expect(screen.getByText('Claude Code')).toBeInTheDocument();
+    expect(screen.queryByText('Global context unavailable')).not.toBeInTheDocument();
+
+    vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(screen.getByText('Claude Code')).toBeInTheDocument();
   });
 });

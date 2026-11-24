@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { describeError, isCancellation } from '../../lib/describeError';
 import { cn } from '../../lib/cn';
 import { fetchContextPins, resetContextPin, type ContextPin } from '../../lib/api';
 import { usePinsStore } from '../../stores/usePinsStore';
 import { Modal } from '../ui/Modal';
+import { FailedState } from '../ui/EmptyState';
 import { PinsContextDetail } from '../pins/PinsContextDetail';
 
 export interface ContextPinChipProps {
@@ -38,20 +40,25 @@ export function ContextPinReviewModal({
   name: string;
   onClose: () => void;
 }) {
-  const [pin, setPin] = useState<ContextPin | null>(null);
+  // undefined while loading; null when the load succeeded with no record.
+  const [pin, setPin] = useState<ContextPin | null | undefined>(undefined);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let cancelled = false;
     void fetchContextPins()
       .then((all) => {
-        if (!cancelled) setPin(all[name] ?? null);
+        if (cancelled) return;
+        setPin(all[name] ?? null);
+        setLoadError(null);
       })
-      .catch(() => {
-        if (!cancelled) setPin(null);
+      .catch((err) => {
+        if (!cancelled && !isCancellation(err)) setLoadError(describeError(err, 'Load pin record').text);
       });
     return () => {
       cancelled = true;
     };
-  }, [name]);
+  }, [name, attempt]);
   return (
     <Modal isOpen onClose={onClose} title={`${name} changed since its pin`} size="wide">
       {pin ? (
@@ -64,8 +71,20 @@ export function ContextPinReviewModal({
             onClose();
           }}
         />
-      ) : (
+      ) : pin === null ? (
         <p className="text-xs text-text-muted p-4">No pin record for {name}.</p>
+      ) : loadError ? (
+        <FailedState
+          feature="Pin record"
+          message={loadError}
+          onRetry={() => {
+            setLoadError(null);
+            setAttempt((n) => n + 1);
+          }}
+          inline
+        />
+      ) : (
+        <p className="text-xs text-text-muted p-4">Loading pin record…</p>
       )}
     </Modal>
   );

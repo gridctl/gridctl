@@ -23,6 +23,7 @@ import {
 import { cn } from '../../lib/cn';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
+import { FailedState, FailureBanner } from '../ui/EmptyState';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { IconButton } from '../ui/IconButton';
 import { StatePill } from '../ui/StatePill';
@@ -150,8 +151,8 @@ export function GlobalContextDialog({ isOpen, onClose, initialDriftSlug = null }
           Loading global context…
         </div>
       )}
-      {error && !doc && (
-        <div className="h-40 flex items-center justify-center text-sm text-status-error">{error}</div>
+      {error && !doc && !loading && (
+        <FailedState feature="Global context" message={error} onRetry={() => void refresh()} inline />
       )}
       {/* Fragments mode replaces the canonical file entirely, so it must
           route before the exists check (the store is a directory now). */}
@@ -646,9 +647,11 @@ function EditorView({
       </div>
 
       {refreshError && (
-        <div role="alert" className="px-5 py-2 bg-status-error/10 border-b border-status-error/30 flex-shrink-0 text-xs text-status-error">
-          Refresh failed: {refreshError}
-        </div>
+        <FailureBanner
+          message={refreshError}
+          onRetry={() => void refresh()}
+          className="mx-5 mt-2 mb-2 flex-shrink-0"
+        />
       )}
 
       <ClientsStrip clients={doc.clients} onReviewDrift={setDriftSlug} />
@@ -1542,6 +1545,7 @@ function FragmentsView({
 }) {
   const refresh = useContextStore((s) => s.refresh);
   const [fragments, setFragments] = useState<ContextFragment[] | null>(null);
+  const [fragmentsError, setFragmentsError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -1578,17 +1582,14 @@ function FragmentsView({
     try {
       const res = await fetchContextFragments();
       setFragments(res.fragments);
+      setFragmentsError(null);
       setSelected((prev) => {
         const want = selectName ?? prev;
         if (want && res.fragments.some((f) => f.name === want)) return want;
         return res.fragments[0]?.name ?? null;
       });
     } catch (err) {
-      setFragments([]);
-      if (!isCancellation(err)) {
-        const described = describeError(err, 'Load fragments');
-        showToast('error', described.text, { detail: described.fullDetail });
-      }
+      if (!isCancellation(err)) setFragmentsError(describeError(err, 'Load fragments').text);
     }
   }, []);
 
@@ -1600,6 +1601,7 @@ function FragmentsView({
       .then((res) => {
         if (cancelled) return;
         setFragments(res.fragments);
+        setFragmentsError(null);
         setSelected((prev) =>
           prev && res.fragments.some((f) => f.name === prev)
             ? prev
@@ -1608,11 +1610,7 @@ function FragmentsView({
       })
       .catch((err) => {
         if (cancelled) return;
-        setFragments([]);
-        if (!isCancellation(err)) {
-          const described = describeError(err, 'Load fragments');
-          showToast('error', described.text, { detail: described.fullDetail });
-        }
+        if (!isCancellation(err)) setFragmentsError(describeError(err, 'Load fragments').text);
       });
     return () => {
       cancelled = true;
@@ -1831,12 +1829,14 @@ function FragmentsView({
       </div>
 
       {refreshError && (
-        <div
-          role="alert"
-          className="px-5 py-2 bg-status-error/10 border-b border-status-error/30 flex-shrink-0 text-xs text-status-error"
-        >
-          Refresh failed: {refreshError}
-        </div>
+        <FailureBanner
+          message={refreshError}
+          onRetry={() => {
+            void loadFragments();
+            void refresh();
+          }}
+          className="mx-5 mt-2 mb-2 flex-shrink-0"
+        />
       )}
 
       <ClientsStrip
@@ -1848,6 +1848,11 @@ function FragmentsView({
       <div className="flex-1 flex min-h-0">
         <FragmentRail
           fragments={fragments}
+          error={fragmentsError}
+          onRetry={() => {
+            if (fragments === null) setFragmentsError(null);
+            void loadFragments();
+          }}
           selected={selected}
           onSelect={handleSelect}
           onAdd={handleAdd}
@@ -1864,7 +1869,11 @@ function FragmentsView({
         <div ref={containerRef} className="flex-1 flex min-w-0 min-h-0 group/split">
           {current === null ? (
             <div className="flex-1 flex items-center justify-center text-sm text-text-muted">
-              {fragments === null ? 'Loading fragments…' : 'Add a fragment to start.'}
+              {fragments === null
+                ? fragmentsError
+                  ? 'Fragments unavailable'
+                  : 'Loading fragments…'
+                : 'Add a fragment to start.'}
             </div>
           ) : (
             <>
@@ -2007,6 +2016,8 @@ function fragmentOutOfSync(clients: ContextClientStatus[]): Map<string, string[]
  */
 function FragmentRail({
   fragments,
+  error,
+  onRetry,
   selected,
   onSelect,
   onAdd,
@@ -2016,6 +2027,8 @@ function FragmentRail({
   onReviewPin,
 }: {
   fragments: ContextFragment[] | null;
+  error: string | null;
+  onRetry: () => void;
   selected: string | null;
   onSelect: (name: string) => void;
   onAdd: (name: string) => void;
@@ -2028,9 +2041,12 @@ function FragmentRail({
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState('');
   const valid = FRAGMENT_NAME_RE.test(newName);
+  // Adding before the list has loaded would select a fragment the rail
+  // cannot show, so Add waits for a successful load.
+  const canAdd = fragments !== null;
 
   const submitNew = () => {
-    if (!valid) return;
+    if (!valid || !canAdd) return;
     onAdd(newName);
     setNewName('');
     setShowNew(false);
@@ -2042,12 +2058,13 @@ function FragmentRail({
         <span className="text-3xs text-text-muted uppercase tracking-wider">Fragments</span>
         <button
           onClick={() => setShowNew((s) => !s)}
-          className="text-3xs text-primary hover:text-primary/80 flex items-center gap-0.5 transition-colors"
+          disabled={!canAdd}
+          className="text-3xs text-primary hover:text-primary/80 flex items-center gap-0.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Plus size={10} /> Add
         </button>
       </div>
-      {showNew && (
+      {showNew && canAdd && (
         <div className="px-3 py-2 flex items-center gap-1.5 border-b border-border/20 flex-shrink-0">
           <input
             value={newName}
@@ -2059,7 +2076,7 @@ function FragmentRail({
           />
           <button
             onClick={submitNew}
-            disabled={!valid}
+            disabled={!valid || !canAdd}
             className="px-2 py-1 text-3xs text-primary bg-primary/10 rounded hover:bg-primary/20 transition-colors disabled:opacity-50"
           >
             Create
@@ -2067,8 +2084,9 @@ function FragmentRail({
         </div>
       )}
       <div className="flex-1 overflow-y-auto scrollbar-dark py-1">
+        {error && <FailureBanner message={error} onRetry={onRetry} className="mx-2 mt-1 mb-1" />}
         {fragments === null ? (
-          <p className="text-3xs text-text-muted px-3 py-2">Loading fragments…</p>
+          !error && <p className="text-3xs text-text-muted px-3 py-2">Loading fragments…</p>
         ) : fragments.length === 0 ? (
           <p className="text-3xs text-text-muted px-3 py-2 italic">No fragments yet</p>
         ) : (
