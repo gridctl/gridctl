@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import type { AgentSkill } from '../types';
@@ -94,5 +94,24 @@ describe('DetachedRegistryPage', () => {
     expect(screen.getByText('incident-triage')).toBeInTheDocument();
     expect(screen.queryByText('Library unavailable')).not.toBeInTheDocument();
     expect(screen.queryByText('No skills registered')).not.toBeInTheDocument();
+  });
+
+  it('keeps the loading skeleton when the first load is cancelled', async () => {
+    vi.mocked(fetchRegistrySkills).mockRejectedValue(
+      Object.assign(new Error('aborted'), { name: 'AbortError' }),
+    );
+    renderPage();
+    await waitFor(() => expect(fetchRegistrySkills).toHaveBeenCalled());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(within(main()).queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('No skills registered')).not.toBeInTheDocument();
+    expect(screen.queryByText('Library unavailable')).not.toBeInTheDocument();
+    expect(main().querySelector('.animate-pulse')).not.toBeNull();
+
+    vi.mocked(fetchRegistrySkills).mockResolvedValue([SKILL]);
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByText('incident-triage')).toBeInTheDocument();
   });
 });

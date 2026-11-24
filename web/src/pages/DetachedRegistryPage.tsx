@@ -81,8 +81,10 @@ function DetachedRegistryContent() {
       setLoadError(null);
       setIsLoading(false);
     } catch (err) {
-      if (!current()) return;
-      if (!isCancellation(err)) setLoadError(describeError(err, 'Refresh').text);
+      // A cancellation keeps the skeleton until the next poll rather than
+      // leaving an unloaded page blank.
+      if (!current() || isCancellation(err)) return;
+      setLoadError(describeError(err, 'Refresh').text);
       setIsLoading(false);
     }
   }, [generation]);
