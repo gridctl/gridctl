@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { SkillFileTree } from '../SkillFileTree';
+import { showToast } from '../../ui/Toast';
 import { sortSkillFiles } from '../../../lib/skillFiles';
 import { deleteSkillFile, fetchSkillFiles } from '../../../lib/api';
 import type { SkillFile } from '../../../types';
@@ -11,7 +12,8 @@ vi.mock('../../ui/Toast', () => ({
   ToastContainer: () => null,
 }));
 
-vi.mock('../../../lib/api', () => ({
+vi.mock('../../../lib/api', async () => ({
+  ...(await vi.importActual<typeof import('../../../lib/api')>('../../../lib/api')),
   fetchSkillFiles: vi.fn(),
   writeSkillFile: vi.fn(),
   deleteSkillFile: vi.fn(),
@@ -137,5 +139,49 @@ describe('SkillFileTree', () => {
     vi.mocked(fetchSkillFiles).mockResolvedValue([]);
     render(<SkillFileTree skillName="docx" readOnly />);
     expect(await screen.findByText('No supporting files')).toBeInTheDocument();
+  });
+
+  it('shows a failure notice with Retry instead of the empty copy when the fetch fails', async () => {
+    vi.mocked(fetchSkillFiles).mockRejectedValueOnce(new Error('offline'));
+    render(<SkillFileTree skillName="docx" readOnly />);
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Load files failed: offline.');
+    expect(screen.queryByText('No supporting files')).not.toBeInTheDocument();
+    expect(showToast).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(fileNames()).toEqual(['alpha.sh', 'middle.sh', 'zebra.sh']));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows the loading line while a Retry is in flight', async () => {
+    vi.mocked(fetchSkillFiles).mockRejectedValueOnce(new Error('offline'));
+    render(<SkillFileTree skillName="docx" readOnly />);
+    await screen.findByRole('alert');
+
+    vi.mocked(fetchSkillFiles).mockReturnValueOnce(new Promise(() => {}));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(screen.getByText('Loading files...')).toBeInTheDocument();
+    expect(screen.queryByText('No supporting files')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('clears a failure when the skill changes', async () => {
+    vi.mocked(fetchSkillFiles).mockRejectedValueOnce(new Error('offline'));
+    const { rerender } = render(<SkillFileTree skillName="docx" readOnly />);
+    await screen.findByRole('alert');
+
+    rerender(<SkillFileTree skillName="pdf" readOnly />);
+    await waitFor(() => expect(fileNames()).toEqual(['alpha.sh', 'middle.sh', 'zebra.sh']));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(fetchSkillFiles).toHaveBeenLastCalledWith('pdf');
+  });
+
+  it('shows nothing for a cancelled fetch', async () => {
+    vi.mocked(fetchSkillFiles).mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
+    render(<SkillFileTree skillName="docx" readOnly />);
+    await waitFor(() => expect(screen.queryByText('Loading files...')).not.toBeInTheDocument());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(showToast).not.toHaveBeenCalled();
   });
 });
