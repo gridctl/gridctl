@@ -66,8 +66,8 @@ export function ConfirmDialog({
   const confirmClasses =
     variant === 'danger'
       ? cn(
-          'bg-status-error text-white',
-          'hover:bg-status-error/90',
+          'bg-danger text-white',
+          'hover:bg-danger-hover',
           'focus:outline-none focus:ring-2 focus:ring-status-error/40 focus:ring-offset-2 focus:ring-offset-background',
         )
       : cn(

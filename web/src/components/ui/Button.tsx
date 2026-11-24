@@ -25,9 +25,9 @@ const variants = {
     'hover:bg-surface-highlight'
   ),
   danger: cn(
-    'bg-gradient-to-r from-status-error to-status-error/80 text-white font-semibold',
-    'shadow-[0_2px_12px_--alpha(var(--color-status-error)/20%)]',
-    'hover:shadow-[0_4px_20px_--alpha(var(--color-status-error)/30%)]',
+    'bg-danger text-white font-semibold hover:bg-danger-hover',
+    'shadow-[0_2px_12px_--alpha(var(--color-danger)/20%)]',
+    'hover:shadow-[0_4px_20px_--alpha(var(--color-danger)/30%)]',
     'hover:-translate-y-0.5 active:translate-y-0'
   ),
   'outline-danger': 'text-status-error border border-status-error/25 hover:bg-status-error/10',

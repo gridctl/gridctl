@@ -17,6 +17,8 @@
   --color-surface-elevated: #18181b;
   --color-surface-highlight: #1f1f23;
   --color-border: #27272a;
+  /* Form control boundary: clears 3:1 against every surface (WCAG 1.4.11). */
+  --color-border-input: #6b6b73;
   --color-border-subtle: rgba(255, 255, 255, 0.06);
   /* White-alpha card tints. Already translucent, so do not stack a / modifier. */
   --color-surface-overlay-1: rgba(255, 255, 255, 0.02);
@@ -36,20 +38,24 @@
   --color-secondary-glow: rgba(13, 148, 136, 0.15);
 
   /* Tertiary - Purple/Violet (Agents, AI) */
-  --color-tertiary: #8b5cf6;
+  --color-tertiary: #9f7df9;
   --color-tertiary-light: #a78bfa;
   --color-tertiary-dark: #7c3aed;
-  --color-tertiary-glow: rgba(139, 92, 246, 0.15);
+  --color-tertiary-glow: rgba(159, 125, 249, 0.15);
 
   /* Status - Distinct, purposeful */
   --color-status-running: #10b981;
   --color-status-running-glow: rgba(16, 185, 129, 0.2);
   --color-status-stopped: #52525b;
-  --color-status-error: #f43f5e;
-  --color-status-error-glow: rgba(244, 63, 94, 0.2);
+  --color-status-error: #f65872;
+  --color-status-error-glow: rgba(246, 88, 114, 0.2);
   --color-status-pending: #eab308;
   --color-status-pending-glow: rgba(234, 179, 8, 0.2);
   --color-status-idle: #64748b;
+
+  /* Destructive fill under white text; kept apart from status-error, which is tuned for text. */
+  --color-danger: #be123c;
+  --color-danger-hover: #9f1239;
 
   /* Categorical chart series. Not status vocabulary; re-keyed in light for contrast. */
   --color-chart-blue: #3b82f6;
@@ -61,7 +67,7 @@
   /* Text - Warm whites */
   --color-text-primary: #fafaf9;
   --color-text-secondary: #a8a29e;
-  --color-text-muted: #78716c;
+  --color-text-muted: #8f8882;
 
   /* Typography - Distinctive choices */
   --font-sans: 'Outfit', system-ui, sans-serif;
@@ -173,6 +179,8 @@
   --color-surface-elevated: #ffffff;
   --color-surface-highlight: #e1e4e9;
   --color-border: #d3d7de;
+  /* Form control boundary: clears 3:1 against every surface (WCAG 1.4.11). */
+  --color-border-input: #78808c;
   --color-border-subtle: rgba(15, 23, 42, 0.08);
   /* Slate-alpha overlays so 2-6% tints stay visible on the light surface. */
   --color-surface-overlay-1: rgba(15, 23, 42, 0.03);
@@ -209,14 +217,20 @@
   --color-status-running: #065f46;
   --color-status-running-glow: rgba(6, 95, 70, 0.25);
   --color-status-stopped: #9ca3af;
-  --color-status-error: #e11d48;
-  --color-status-error-glow: rgba(225, 29, 72, 0.2);
+  /* Error darkens to rose-700: the previous rose-600 read 3.48-4.01:1 as small
+     text on its own 10% tint, so error badges could not clear AA. */
+  --color-status-error: #be123c;
+  --color-status-error-glow: rgba(190, 18, 60, 0.2);
   /* Pending keeps its own hue rather than reusing primary: sharing one hex made
      "brand accent" and "needs attention" indistinguishable in light, a collision
      dark mode does not have. */
   --color-status-pending: #854d0e;
   --color-status-pending-glow: rgba(133, 77, 14, 0.2);
   --color-status-idle: #6b7280;
+
+  /* Destructive fill under white text; kept apart from status-error, which is tuned for text. */
+  --color-danger: #be123c;
+  --color-danger-hover: #9f1239;
 
   /* Chart hues darkened to clear 3:1 on #f4f6f8. */
   --color-chart-blue: #1d4ed8;
@@ -225,11 +239,11 @@
   --color-chart-orange: #c2410c;
   --color-chart-purple: #7e22ce;
 
-  /* Text — neutral near-black ramp; muted is darkened a shade from the warm
-     palette so secondary descriptions stay readable on the bright canvas. */
+  /* Text: neutral near-black ramp; muted is darkened so small labels clear
+     4.5:1 on every light surface, surface-highlight included (4.56:1). */
   --color-text-primary: #1a1c20;
   --color-text-secondary: #4b515b;
-  --color-text-muted: #687078;
+  --color-text-muted: #5f666e;
 
   /* Shadows — saturated transparent cool-slate, not black; elevation comes from
      these + borders rather than the dark-mode lighter-surface trick. */
