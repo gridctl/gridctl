@@ -1,8 +1,9 @@
-import { Wifi, WifiOff, Clock, Server, Box, Radio, Code, FlaskConical, Gauge, ArrowDown } from 'lucide-react';
+import { Wifi, WifiOff, Clock, Server, Box, Radio, Code, FlaskConical, Gauge, ArrowDown, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { cn } from '../../lib/cn';
 import { useStackStore } from '../../stores/useStackStore';
 import { formatRelativeTime } from '../../lib/time';
+import { useNow } from '../../hooks/useNow';
 import { formatCompactNumber } from '../../lib/format';
 import { SpecHealthBadge } from '../spec/SpecHealthBadge';
 import { PinDriftBadge } from '../pins/PinDriftBadge';
@@ -27,35 +28,47 @@ export function StatusBar() {
   const tokenUsage = useStackStore((s) => s.tokenUsage);
   const tokenizerName = useStackStore((s) => s.gatewayInfo?.tokenizer);
   const connectionStatus = useStackStore((s) => s.connectionStatus);
-  const lastUpdated = useStackStore((s) => s.lastUpdated);
   const error = useStackStore((s) => s.error);
 
   const runningServers = (mcpServers ?? []).filter((s) => s.initialized).length;
   const unhealthyServers = (mcpServers ?? []).filter((s) => s.healthy === false).length;
   const runningResources = (resources ?? []).filter((r) => r.status === 'running').length;
   const isConnected = connectionStatus === 'connected';
+  const isConnecting = connectionStatus === 'connecting';
+  const label = isConnected ? 'Connected' : isConnecting ? 'Connecting' : error || 'Disconnected';
 
   return (
-    <div className="h-8 min-w-0 bg-surface/80 backdrop-blur-xl border-t border-border/50 flex items-center gap-5 px-4 text-xs relative whitespace-nowrap">
+    <footer
+      aria-label="Status bar"
+      className="h-8 min-w-0 bg-surface/80 backdrop-blur-xl border-t border-border/50 flex items-center gap-5 px-4 text-xs relative whitespace-nowrap"
+    >
       {/* Top accent */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-border/50 to-transparent" />
 
-      {/* Connection status */}
-      <div className={cn(
+      {/* Connection status. The live region holds only the state label;
+          the ticking "Updated" age stays outside it so it is not announced
+          on every tick. */}
+      <div role="status" className={cn(
         'flex items-center gap-2 px-2 py-0.5 rounded-full shrink-0',
-        isConnected ? 'text-status-running' : 'text-status-error'
+        isConnected ? 'text-status-running' : isConnecting ? 'text-text-muted' : 'text-status-error'
       )}>
         <span className="relative">
-          {isConnected ? <Wifi size={12} /> : <WifiOff size={12} />}
+          {isConnected ? (
+            <Wifi size={12} aria-hidden="true" />
+          ) : isConnecting ? (
+            <Loader2 size={12} className="animate-spin" aria-hidden="true" />
+          ) : (
+            <WifiOff size={12} aria-hidden="true" />
+          )}
           {isConnected && (
-            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-status-running rounded-full animate-pulse" />
+            <span aria-hidden="true" className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-status-running rounded-full animate-pulse" />
           )}
         </span>
         <span
           className="font-medium truncate min-w-0 max-w-[40vw]"
-          title={isConnected ? 'Connected' : error || 'Disconnected'}
+          title={label}
         >
-          {isConnected ? 'Connected' : error || 'Disconnected'}
+          {label}
         </span>
       </div>
 
@@ -198,13 +211,28 @@ export function StatusBar() {
         )}
 
         {/* Last update: right-aligned when it fits, and the first to drop */}
-        {lastUpdated && (
-          <div className="flex items-center gap-2 h-full ml-auto text-text-muted">
-            <Clock size={11} className="text-text-muted/60" />
-            <span>Updated {formatRelativeTime(lastUpdated)}</span>
-          </div>
-        )}
+        <StatusFreshness />
       </div>
+    </footer>
+  );
+}
+
+// The age ticks on its own one-second clock so it keeps advancing when no
+// poll lands (a refused or hung request). Only this leaf re-renders per tick.
+function StatusFreshness() {
+  const lastUpdated = useStackStore((s) => s.lastUpdated);
+  const connectionStatus = useStackStore((s) => s.connectionStatus);
+  useNow(1000);
+
+  if (!lastUpdated) return null;
+  const stale = connectionStatus === 'disconnected' || connectionStatus === 'error';
+
+  return (
+    <div className="flex items-center gap-2 h-full ml-auto text-text-muted">
+      <Clock size={11} aria-hidden="true" className={stale ? 'text-status-pending' : 'text-text-muted/60'} />
+      <span className={cn(stale && 'text-status-pending')}>
+        {stale ? 'Last updated' : 'Updated'} {formatRelativeTime(lastUpdated)}
+      </span>
     </div>
   );
 }

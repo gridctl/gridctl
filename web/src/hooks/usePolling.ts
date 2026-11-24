@@ -110,8 +110,9 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
       ]);
       if (!current()) return;
 
-      // Initial state is disconnected, but the first cycle sets connecting
-      // before this await, so a first success does not look like a recovery.
+      // Initial state is connecting, and the first cycle sets connecting
+      // again before this await, so a first success does not look like a
+      // recovery.
       const recoverInventory =
         useStackStore.getState().connectionStatus === 'disconnected' ||
         useStackStore.getState().connectionStatus === 'error';
