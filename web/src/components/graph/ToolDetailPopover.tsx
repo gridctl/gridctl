@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { useOnViewportChange, useReactFlow } from '@xyflow/react';
 import { Wrench, X, ArrowUpRight, Copy } from 'lucide-react';
 import { cn } from '../../lib/cn';
@@ -35,7 +35,7 @@ interface ToolDetailPopoverProps {
  * which shows the full schema with room to read it.
  */
 const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }: ToolDetailPopoverProps) => {
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
   const prefixedName = `${serverName}${TOOL_NAME_DELIMITER}${toolName}`;
 
   // Tool pills are the rightmost nodes in the graph and the auto-refit frames

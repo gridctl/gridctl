@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router';
+import { Outlet, useLocation } from 'react-router';
 import { Header } from '../layout/Header';
 import { StatusBar } from '../layout/StatusBar';
 import { CommandPalette } from '../palette/CommandPalette';
 import { PreferencesDialog } from './PreferencesDialog';
 import { ShortcutsPanel } from './ShortcutsPanel';
+import { NavigationGuardDialog } from './NavigationGuardDialog';
 import { ToastContainer } from '../ui/Toast';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { useStackStore } from '../../stores/useStackStore';
-import { useToolsDirtyStore } from '../../stores/useToolsDirtyStore';
 import { requestInspectorLeave } from '../../stores/useInspectorToolsGuardStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { usePolling } from '../../hooks/usePolling';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useCanvasActionsStore } from '../../stores/useCanvasActionsStore';
 import { useGlobalCommands } from '../../hooks/useGlobalCommands';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { documentTitleForWorkspace, isWorkspace, type Workspace } from '../../types/workspace';
 import { writePref } from '../../lib/preferences';
 import { restoreNodeFocus } from '../../lib/inspectorFocus';
@@ -48,7 +49,7 @@ export function AppShell() {
   const toggleCompactMode = useUIStore((s) => s.toggleCompactMode);
   const setShortcutsOpen = useUIStore((s) => s.setShortcutsOpen);
 
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
   const { pathname } = useLocation();
   const { refresh } = usePolling({ registerRetry: true });
 
@@ -100,16 +101,7 @@ export function AppShell() {
     onRefresh: handleRefresh,
     onOpenLogs: () => navigate('/logs'),
     onOpenPalette: toggleCommandPalette,
-    onSwitchToWorkspace: (id) => {
-      // The ⌘1-9 shortcuts are the same action as the workspace pills, so
-      // they route through the same Tools dirty guard (see WorkspaceSwitcher).
-      const tools = useToolsDirtyStore.getState();
-      if (tools.dirty && pathname.startsWith('/tools') && id !== 'tools') {
-        tools.requestExitNav(`/${id}`);
-        return;
-      }
-      navigate(`/${id}`);
-    },
+    onSwitchToWorkspace: (id) => navigate(`/${id}`),
     onToggleCompactMode: () => toggleCompactMode(activeWorkspace),
     onOpenShortcuts: () => setShortcutsOpen(true),
   });
@@ -147,6 +139,7 @@ export function AppShell() {
       />
       <PreferencesDialog />
       <ShortcutsPanel />
+      <NavigationGuardDialog />
     </div>
   );
 }

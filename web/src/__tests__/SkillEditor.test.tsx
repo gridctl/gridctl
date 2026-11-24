@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { SkillEditor } from '../components/registry/SkillEditor';
 import { createRegistrySkill, fetchRegistrySkill, updateRegistrySkill, validateSkill } from '../lib/api';
 import { useUIStore } from '../stores/useUIStore';
+import { useNavigationGuardStore } from '../stores/useNavigationGuardStore';
+import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
 import type { AgentSkill, SkillSourceStatus } from '../types';
 
 vi.mock('../components/ui/Toast', () => ({
@@ -667,5 +669,69 @@ describe('SkillEditor validation', () => {
     fireEvent.change(lastGiven(), { target: { value: 'only a given' } });
     // validateSkill fires only after the debounce; the indicator must not wait for it.
     expect(screen.getByRole('button', { name: /validation messages/i })).toHaveTextContent('1 warning(s)');
+  });
+});
+
+describe('SkillEditor navigation guard', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(fetchRegistrySkill).mockResolvedValue({ ...LIST_SKILL, body: '# Triage\n\nReal instructions.' });
+    useNavigationGuardStore.setState({ guards: [], hosts: 0, pending: null });
+  });
+
+  afterEach(() => {
+    useNavigationGuardStore.setState({ guards: [], hosts: 0, pending: null });
+  });
+
+  it('registers a blocking guard while edited and closes the editor on a confirmed leave', async () => {
+    const onClose = vi.fn();
+    render(
+      <>
+        <SkillEditor isOpen onClose={onClose} onSaved={() => {}} skill={LIST_SKILL} />
+        <NavigationGuardDialog />
+      </>,
+    );
+    await waitFor(() => expect(bodyField()).toHaveValue('# Triage\n\nReal instructions.'));
+    expect(useNavigationGuardStore.getState().guards).toHaveLength(0);
+
+    fireEvent.change(bodyField(), { target: { value: '# Edited\n' } });
+    expect(useNavigationGuardStore.getState().isBlocked('/logs')).toBe(true);
+
+    const proceed = vi.fn();
+    act(() => useNavigationGuardStore.getState().guard('/logs', proceed));
+    expect(screen.getByText(/unsaved changes in skill incident-triage/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard & leave' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(proceed).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops the guard when the editor closes', async () => {
+    const { rerender } = render(
+      <SkillEditor isOpen onClose={() => {}} onSaved={() => {}} skill={LIST_SKILL} />,
+    );
+    await waitFor(() => expect(bodyField()).toHaveValue('# Triage\n\nReal instructions.'));
+    fireEvent.change(bodyField(), { target: { value: '# Edited\n' } });
+    expect(useNavigationGuardStore.getState().guards).toHaveLength(1);
+
+    rerender(<SkillEditor isOpen={false} onClose={() => {}} onSaved={() => {}} skill={LIST_SKILL} />);
+    expect(useNavigationGuardStore.getState().guards).toHaveLength(0);
+  });
+
+  it('drops the guard once a save closes the editor', async () => {
+    let open = true;
+    const onClose = vi.fn(() => {
+      open = false;
+    });
+    const { rerender } = render(
+      <SkillEditor isOpen={open} onClose={onClose} onSaved={() => {}} skill={LIST_SKILL} />,
+    );
+    await waitFor(() => expect(bodyField()).toHaveValue('# Triage\n\nReal instructions.'));
+    fireEvent.change(bodyField(), { target: { value: '# Edited\n' } });
+    expect(useNavigationGuardStore.getState().guards).toHaveLength(1);
+
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    rerender(<SkillEditor isOpen={open} onClose={onClose} onSaved={() => {}} skill={LIST_SKILL} />);
+    expect(useNavigationGuardStore.getState().guards).toHaveLength(0);
   });
 });

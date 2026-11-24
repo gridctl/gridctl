@@ -5,7 +5,8 @@ import '@testing-library/jest-dom';
 import { ToolsWorkspace } from '../components/workspaces/ToolsWorkspace';
 import { requestGatewayPoll } from '../hooks/usePolling';
 import { useStackStore } from '../stores/useStackStore';
-import { useToolsDirtyStore } from '../stores/useToolsDirtyStore';
+import { useNavigationGuardStore } from '../stores/useNavigationGuardStore';
+import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
 import { useUIStore } from '../stores/useUIStore';
 import { TOOL_NAME_DELIMITER } from '../lib/constants';
 import * as api from '../lib/api';
@@ -271,40 +272,94 @@ describe('ToolsWorkspace — empty-save guard and discard', () => {
   });
 });
 
+// Stands in for a shell control that navigates through the shared guard.
+function GuardedNavProbe({ to }: { to: string }) {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      data-testid={`guarded-nav-${to}`}
+      onClick={() => useNavigationGuardStore.getState().guard(to, () => navigate(to))}
+    />
+  );
+}
+
+function renderGuardedAt(path: string) {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <ToolsWorkspace />
+      <NavigationGuardDialog />
+      <GuardedNavProbe to="/metrics" />
+      <GuardedNavProbe to="/tools?server=atlassian" />
+      <LocationProbe />
+    </MemoryRouter>,
+  );
+}
+
 describe('ToolsWorkspace — leave-workspace guard', () => {
   beforeEach(() => {
-    useToolsDirtyStore.setState({ dirty: false, exitNavTarget: null });
+    useNavigationGuardStore.setState({ guards: [], pending: null });
+  });
+  afterEach(() => {
+    useNavigationGuardStore.setState({ guards: [], pending: null });
   });
 
-  it('mirrors the dirty flag and confirms an intercepted navigation', () => {
-    renderAt('/tools?server=github');
-    expect(useToolsDirtyStore.getState().dirty).toBe(false);
+  it('registers a guard only while the draft is dirty', () => {
+    renderGuardedAt('/tools?server=github');
+    expect(useNavigationGuardStore.getState().guards).toHaveLength(0);
 
     fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
-    expect(useToolsDirtyStore.getState().dirty).toBe(true);
+    expect(useNavigationGuardStore.getState().guards).toHaveLength(1);
 
-    // The WorkspaceSwitcher stashes the intercepted target here; the
-    // workspace renders the confirm for it.
-    act(() => useToolsDirtyStore.getState().requestExitNav('/metrics'));
-    expect(
-      screen.getByText(/leave tools and discard unsaved tool changes/i),
-    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+    expect(useNavigationGuardStore.getState().guards).toHaveLength(0);
+  });
 
-    // Cancel keeps the draft.
+  it('blocks leaving Tools until confirmed, then restores the baseline', () => {
+    renderGuardedAt('/tools?server=github');
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+
+    fireEvent.click(screen.getByTestId('guarded-nav-/metrics'));
+    expect(screen.getByTestId('loc')).toHaveTextContent('/tools?server=github');
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Tools for github');
+
+    // Cancel keeps the route and the draft.
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(
-      screen.queryByText(/leave tools and discard unsaved tool changes/i),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByTestId('loc')).toHaveTextContent('/tools?server=github');
     expect(screen.getByRole('checkbox', { name: /list_repos/i })).toHaveAttribute(
       'aria-checked',
       'true',
     );
 
-    // Confirm discards the draft and clears the intercepted target.
-    act(() => useToolsDirtyStore.getState().requestExitNav('/metrics'));
-    fireEvent.click(screen.getByRole('button', { name: /discard & leave/i }));
-    expect(useToolsDirtyStore.getState().exitNavTarget).toBeNull();
-    expect(useToolsDirtyStore.getState().dirty).toBe(false);
+    // Confirm discards the draft and lands on the destination.
+    fireEvent.click(screen.getByTestId('guarded-nav-/metrics'));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard & leave' }));
+    expect(screen.getByTestId('loc')).toHaveTextContent('/metrics');
+    expect(useNavigationGuardStore.getState().guards).toHaveLength(0);
+  });
+
+  it('restores the checkbox baseline when discarding', () => {
+    renderGuardedAt('/tools?server=github');
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+    // Run the guard's discard without leaving, so the editor stays mounted.
+    act(() => useNavigationGuardStore.getState().guard('/metrics', () => {}));
+    act(() => useNavigationGuardStore.getState().confirm());
+    expect(screen.getByRole('checkbox', { name: /list_repos/i })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+  });
+
+  it('does not block a target that stays in Tools', () => {
+    renderGuardedAt('/tools?server=github');
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+
+    expect(useNavigationGuardStore.getState().isBlocked('/tools?server=other')).toBe(false);
+    expect(useNavigationGuardStore.getState().isBlocked('/metrics')).toBe(true);
+
+    fireEvent.click(screen.getByTestId('guarded-nav-/tools?server=atlassian'));
+    expect(useNavigationGuardStore.getState().pending).toBeNull();
   });
 });
 
@@ -319,11 +374,12 @@ function ExternalNav() {
 
 describe('ToolsWorkspace — active server changes under a dirty draft', () => {
   beforeEach(() => {
-    useToolsDirtyStore.setState({ dirty: false, exitNavTarget: null });
+    useNavigationGuardStore.setState({ guards: [], pending: null });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    useNavigationGuardStore.setState({ guards: [], pending: null });
   });
 
   it('offers only Discard when the owner leaves the stack', () => {
@@ -368,16 +424,16 @@ describe('ToolsWorkspace — active server changes under a dirty draft', () => {
   });
 
   it('holds the discard confirm behind the leave confirm', () => {
-    renderAt('/tools?server=github');
+    renderGuardedAt('/tools?server=github');
     fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
-    act(() => useToolsDirtyStore.getState().requestExitNav('/metrics'));
+    fireEvent.click(screen.getByTestId('guarded-nav-/metrics'));
 
     act(() => {
       useStackStore.setState({ mcpServers: [server(ATLAS, ['get_page'], [])] });
     });
     const dialogs = screen.getAllByRole('alertdialog');
     expect(dialogs).toHaveLength(1);
-    expect(dialogs[0]).toHaveTextContent(/leave tools and discard unsaved tool changes/i);
+    expect(dialogs[0]).toHaveTextContent('Tools for github');
 
     fireEvent.click(within(dialogs[0]).getByRole('button', { name: 'Cancel' }));
     expect(screen.getByRole('alertdialog')).toHaveTextContent('Discard unsaved changes to github?');

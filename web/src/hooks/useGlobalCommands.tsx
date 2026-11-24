@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
+import { useGuardedNavigate } from './useGuardedNavigate';
+import { useNavigationGuardStore } from '../stores/useNavigationGuardStore';
 import {
   Activity,
   Key,
@@ -48,7 +50,8 @@ interface GlobalCommandsOptions {
 
 export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   const { registerCommands, unregisterCommands } = useCommandRegistry();
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
+  const rawNavigate = useNavigate();
 
   const toggleHeatMap = useUIStore((s) => s.toggleHeatMap);
   const toggleCompactCards = useUIStore((s) => s.toggleCompactCards);
@@ -160,16 +163,19 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         icon: <RotateCcw size={14} />,
         keywords: ['reset', 'purge', 'remove', 'uninstall', 'danger', 'factory', 'clean'],
         // The dialog lives in Connections; navigating first keeps one
-        // mount point instead of a second dialog instance in the shell.
+        // mount point instead of a second dialog instance in the shell. It
+        // opens only once the guarded navigation proceeds.
         onSelect: () => {
-          navigate('/connections');
-          useUIStore.getState().setResetDialogOpen(true);
+          useNavigationGuardStore.getState().guard('/connections', () => {
+            void rawNavigate('/connections');
+            useUIStore.getState().setResetDialogOpen(true);
+          });
         },
       },
     ];
     registerCommands('navigation', commands);
     return () => unregisterCommands('navigation');
-  }, [registerCommands, unregisterCommands, navigate]);
+  }, [registerCommands, unregisterCommands, navigate, rawNavigate]);
 
   // Appearance commands mirror the header ThemePicker. Open Preferences is the same dialog.
   useEffect(() => {

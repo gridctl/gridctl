@@ -1,5 +1,5 @@
 import { Wifi, WifiOff, Clock, Server, Box, Radio, Code, FlaskConical, Gauge, ArrowDown, Loader2 } from 'lucide-react';
-import { useNavigate } from 'react-router';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { cn } from '../../lib/cn';
 import { useStackStore } from '../../stores/useStackStore';
 import { formatRelativeTime } from '../../lib/time';
@@ -12,7 +12,7 @@ import { AuthPendingBadge } from '../sidebar/AuthPendingBadge';
 import { LimitsBadge } from '../metrics/LimitsBadge';
 
 export function StatusBar() {
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
   const mcpServers = useStackStore((s) => s.mcpServers);
   const resources = useStackStore((s) => s.resources);
   const statusSessions = useStackStore((s) => s.sessions);

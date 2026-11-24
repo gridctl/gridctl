@@ -19,7 +19,7 @@ import {
   Power,
 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { ControlBar } from '../ui/ControlBar';
@@ -65,7 +65,7 @@ export function Sidebar() {
   const enableAccessLens = useAccessLensStore((s) => s.setEnabled);
   const openAccessLensEditor = useAccessLensStore((s) => s.openSlideOver);
   const { openDetachedWindow, focusDetachedWindow } = useWindowManager();
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
 
   // Keyboard and palette activation leave a focus request naming the node.
   // Honor it once that node's heading is mounted; drop it when the selection

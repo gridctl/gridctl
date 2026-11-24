@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router';
+import { useGuardedNavigate } from './useGuardedNavigate';
 import { useStackStore } from '../stores/useStackStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
@@ -54,7 +54,7 @@ function pageVisible(): boolean {
 }
 
 export function usePolling(_options?: { registerRetry?: boolean }) {
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
   const startedRef = useRef(false);
   const slowRunning = useRef(false);
   const slowInFlight = useRef<Promise<void> | null>(null);

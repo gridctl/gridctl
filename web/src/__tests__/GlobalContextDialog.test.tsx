@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { GlobalContextDialog } from '../components/context/GlobalContextDialog';
 import { useContextStore } from '../stores/useContextStore';
+import { useNavigationGuardStore } from '../stores/useNavigationGuardStore';
+import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
 import type { ContextDoc } from '../lib/api';
 
 vi.mock('../lib/api', async () => {
@@ -24,6 +26,7 @@ import { AuthError } from '../lib/gatewayRequest';
 import {
   fetchGlobalContext,
   initGlobalContext,
+  saveGlobalContext,
   scanGlobalContext,
   syncGlobalContext,
 } from '../lib/api';
@@ -354,5 +357,64 @@ describe('GlobalContextDialog load failures', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
     expect(screen.getByText('Claude Code')).toBeInTheDocument();
+  });
+});
+
+describe('GlobalContextDialog navigation guard', () => {
+  beforeEach(() => {
+    useNavigationGuardStore.setState({ guards: [], hosts: 0, pending: null });
+  });
+
+  afterEach(() => {
+    useNavigationGuardStore.setState({ guards: [], hosts: 0, pending: null });
+  });
+
+  it('registers a blocking guard while edited and drops it on close', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
+    let open = true;
+    const onClose = vi.fn(() => {
+      open = false;
+    });
+    const { rerender } = render(
+      <>
+        <GlobalContextDialog isOpen={open} onClose={onClose} />
+        <NavigationGuardDialog />
+      </>,
+    );
+    const editor = await screen.findByLabelText('Canonical global context');
+    expect(useNavigationGuardStore.getState().guards).toHaveLength(0);
+
+    fireEvent.change(editor, { target: { value: '# Edited rules\n' } });
+    expect(useNavigationGuardStore.getState().isBlocked('/logs')).toBe(true);
+
+    const proceed = vi.fn();
+    act(() => useNavigationGuardStore.getState().guard('/logs', proceed));
+    expect(screen.getByText(/unsaved changes in Global Context/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard & leave' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(proceed).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <>
+        <GlobalContextDialog isOpen={open} onClose={onClose} />
+        <NavigationGuardDialog />
+      </>,
+    );
+    expect(useNavigationGuardStore.getState().guards).toHaveLength(0);
+  });
+
+  it('drops the guard once the edit is saved', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
+    const saved: ContextDoc = { ...readyDoc, canonical: { ...readyDoc.canonical, content: '# Edited rules\n' } };
+    vi.mocked(saveGlobalContext).mockResolvedValue(saved);
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    const editor = await screen.findByLabelText('Canonical global context');
+
+    fireEvent.change(editor, { target: { value: '# Edited rules\n' } });
+    expect(useNavigationGuardStore.getState().guards).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(saveGlobalContext).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(useNavigationGuardStore.getState().guards).toHaveLength(0));
   });
 });

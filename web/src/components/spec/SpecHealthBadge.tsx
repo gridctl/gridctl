@@ -1,11 +1,11 @@
-import { useNavigate } from 'react-router';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { FileCheck } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useSpecStore } from '../../stores/useSpecStore';
 
 export function SpecHealthBadge() {
   const health = useSpecStore((s) => s.health);
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
 
   const handleClick = () => {
     navigate('/stack?spec=1');

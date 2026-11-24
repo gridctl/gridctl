@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
 import { Command } from 'cmdk';
 import {
   Activity,
@@ -19,7 +19,8 @@ import {
 import { cn } from '../../lib/cn';
 import { WORKSPACE_LABELS } from '../../types/workspace';
 import { useStackStore } from '../../stores/useStackStore';
-import { useToolsDirtyStore } from '../../stores/useToolsDirtyStore';
+import { leavesWorkspace, useNavigationGuardStore } from '../../stores/useNavigationGuardStore';
+import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import { useUIStore } from '../../stores/useUIStore';
 import { useToolsEditor } from '../../hooks/useToolsEditor';
 import { useToolUsage } from '../../hooks/useToolUsage';
@@ -432,35 +433,15 @@ export function ToolsWorkspace() {
   }
 
   // ---- Leave-workspace guard ----------------------------------------------
-  // Mirror the editor's dirty flag into the shared guard store so the
-  // WorkspaceSwitcher (outside this tree) can read it synchronously and
-  // intercept the NavLink; the intercepted target lands in exitNavTarget and
-  // the confirm renders below. Cleared on unmount so a stale flag can never
-  // block navigation after the workspace is gone.
-  const navigate = useNavigate();
-  const exitNavTarget = useToolsDirtyStore((s) => s.exitNavTarget);
-  useEffect(() => {
-    useToolsDirtyStore.getState().setDirty(editor.dirty);
-  }, [editor.dirty]);
-  useEffect(
-    () => () => {
-      const s = useToolsDirtyStore.getState();
-      s.setDirty(false);
-      s.clearExitNav();
-    },
-    [],
-  );
-
-  // Hard page unload (reload/close): warn while the editor is dirty.
-  useEffect(() => {
-    if (!editor.dirty) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [editor.dirty]);
+  // Only navigations out of Tools discard the draft; a ?server= change stays
+  // here and goes through the server-switch guard above.
+  useNavigationGuard({
+    dirty: editor.dirty,
+    label: `Tools for ${activeServerName}`,
+    blocks: (to) => leavesWorkspace(to, 'tools'),
+    onDiscard: editor.handleDiscard,
+  });
+  const guardPending = useNavigationGuardStore((s) => s.pending !== null);
 
   const ownerGone =
     editor.discardPrompt !== null && !servers.some((s) => s.name === editor.discardPrompt);
@@ -676,32 +657,16 @@ export function ToolsWorkspace() {
         variant="danger"
       />
 
-      {/* Gated on the server-switch dialog being closed so two focus traps
-          never stack. */}
-      <ConfirmDialog
-        isOpen={exitNavTarget !== null && pendingServer === null}
-        onClose={() => useToolsDirtyStore.getState().clearExitNav()}
-        onConfirm={() => {
-          const target = exitNavTarget;
-          editor.handleDiscard();
-          useToolsDirtyStore.getState().clearExitNav();
-          if (target) navigate(target);
-        }}
-        title="Discard unsaved changes"
-        message={<p>Leave Tools and discard unsaved tool changes?</p>}
-        confirmLabel="Discard & leave"
-        variant="danger"
-      />
-
       {/* The active server changed under a dirty draft (an external ?server=
           change, or the owner left the stack and the fallback picked another).
           When the owner is gone a restore cannot unlock, so only Discard is
-          offered. Gated so it never stacks on another overlay. */}
+          offered. Gated so it never stacks on another overlay, including the
+          shared leave confirm. */}
       <ConfirmDialog
         isOpen={
           editor.discardPrompt !== null &&
           pendingServer === null &&
-          exitNavTarget === null &&
+          !guardPending &&
           !fleetOpen
         }
         onClose={editor.handleKeepEditing}

@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { Lock, LockOpen } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { skillPinsUrl } from '../../lib/skillGovernance';
@@ -23,7 +23,7 @@ export function PinDriftBadge() {
   const contextPins = usePinsStore((s) => s.contextPins);
   const contextDriftCount = useDriftedContextCount();
   const firstDriftedContext = useFirstDriftedContext();
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
 
   // Mirror PinFindingsBadge: skill state renders even while the server poll
   // has not landed (or transiently failed) — both maps ride the same poll,

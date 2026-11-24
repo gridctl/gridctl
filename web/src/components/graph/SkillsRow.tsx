@@ -1,25 +1,16 @@
-import { useNavigate } from 'react-router';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { Library, ArrowRight } from 'lucide-react';
-import { useAccessLensStore, isDirty } from '../../stores/useAccessLensStore';
 
 // SkillsRow is the gateway node's Skills count, an in-shell link to the
-// Library workspace. Lives in its own module so useNavigate (router context)
+// Library workspace. Lives in its own module so the navigate hook (router context)
 // is only required when skills are registered, keeping router-free
 // GatewayNode renders (and tests) working. `nodrag` keeps the click a clean
 // activation instead of a canvas drag start.
 export function SkillsRow({ activeSkills, totalSkills }: { activeSkills: number; totalSkills: number }) {
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
 
-  // Same dirty-draft guard as WorkspaceSwitcher: leaving the Stack workspace
-  // with an unsaved Access Lens draft routes through the store, which
-  // AccessLens turns into a discard-with-confirm.
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const s = useAccessLensStore.getState();
-    if (s.enabled && s.clientSlug != null && isDirty(s.draft, s.baseline)) {
-      s.requestExitNav('/library');
-      return;
-    }
     navigate('/library');
   };
 

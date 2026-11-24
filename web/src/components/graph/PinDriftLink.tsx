@@ -1,14 +1,14 @@
-import { useNavigate } from 'react-router';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { LockOpen } from 'lucide-react';
 
 // PinDriftLink is the full-card drift annotation on Stack canvas server
 // nodes, a deep link into the Pins workspace's drift panel. Lives in its own
-// module so useNavigate (router context) is only required when a drift is
+// module so the navigate hook (router context) is only required when a drift is
 // actually rendered, keeping router-free CustomNode renders (and tests)
 // working. `nodrag` keeps the click a clean activation instead of a canvas
 // drag start.
 export function PinDriftLink({ serverName }: { serverName: string }) {
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
   return (
     <button
       onClick={(e) => {

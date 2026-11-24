@@ -7,6 +7,7 @@ import { showToast } from '../../ui/Toast';
 import { MarkdownPreview } from '../MarkdownPreview';
 import { bodyFromRaw } from './agentModel';
 import { AgentScanError, fetchRegistryAgent, updateRegistryAgent } from '../../../lib/api';
+import { useNavigationGuard } from '../../../hooks/useNavigationGuard';
 import type { RegistryAgent, SecurityFinding } from '../../../types';
 
 interface AgentEditorProps {
@@ -108,6 +109,26 @@ export function AgentEditor({ isOpen, agent, onClose, onSaved }: AgentEditorProp
     }
     onClose();
   }, [dirty, saving, onClose]);
+
+  useNavigationGuard({
+    dirty: isOpen && dirty,
+    label: `agent ${name ?? ''}`.trim(),
+    onDiscard: onClose,
+  });
+
+  // Cmd/Ctrl+S saves, matching SkillEditor. A clean, loading, or in-flight
+  // editor swallows the chord so the browser's save page dialog stays shut.
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        if (dirty && !saving && !loading) void handleSave();
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isOpen, dirty, saving, loading, handleSave]);
 
   if (!isOpen || !agent) return null;
 

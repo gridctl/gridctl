@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { ShieldAlert } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useLimits } from '../../hooks/useLimits';
@@ -10,7 +10,7 @@ import { deriveLimitsSummary } from './limitsData';
 // Follows the PinDriftBadge conventions: severity color + glow dot, click
 // opens the owning workspace.
 export function LimitsBadge() {
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
   const { report } = useLimits(true);
   const summary = deriveLimitsSummary(report);
 
