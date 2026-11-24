@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useLocation } from 'react-router';
 import '@testing-library/jest-dom';
 import type { SecurityReport } from '../types';
 
@@ -63,6 +63,8 @@ vi.mock('../lib/api', () => ({
 }));
 
 import { SecurityEvidence } from '../components/sidebar/SecurityEvidence';
+import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
+import { leavesWorkspace, useNavigationGuardStore } from '../stores/useNavigationGuardStore';
 
 describe('SecurityEvidence', () => {
   beforeEach(() => {
@@ -205,5 +207,35 @@ describe('SecurityEvidence', () => {
     );
     expect(await screen.findByText(/<img src=x onerror=alert\(1\)>/)).toBeInTheDocument();
     expect(document.querySelector('img')).toBeNull();
+  });
+
+  it('asks before an action link leaves an unsaved Stack draft', async () => {
+    const resetGuards = () => useNavigationGuardStore.setState({ guards: [], hosts: 0, pending: null });
+    resetGuards();
+    function LocationProbe() {
+      const location = useLocation();
+      return <div data-testid="location">{location.pathname + location.search}</div>;
+    }
+    const onDiscard = vi.fn();
+    render(
+      <MemoryRouter initialEntries={['/stack']}>
+        <SecurityEvidence scope={{ server: 'fetch' }} />
+        <NavigationGuardDialog />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+    useNavigationGuardStore.getState().register({
+      id: 'lens',
+      label: 'Access Lens for Cursor',
+      blocks: (to) => leavesWorkspace(to, 'stack'),
+      onDiscard,
+    });
+    fireEvent.click(await screen.findByRole('link', { name: 'View pins' }));
+    expect(screen.getByText('Discard unsaved changes')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/stack');
+    fireEvent.click(screen.getByRole('button', { name: 'Discard & leave' }));
+    expect(onDiscard).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('location')).toHaveTextContent('/pins?server=fetch');
+    resetGuards();
   });
 });

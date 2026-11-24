@@ -9,6 +9,7 @@ import { InspectorSection } from '../inspector';
 import { cn } from '../../lib/cn';
 import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
 import { useRegistryStore } from '../../stores/useRegistryStore';
+import { useGuardedLinkClick } from '../../hooks/useGuardedNavigate';
 import type { GatewayNodeData } from '../../types';
 
 interface GatewaySidebarProps {
@@ -22,6 +23,7 @@ const GatewaySidebar = memo(({ onClose, headingRef }: GatewaySidebarProps) => {
   const skills = useRegistryStore((s) => s.skills);
   const mcpServers = useStackStore((s) => s.mcpServers);
   const selectNode = useStackStore((s) => s.selectNode);
+  const guardedLinkClick = useGuardedLinkClick();
   // null = not loaded; render the CTA without a count badge as a skeleton.
   const skillCount = skills?.length ?? null;
   // Servers waiting on downstream OAuth authorization. Clicking the row
@@ -101,6 +103,7 @@ const GatewaySidebar = memo(({ onClose, headingRef }: GatewaySidebarProps) => {
         <div className="p-4 border-b border-border/30">
           <Link
             to="/library"
+            onClick={(e) => guardedLinkClick(e, '/library')}
             className={cn(
               'group flex items-center justify-between w-full px-3 py-2.5 rounded-lg',
               'bg-surface-elevated/40 hover:bg-surface-highlight/60 border border-border/40 hover:border-primary/30',

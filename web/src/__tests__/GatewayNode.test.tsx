@@ -15,7 +15,10 @@ import { AccessLens } from '../components/stack/AccessLens';
 import { useUIStore } from '../stores/useUIStore';
 import { useAccessLensStore } from '../stores/useAccessLensStore';
 import { useStackStore } from '../stores/useStackStore';
-import type { ClientStatus, GatewayNodeData } from '../types';
+import { useNavigationGuardStore } from '../stores/useNavigationGuardStore';
+import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
+import { WorkspaceSwitcher } from '../components/shell/WorkspaceSwitcher';
+import type { ClientStatus, GatewayNodeData, MCPServerStatus } from '../types';
 
 const baseData: GatewayNodeData = {
   type: 'gateway',
@@ -102,17 +105,56 @@ function renderWithRouter(data: GatewayNodeData, extra?: React.ReactNode) {
 
 const withSkills: GatewayNodeData = { ...baseData, totalSkills: 4, activeSkills: 2 };
 
+const CURSOR: ClientStatus = {
+  name: 'Cursor',
+  slug: 'cursor',
+  detected: true,
+  linked: true,
+  transport: 'native HTTP',
+  effectiveScope: { configured: true, unscoped: false, servers: ['github'], tools: ['github__search'] },
+};
+
+const LENS_SERVERS: MCPServerStatus[] = [
+  { name: 'github', transport: 'http', initialized: true, toolCount: 2, tools: ['search', 'create'] },
+  { name: 'gitlab', transport: 'http', initialized: true, toolCount: 1, tools: ['list'] },
+];
+
+function resetGuards() {
+  useNavigationGuardStore.setState({ guards: [], pending: null });
+}
+
+// Mounts the lens, the shared confirm host, and the workspace pills, then
+// opens a draft for Cursor.
+function renderDirtyLens(edit: () => void) {
+  useStackStore.setState({ clients: [CURSOR], selectedNodeId: null });
+  renderWithRouter(
+    withSkills,
+    <>
+      <AccessLens servers={LENS_SERVERS} />
+      <WorkspaceSwitcher />
+      <NavigationGuardDialog />
+    </>,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Toggle Access Lens' }));
+  act(() => {
+    useStackStore.setState({ selectedNodeId: 'client-cursor' });
+  });
+  act(edit);
+}
+
 describe('GatewayNode Skills row', () => {
   beforeEach(() => {
     useAccessLensStore.getState().clearDraft();
-    useAccessLensStore.setState({ enabled: false, isSaving: false, exitNavTarget: null });
+    useAccessLensStore.setState({ enabled: false, isSaving: false });
     useUIStore.setState({ registryDetached: false, sidebarOpen: true });
+    resetGuards();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     useAccessLensStore.getState().clearDraft();
-    useAccessLensStore.setState({ enabled: false, exitNavTarget: null });
+    useAccessLensStore.setState({ enabled: false });
+    resetGuards();
   });
 
   it('renders the Skills row as a labeled button', () => {
@@ -136,51 +178,65 @@ describe('GatewayNode Skills row', () => {
     expect(useUIStore.getState().sidebarOpen).toBe(true);
   });
 
-  it('routes through the Access Lens guard when the draft is dirty', () => {
+  it('raises the shared confirm with a dirty lens and keeps the draft on cancel', () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
-    useAccessLensStore.setState({ enabled: true, clientSlug: 'x', draft: ['a'], baseline: [] });
-    renderWithRouter(withSkills);
+    renderDirtyLens(() => useAccessLensStore.getState().toggleServer('gitlab'));
 
     fireEvent.click(screen.getByRole('button', { name: 'Open skills in the Library' }));
-
     expect(screen.getByTestId('location')).toHaveTextContent('/stack');
-    expect(useAccessLensStore.getState().exitNavTarget).toBe('/library');
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Access Lens for Cursor');
     expect(open).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/stack');
+    expect(useAccessLensStore.getState().enabled).toBe(true);
+    expect(useAccessLensStore.getState().draft).toContain('gitlab');
   });
 
-  it('navigates to the Library once the dirty draft is discarded', () => {
-    const cursor: ClientStatus = {
-      name: 'Cursor',
-      slug: 'cursor',
-      detected: true,
-      linked: true,
-      transport: 'native HTTP',
-      effectiveScope: { configured: true, unscoped: false, servers: ['github'], tools: ['github__search'] },
-    };
-    useStackStore.setState({ clients: [cursor], selectedNodeId: null });
-    renderWithRouter(
-      withSkills,
-      <AccessLens
-        servers={[
-          { name: 'github', transport: 'http', initialized: true, toolCount: 1, tools: ['search'] },
-          { name: 'gitlab', transport: 'http', initialized: true, toolCount: 1, tools: ['list'] },
-        ]}
-      />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Toggle Access Lens' }));
-    act(() => {
-      useStackStore.setState({ selectedNodeId: 'client-cursor' });
-    });
-    act(() => {
-      useAccessLensStore.getState().toggleServer('gitlab');
-    });
+  it('clears the draft, turns the lens off, and lands on the Library once confirmed', () => {
+    renderDirtyLens(() => useAccessLensStore.getState().toggleServer('gitlab'));
 
     fireEvent.click(screen.getByRole('button', { name: 'Open skills in the Library' }));
-    expect(screen.getByTestId('location')).toHaveTextContent('/stack');
-    expect(screen.getByText(/Leave Access Lens and discard unsaved access changes/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard & leave' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/library');
-    expect(useAccessLensStore.getState().exitNavTarget).toBeNull();
+    expect(useAccessLensStore.getState().enabled).toBe(false);
+    expect(useAccessLensStore.getState().clientSlug).toBeNull();
+    expect(useNavigationGuardStore.getState().guards).toHaveLength(0);
+  });
+
+  it('blocks a tool-only edit on the Skills row and on a pill', () => {
+    renderDirtyLens(() => useAccessLensStore.getState().toggleTool('github', 'create'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open skills in the Library' }));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Access Lens for Cursor');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    fireEvent.click(screen.getByRole('link', { name: 'Metrics' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/stack');
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Access Lens for Cursor');
+  });
+
+  it('does not block a navigation that stays in Stack', () => {
+    renderDirtyLens(() => useAccessLensStore.getState().toggleServer('gitlab'));
+
+    const { isBlocked } = useNavigationGuardStore.getState();
+    expect(isBlocked('/stack?spec=1')).toBe(false);
+    expect(isBlocked('/library')).toBe(true);
+  });
+
+  it('leaves the lens alone when Escape cancels the shared confirm', () => {
+    renderDirtyLens(() => useAccessLensStore.getState().toggleServer('gitlab'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open skills in the Library' }));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.queryByText(/discard unsaved access changes/i)).not.toBeInTheDocument();
+    expect(useAccessLensStore.getState().enabled).toBe(true);
+    expect(useAccessLensStore.getState().draft).toContain('gitlab');
+    expect(screen.getByTestId('location')).toHaveTextContent('/stack');
   });
 });

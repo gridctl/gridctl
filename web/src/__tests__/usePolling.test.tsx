@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { act, renderHook, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import '@testing-library/jest-dom';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router';
 import { requestGatewayPoll, usePolling, usePollingRefresh } from '../hooks/usePolling';
 import * as api from '../lib/api';
 import { HTTPError } from '../lib/api';
@@ -12,6 +13,9 @@ import { useRegistryStore } from '../stores/useRegistryStore';
 import { useStackStore } from '../stores/useStackStore';
 import { useTelemetryStore } from '../stores/useTelemetryStore';
 import { useUIStore } from '../stores/useUIStore';
+import { useNavigationGuardStore } from '../stores/useNavigationGuardStore';
+import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
+import { showToast } from '../components/ui/Toast';
 
 vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
 
@@ -308,5 +312,84 @@ describe('usePolling retry registration', () => {
     });
     expect(api.fetchToolCatalog).toHaveBeenCalledTimes(1);
     view.unmount();
+  });
+});
+
+describe('usePolling toast navigation guard', () => {
+  function LocationProbe() {
+    const location = useLocation();
+    return <div data-testid="location">{location.pathname + location.search}</div>;
+  }
+
+  function Poller() {
+    usePolling();
+    return null;
+  }
+
+  function resetGuards() {
+    useNavigationGuardStore.setState({ guards: [], hosts: 0, pending: null });
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(showToast).mockClear();
+    resetGuards();
+    usePinsStore.setState({ pins: null, skillPins: null, pinsError: null, skillPinsError: null });
+    useRegistryStore.setState({ skills: null, error: null });
+    useStackStore.setState({ error: null, isLoading: false, connectionStatus: 'disconnected' });
+    useTelemetryStore.setState({ rawSpec: null, config: { global: {}, servers: {} } });
+  });
+
+  it("holds the drift toast's View action behind a dirty editor", async () => {
+    resetGuards();
+    vi.spyOn(api, 'fetchStatus').mockResolvedValue(quietStatus);
+    vi.spyOn(api, 'fetchTools').mockResolvedValue({ tools: [] });
+    vi.spyOn(api, 'fetchToolCatalog').mockResolvedValue({ tools: [] });
+    vi.spyOn(api, 'fetchClients').mockResolvedValue([]);
+    vi.spyOn(api, 'fetchServerPins').mockResolvedValue({
+      github: {
+        status: 'drift',
+        tool_count: 1,
+        server_hash: 'abc',
+        pinned_at: '2026-01-01T00:00:00Z',
+        last_verified_at: '2026-01-01T00:00:00Z',
+        tools: {},
+      },
+    } as Awaited<ReturnType<typeof api.fetchServerPins>>);
+    vi.spyOn(api, 'fetchSkillPins').mockResolvedValue({});
+    vi.spyOn(api, 'fetchContextPins').mockResolvedValue({});
+    vi.spyOn(api, 'fetchRegistryStatus').mockResolvedValue({ totalSkills: 0, activeSkills: 0 });
+    vi.spyOn(api, 'fetchRegistrySkills').mockResolvedValue([]);
+    vi.spyOn(api, 'fetchSkillSources').mockResolvedValue([]);
+    vi.spyOn(api, 'getTelemetryInventory').mockResolvedValue([]);
+    vi.spyOn(api, 'fetchStackSpec').mockResolvedValue({ content: '', path: '' });
+    vi.spyOn(api, 'fetchStackHealth').mockResolvedValue({
+      validation: { status: 'valid', errorCount: 0, warningCount: 0 },
+      drift: { status: 'in-sync' },
+      dependencies: { status: 'resolved' },
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/tools']}>
+        <Poller />
+        <LocationProbe />
+        <NavigationGuardDialog />
+      </MemoryRouter>,
+    );
+    let view: (() => void) | undefined;
+    await waitFor(() => {
+      const call = vi
+        .mocked(showToast)
+        .mock.calls.find(([, message]) => String(message).startsWith('Pin drift detected on 1 server'));
+      view = call?.[2]?.action?.onClick;
+      expect(view).toBeDefined();
+    });
+
+    useNavigationGuardStore.getState().register({ id: 'skill', label: 'skill "triage"' });
+    act(() => view?.());
+    expect(screen.getByTestId('location')).toHaveTextContent('/tools');
+    expect(screen.getByText('Discard unsaved changes')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard & leave' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/pins?server=github&view=drift');
   });
 });

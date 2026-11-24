@@ -1,8 +1,7 @@
-import { NavLink, useLocation } from 'react-router';
+import { NavLink, useLocation, useNavigate } from 'react-router';
 import { cn } from '../../lib/cn';
 import { WORKSPACE_CONFIG, type WorkspaceConfig } from '../../types/workspace';
-import { useAccessLensStore, isDirty } from '../../stores/useAccessLensStore';
-import { useToolsDirtyStore } from '../../stores/useToolsDirtyStore';
+import { useNavigationGuardStore } from '../../stores/useNavigationGuardStore';
 
 interface WorkspacePillProps {
   workspace: WorkspaceConfig;
@@ -14,35 +13,25 @@ function WorkspacePill({ workspace }: WorkspacePillProps) {
     pathname === `/${workspace.id}` || pathname.startsWith(`/${workspace.id}/`);
   const Icon = workspace.icon;
 
-  // Dirty-draft navigate-away guard. The Access Lens draft lives in the Stack
-  // workspace; leaving it while dirty must confirm. BrowserRouter has no
-  // useBlocker, so cancel the NavLink here and route through the store, which
-  // AccessLens turns into a discard-with-confirm.
+  const navigate = useNavigate();
+  const target = `/${workspace.id}`;
+
+  // An unsaved editor that this navigation would leave cancels the NavLink
+  // and asks through the shared confirm. Modified clicks open a new tab and
+  // pass through untouched.
   const handleClick = (e: React.MouseEvent) => {
-    const s = useAccessLensStore.getState();
-    const leavingStack =
-      (pathname === '/stack' || pathname.startsWith('/stack/')) && workspace.id !== 'stack';
-    const draftDirty = s.enabled && s.clientSlug != null && isDirty(s.draft, s.baseline);
-    if (leavingStack && draftDirty) {
-      e.preventDefault();
-      s.requestExitNav(`/${workspace.id}`);
-      return;
-    }
-    // Same guard for the Tools workspace's whitelist editor: its dirty flag
-    // is mirrored into useToolsDirtyStore, and ToolsWorkspace renders the
-    // confirm for the stashed target.
-    const t = useToolsDirtyStore.getState();
-    const leavingTools =
-      (pathname === '/tools' || pathname.startsWith('/tools/')) && workspace.id !== 'tools';
-    if (leavingTools && t.dirty) {
-      e.preventDefault();
-      t.requestExitNav(`/${workspace.id}`);
-    }
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const { isBlocked, guard } = useNavigationGuardStore.getState();
+    if (!isBlocked(target)) return;
+    e.preventDefault();
+    guard(target, () => {
+      void navigate(target);
+    });
   };
 
   return (
     <NavLink
-      to={`/${workspace.id}`}
+      to={target}
       aria-current={isActive ? 'page' : undefined}
       aria-label={workspace.label}
       title={workspace.label}

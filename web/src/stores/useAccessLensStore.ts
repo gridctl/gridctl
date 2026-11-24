@@ -299,13 +299,6 @@ interface AccessLensState {
   setConflict: (conflict: string | null) => void;
   setSaving: (saving: boolean) => void;
 
-  // exitNavTarget holds an in-app navigation the dirty-draft guard intercepted.
-  // The app uses BrowserRouter (no useBlocker), so the WorkspaceSwitcher cancels
-  // the NavLink and stashes the target here; AccessLens confirms, then routes.
-  exitNavTarget: string | null;
-  requestExitNav: (path: string) => void;
-  clearExitNav: () => void;
-
   // pendingSwitchSlug holds the client the operator selected while a dirty draft
   // for another client was open. Set from the seeding effect (a store update, so
   // it stays out of React setState-in-effect); the confirm renders from it.
@@ -327,7 +320,6 @@ const EMPTY_TARGET = {
   toolsTouched: false,
   serverTools: {} as Record<string, string[]>,
   conflict: null,
-  exitNavTarget: null as string | null,
   pendingSwitchSlug: null as string | null,
 };
 
@@ -452,9 +444,6 @@ export const useAccessLensStore = create<AccessLensState>((set, get) => ({
 
   setConflict: (conflict) => set({ conflict }),
   setSaving: (isSaving) => set({ isSaving }),
-
-  requestExitNav: (path) => set({ exitNavTarget: path }),
-  clearExitNav: () => set({ exitNavTarget: null }),
 
   requestSwitch: (slug) => set({ pendingSwitchSlug: slug }),
   clearSwitch: () => set({ pendingSwitchSlug: null }),

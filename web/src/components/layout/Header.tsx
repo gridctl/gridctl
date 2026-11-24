@@ -1,7 +1,7 @@
 import { RefreshCw, RotateCcw, Plus, Command, LogOut, SlidersHorizontal } from 'lucide-react';
 import { Suspense, lazy, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { cn } from '../../lib/cn';
 import { formatShortcut, MOD_KEY, SHIFT_KEY } from '../../lib/platform';
 import { IconButton } from '../ui/IconButton';
@@ -29,7 +29,7 @@ interface HeaderProps {
 }
 
 export function Header({ onRefresh, isRefreshing }: HeaderProps) {
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
   const connectionStatus = useStackStore((s) => s.connectionStatus);
 
   const toggleCommandPalette = useUIStore((s) => s.toggleCommandPalette);

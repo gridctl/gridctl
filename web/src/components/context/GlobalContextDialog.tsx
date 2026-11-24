@@ -31,7 +31,7 @@ import { PACK_CHIP_CLASS } from '../registry/PackChip';
 import { showToast } from '../ui/Toast';
 import { ContextPinChip, ContextPinReviewModal } from './ContextPinChip';
 import { contextPinStatus } from '../../lib/contextGovernance';
-import { useBeforeUnloadGuard } from '../../hooks/useBeforeUnloadGuard';
+import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import { useSplitPane } from '../../hooks/useSplitPane';
 import { SplitPaneHandle } from '../ui/SplitPane';
 import { MarkdownPreview } from '../registry/MarkdownPreview';
@@ -138,7 +138,7 @@ export function GlobalContextDialog({ isOpen, onClose, initialDriftSlug = null }
     onClose();
   }, [confirmDiscard, deleteConfirmOpen, dirty, onClose]);
 
-  useBeforeUnloadGuard(isOpen && dirty);
+  useNavigationGuard({ dirty: isOpen && dirty, label: 'Global Context', onDiscard: onClose });
 
   useEffect(() => {
     if (isOpen) void refresh();

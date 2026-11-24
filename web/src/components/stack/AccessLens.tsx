@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
 import { ScanEye, PanelRightOpen, Save, Undo2, AlertTriangle } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { isModalDialogOpen } from '../../lib/dom';
@@ -14,6 +13,8 @@ import {
   type SeedParams,
 } from '../../stores/useAccessLensStore';
 import { baselineServers } from '../../hooks/useClientScopeEditor';
+import { useNavigationGuard } from '../../hooks/useNavigationGuard';
+import { leavesWorkspace, useNavigationGuardStore } from '../../stores/useNavigationGuardStore';
 import { SlideOver } from '../ui/SlideOver';
 import { Modal } from '../ui/Modal';
 import { AccessLensEditorBody } from './AccessLensEditorBody';
@@ -59,16 +60,15 @@ export function AccessLens({ servers }: AccessLensProps) {
   const closeSlideOver = useAccessLensStore((s) => s.closeSlideOver);
   const discardDraft = useAccessLensStore((s) => s.discardDraft);
   const clearDraft = useAccessLensStore((s) => s.clearDraft);
-  const exitNavTarget = useAccessLensStore((s) => s.exitNavTarget);
-  const clearExitNav = useAccessLensStore((s) => s.clearExitNav);
   const pendingSwitchSlug = useAccessLensStore((s) => s.pendingSwitchSlug);
   const requestSwitch = useAccessLensStore((s) => s.requestSwitch);
   const clearSwitch = useAccessLensStore((s) => s.clearSwitch);
-  const navigate = useNavigate();
+  const guardPending = useNavigationGuardStore((s) => s.pending !== null);
 
   const [gateOpen, setGateOpen] = useState(false);
   // Local exit confirm for mode-off (set from an event handler, never an effect).
-  // Client-switch and navigate-away confirms are store-driven (see below).
+  // Client-switch confirms are store-driven (see below); navigate-away goes
+  // through the shared navigation guard.
   const [exit, setExit] = useState<ExitRequest | null>(null);
 
   const serverToolMap = useMemo(
@@ -170,16 +170,17 @@ export function AccessLens({ servers }: AccessLensProps) {
     requestSwitch,
   ]);
 
-  // Hard page unload (reload/close): warn while a draft is unsaved.
-  useEffect(() => {
-    if (!dirty) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [dirty]);
+  // Leaving Stack with an unsaved draft confirms first. The draft lives in the
+  // store and outlives this component, so discarding clears it explicitly.
+  useNavigationGuard({
+    dirty,
+    label: `Access Lens for ${clientName ?? 'the selected client'}`,
+    blocks: (to) => leavesWorkspace(to, 'stack'),
+    onDiscard: () => {
+      clearDraft();
+      setEnabled(false);
+    },
+  });
 
   const requestDisable = useCallback(() => {
     if (dirty) {
@@ -196,7 +197,7 @@ export function AccessLens({ servers }: AccessLensProps) {
     setEnabled(false);
   }, [dirty, clearDraft, setEnabled]);
 
-  const hasPendingExit = exit != null || pendingSwitchSlug != null || exitNavTarget != null;
+  const hasPendingExit = exit != null || pendingSwitchSlug != null || guardPending;
 
   // Escape exits the mode (honoring the dirty confirm) when no overlay of its own
   // is handling the key. The gate (Modal) and slide-over own their Escape.
@@ -222,9 +223,9 @@ export function AccessLens({ servers }: AccessLensProps) {
     [clientSlug, draft, servers, previewToolList],
   );
 
-  // Unify the three exit-confirm sources into one descriptor. Mode-off is local
-  // React state; client-switch and navigate-away are store-driven so they never
-  // require setState inside an effect.
+  // Unify the two exit-confirm sources into one descriptor. Mode-off is local
+  // React state; client-switch is store-driven so it never requires setState
+  // inside an effect. Navigate-away goes through the shared navigation guard.
   const switchTarget = pendingSwitchSlug
     ? clients.find((c) => c.slug === pendingSwitchSlug && c.linked) ?? null
     : null;
@@ -242,18 +243,7 @@ export function AccessLens({ servers }: AccessLensProps) {
             clearSwitch();
           },
         }
-      : exitNavTarget
-        ? {
-            message: 'Leave Access Lens and discard unsaved access changes?',
-            proceed: () => {
-              clearDraft();
-              setEnabled(false);
-              clearExitNav();
-              navigate(exitNavTarget);
-            },
-            cancel: () => clearExitNav(),
-          }
-        : null);
+      : null);
 
   function resolveExit(run?: () => void) {
     run?.();
@@ -366,7 +356,7 @@ export function AccessLens({ servers }: AccessLensProps) {
         }}
       />
 
-      {/* Discard-with-confirm — shared by mode-off, client-change, navigate-away. */}
+      {/* Discard-with-confirm, shared by mode-off and client-change. */}
       <Modal
         isOpen={activeExit != null}
         onClose={() => resolveExit(activeExit?.cancel)}

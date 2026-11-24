@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useState } from 'react';
 import { Link } from 'react-router';
 import { fetchSecurityReport } from '../../lib/api';
+import { useGuardedLinkClick } from '../../hooks/useGuardedNavigate';
 import type { SecurityCheck, SecurityReport } from '../../types';
 
 const ALLOWED_ACTION_PREFIX = '/pins';
@@ -81,6 +82,7 @@ export function SecurityEvidence({ scope }: { scope: 'gateway' | { server: strin
 }
 
 function CheckRow({ check }: { check: SecurityCheck }) {
+  const guardedLinkClick = useGuardedLinkClick();
   const collapsed = check.outcome === 'unknown' || check.outcome === 'not-applicable';
   return (
     <details className="text-sm space-y-1" open={!collapsed}>
@@ -115,7 +117,11 @@ function CheckRow({ check }: { check: SecurityCheck }) {
       {(check.actions ?? []).map((action) => {
         if (!action.path.startsWith(ALLOWED_ACTION_PREFIX) || action.path.includes('://')) return null;
         return (
-          <Link key={action.id} to={action.path} className="text-xs underline break-all">
+          <Link
+            key={action.id}
+            to={action.path}
+            onClick={(e) => guardedLinkClick(e, action.path)}
+            className="text-xs underline break-all">
             {action.label}
           </Link>
         );

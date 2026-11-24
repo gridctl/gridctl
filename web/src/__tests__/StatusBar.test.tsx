@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { render, screen, cleanup, waitFor, act, fireEvent } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router';
+import { leavesWorkspace, useNavigationGuardStore } from '../stores/useNavigationGuardStore';
+import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
 import { StatusBar } from '../components/layout/StatusBar';
 import { useStackStore } from '../stores/useStackStore';
 import { useSpecStore } from '../stores/useSpecStore';
@@ -452,5 +454,60 @@ describe('StatusBar connection state', () => {
     expect(item.querySelector('.animate-pulse')).toHaveAttribute('aria-hidden', 'true');
     const updated = screen.getByText(/^Updated /);
     expect(updated.closest('[role="status"], [aria-live]')).toBeNull();
+  });
+});
+
+function StatusLocation() {
+  const loc = useLocation();
+  return <div data-testid="location">{`${loc.pathname}${loc.search}`}</div>;
+}
+
+describe('StatusBar navigation guard', () => {
+  afterEach(() => {
+    useNavigationGuardStore.setState({ guards: [], pending: null });
+  });
+
+  function renderGuarded() {
+    useStackStore.setState({
+      tokenUsage: {
+        session: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
+        per_server: {},
+        format_savings: { original_tokens: 0, formatted_tokens: 0, saved_tokens: 0, savings_percent: 0 },
+      },
+    });
+    return render(
+      <MemoryRouter initialEntries={['/tools?server=github']}>
+        <StatusBar />
+        <NavigationGuardDialog />
+        <StatusLocation />
+      </MemoryRouter>,
+    );
+  }
+
+  it('holds the tokens button behind a dirty editor until confirmed', () => {
+    useNavigationGuardStore.getState().register({
+      id: 'tools',
+      label: 'Tools for github',
+      blocks: (to) => leavesWorkspace(to, 'tools'),
+    });
+    renderGuarded();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Metrics workspace' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/tools?server=github');
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Tools for github');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/tools?server=github');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Metrics workspace' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard & leave' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/metrics');
+  });
+
+  it('navigates without a dialog when nothing is dirty', () => {
+    renderGuarded();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Metrics workspace' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/metrics');
   });
 });

@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { act, renderHook, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import '@testing-library/jest-dom';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router';
 import { ReactFlowProvider } from '@xyflow/react';
 import type { ReactNode } from 'react';
 import { CommandRegistryProvider, useCommandRegistry } from '../hooks/useCommandRegistry';
@@ -9,6 +10,8 @@ import { useStackStore } from '../stores/useStackStore';
 import { useUIStore } from '../stores/useUIStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useInspectorToolsGuardStore } from '../stores/useInspectorToolsGuardStore';
+import { leavesWorkspace, useNavigationGuardStore } from '../stores/useNavigationGuardStore';
+import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
 import type { ClientStatus, GatewayStatus, MCPServerStatus } from '../types';
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -134,5 +137,117 @@ describe('useGlobalCommands inspect entry', () => {
     });
     expect(result.current.commands.some((command) => command.id === 'node:client:cursor')).toBe(false);
     expect(result.current.commands.some((command) => command.label === 'Inspect Cursor')).toBe(false);
+  });
+});
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname + location.search}</div>;
+}
+
+function CommandsHarness({ onReady }: { onReady: (registry: ReturnType<typeof useCommandRegistry>) => void }) {
+  const registry = useProbe();
+  onReady(registry);
+  return null;
+}
+
+describe('useGlobalCommands navigation guard', () => {
+  let registry: ReturnType<typeof useCommandRegistry> | null = null;
+
+  function renderGuarded(path = '/tools') {
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <ReactFlowProvider>
+          <CommandRegistryProvider>
+            <CommandsHarness onReady={(r) => { registry = r; }} />
+            <LocationProbe />
+            <NavigationGuardDialog />
+          </CommandRegistryProvider>
+        </ReactFlowProvider>
+      </MemoryRouter>,
+    );
+  }
+
+  function select(id: string) {
+    const command = registry?.commands.find((item) => item.id === id);
+    expect(command).toBeDefined();
+    act(() => {
+      command?.onSelect();
+    });
+  }
+
+  function registerDirty() {
+    useNavigationGuardStore.getState().register({ id: 'tools', label: 'Tools for github' });
+  }
+
+  beforeEach(() => {
+    registry = null;
+    useAuthStore.setState({ credential: null });
+    useUIStore.setState({ resetDialogOpen: false });
+    useNavigationGuardStore.setState({ guards: [], hosts: 0, pending: null });
+  });
+
+  afterEach(() => {
+    useNavigationGuardStore.setState({ guards: [], hosts: 0, pending: null });
+    useUIStore.setState({ resetDialogOpen: false });
+  });
+
+  it('holds Open Logs behind the discard confirm and lands on /logs when confirmed', async () => {
+    renderGuarded();
+    await waitFor(() => expect(registry?.commands.some((c) => c.id === 'navigate:logs')).toBe(true));
+    registerDirty();
+    select('navigate:logs');
+    expect(screen.getByTestId('location')).toHaveTextContent('/tools');
+    expect(screen.getByText('Discard unsaved changes')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard & leave' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/logs');
+    expect(screen.queryByText('Discard unsaved changes')).not.toBeInTheDocument();
+  });
+
+  it('stays put when the confirm is canceled', async () => {
+    renderGuarded();
+    await waitFor(() => expect(registry?.commands.some((c) => c.id === 'navigate:logs')).toBe(true));
+    registerDirty();
+    select('navigate:logs');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/tools');
+    expect(screen.queryByText('Discard unsaved changes')).not.toBeInTheDocument();
+    expect(useNavigationGuardStore.getState().guards).toHaveLength(1);
+  });
+
+  it('navigates with no dialog when nothing is dirty', async () => {
+    renderGuarded();
+    await waitFor(() => expect(registry?.commands.some((c) => c.id === 'navigate:logs')).toBe(true));
+    select('navigate:logs');
+    expect(screen.getByTestId('location')).toHaveTextContent('/logs');
+    expect(screen.queryByText('Discard unsaved changes')).not.toBeInTheDocument();
+  });
+
+  it('opens the reset dialog only once the guarded navigation proceeds', async () => {
+    renderGuarded();
+    await waitFor(() => expect(registry?.commands.some((c) => c.id === 'system:reset-gridctl')).toBe(true));
+    registerDirty();
+    select('system:reset-gridctl');
+    expect(useUIStore.getState().resetDialogOpen).toBe(false);
+    expect(screen.getByTestId('location')).toHaveTextContent('/tools');
+    fireEvent.click(screen.getByRole('button', { name: 'Discard & leave' }));
+    expect(useUIStore.getState().resetDialogOpen).toBe(true);
+    expect(screen.getByTestId('location')).toHaveTextContent('/connections');
+  });
+
+  it('lets Open Spec Editor through a guard that only blocks leaving /stack', async () => {
+    renderGuarded('/stack');
+    await waitFor(() => expect(registry?.commands.some((c) => c.id === 'navigate:spec')).toBe(true));
+    useNavigationGuardStore.getState().register({
+      id: 'lens',
+      label: 'Access Lens',
+      blocks: (to) => leavesWorkspace(to, 'stack'),
+    });
+    select('navigate:spec');
+    expect(screen.getByTestId('location')).toHaveTextContent('/stack?spec=1');
+    expect(screen.queryByText('Discard unsaved changes')).not.toBeInTheDocument();
+    select('navigate:workspace-library');
+    expect(screen.getByTestId('location')).toHaveTextContent('/stack?spec=1');
+    expect(screen.getByText('Discard unsaved changes')).toBeInTheDocument();
   });
 });

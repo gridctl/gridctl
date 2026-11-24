@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { ShieldAlert } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { skillPinsUrl } from '../../lib/skillGovernance';
@@ -25,7 +25,7 @@ export function PinFindingsBadge() {
   const firstFindingsSkill = useFirstFindingsSkill();
   const contextFindingCount = useFindingContextCount();
   const firstFindingsContext = useFirstFindingsContext();
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
 
   if (pins === null && skillFindingCount === 0 && contextFindingCount === 0) return null;
   if (findingCount === 0 && skillFindingCount === 0 && contextFindingCount === 0) return null;

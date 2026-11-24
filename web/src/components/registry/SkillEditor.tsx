@@ -46,7 +46,7 @@ import { applyMarkdownAction, type MarkdownAction } from '../../lib/markdownEdit
 import { cn } from '../../lib/cn';
 import { useUIStore } from '../../stores/useUIStore';
 import { useSkillBody } from '../../hooks/useSkillBody';
-import { useBeforeUnloadGuard } from '../../hooks/useBeforeUnloadGuard';
+import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import { useSplitPane } from '../../hooks/useSplitPane';
 import { SplitPaneHandle } from '../ui/SplitPane';
 import type { AgentSkill, ItemState, SkillSourceStatus, SkillValidationResult } from '../../types';
@@ -654,7 +654,11 @@ export function SkillEditor({
   // effect has not seeded the fields yet. That frame is not an edit.
   const fieldsSeeded = !skill || name === skill.name;
   const dirty = fieldsSeeded && !bodySettling && baseline !== current;
-  useBeforeUnloadGuard(isOpen && dirty);
+  useNavigationGuard({
+    dirty: isOpen && dirty,
+    label: skill ? `skill ${skill.name}` : 'new skill',
+    onDiscard: onClose,
+  });
 
   // --- Metadata management ---
 
