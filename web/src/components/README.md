@@ -83,6 +83,7 @@ not scroll the group. The alert group is `empty:hidden` and draws its
 trailing divider as `::after`, so an idle bar shows one divider. Tokenizer,
 format savings, and sessions also hide below 800 px. A disconnected error
 truncates, and its `title` carries the full string.
+`web/shell-layout.browser.mjs` checks this layout in Chromium.
 
 The bar is a `<footer aria-label="Status bar">` landmark, a sibling of
 `<main>`. The connection item is a `role="status"` region that holds only
@@ -91,7 +92,6 @@ the state label: a neutral "Connecting" before the first status response
 once an attempt has failed. The "Updated" age sits outside every live region
 and ticks on its own one-second `useNow` clock, so it keeps advancing when
 no poll lands. While disconnected it reads "Last updated" in the warning tone.
-`web/shell-layout.browser.mjs` checks this layout in Chromium.
 
 Detached windows (`/sidebar`, `/editor`, `/logs-window`, `/metrics-window`,
 `/traces-window`, `/registry` → `/library-window`) render *outside*
