@@ -133,4 +133,11 @@ describe('ConfirmDialog', () => {
     const { container } = render(<ClosedHarness />);
     expect(container.firstChild).toBeNull();
   });
+
+  it('fills the danger confirm with the flat danger token', () => {
+    render(<Harness />);
+    const confirm = screen.getByRole('button', { name: 'Delete "my-skill"' });
+    expect(confirm).toHaveClass('bg-danger', 'text-white', 'hover:bg-danger-hover');
+    expect(confirm.className).not.toMatch(/\bbg-status-error\b|bg-gradient|bg-danger\/\d+/);
+  });
 });

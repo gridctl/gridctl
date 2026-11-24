@@ -37,7 +37,7 @@ function walkSources(dir: string, out: string[] = []): string[] {
 }
 
 const COLOR_REF =
-  /(?:bg|text|border|ring|from|to|via|fill|stroke|outline|decoration|divide|placeholder|accent|caret)-(?:surface|border|primary|secondary|tertiary|status|text|background|chart)[a-z0-9-]*/g;
+  /(?:bg|text|border|ring|from|to|via|fill|stroke|outline|decoration|divide|placeholder|accent|caret)-(?:surface|border|primary|secondary|tertiary|status|text|background|chart|danger)[a-z0-9-]*/g;
 const SHADOW_REF = /shadow-(?:glow|node|pane)[a-z-]*/g;
 const UTILITY_PREFIX =
   /^(?:bg|text|border|ring|from|to|via|fill|stroke|outline|decoration|divide|placeholder|accent|caret)-/;

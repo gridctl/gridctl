@@ -215,8 +215,10 @@ workspace-specific props.
   toolbars or filters inside the marked element.
 - Use Tailwind **semantic tokens** (`bg-primary`, `text-secondary`,
   `border-status-error`, `bg-surface-overlay-2`, `stroke-chart-blue`) -
-  never raw palette classes such as `bg-amber-500`. Card tints use
-  `surface-overlay-1` through `surface-overlay-3`. Chart series use
+  never raw palette classes such as `bg-amber-500`. Destructive fills use
+  `bg-danger`, and `border-border-input` is the 3:1 boundary for form
+  controls. Card tints use `surface-overlay-1` through
+  `surface-overlay-3`. Chart series use
   `chart-blue`, `chart-cyan`, `chart-pink`, `chart-orange`, and
   `chart-purple`. The set lives in `web/src/index.css` and re-keys with
   `data-theme`.
@@ -269,9 +271,10 @@ workspace-specific props.
   container and would blank the name on every other surface.
 - Don't use white or black color utilities for surfaces that must follow
   the theme. Overlay tokens are already translucent, so do not add a slash
-  modifier. Leave white text on the danger gradient and the danger confirm.
-  The raw-palette lint rule rejects every default Tailwind color family
-  outside tests, including chart files.
+  modifier. Filled danger surfaces use `bg-danger` (`hover:bg-danger-hover`)
+  with white text; `status-error` is for text, borders, tints, and dots, not
+  a fill under white text. The raw-palette lint rule rejects every default
+  Tailwind color family outside tests, including chart files.
 - Don't size UI text with a bracketed pixel class. Use `text-3xs`,
   `text-2xs`, `text-xs`, or `text-sm`.
 - Don't pass a raw error to `showToast`, and don't use `String(err)`.

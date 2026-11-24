@@ -54,31 +54,31 @@ export const COLORS = {
   secondaryGlow: 'rgba(13, 148, 136, 0.15)',
 
   // Tertiary - Purple/Violet (Agents, AI)
-  tertiary: '#8b5cf6',
+  tertiary: '#9f7df9',
   tertiaryLight: '#a78bfa',
   tertiaryDark: '#7c3aed',
-  tertiaryGlow: 'rgba(139, 92, 246, 0.15)',
+  tertiaryGlow: 'rgba(159, 125, 249, 0.15)',
 
   // Status colors
   statusRunning: '#10b981',
   statusStopped: '#52525b',
-  statusError: '#f43f5e',
+  statusError: '#f65872',
   statusPending: '#eab308',
 
   // Transport indicators (matching primary/secondary/tertiary)
   transportHttp: '#0d9488',  // Teal for network
   transportStdio: '#f59e0b', // Amber for local
-  transportSse: '#8b5cf6',   // Violet for SSE
+  transportSse: '#9f7df9',   // Violet for SSE
 
   // External server styling (violet theme)
-  external: '#8b5cf6',
+  external: '#9f7df9',
   externalLight: '#a78bfa',
-  externalGlow: 'rgba(139, 92, 246, 0.15)',
+  externalGlow: 'rgba(159, 125, 249, 0.15)',
 
   // Text hierarchy - Warm whites
   textPrimary: '#fafaf9',
   textSecondary: '#a8a29e',
-  textMuted: '#78716c',
+  textMuted: '#8f8882',
 
   // Edge colors
   edgeDefault: '#27272a',

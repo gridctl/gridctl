@@ -499,7 +499,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
                       disabled={!newValue || !valueValid || saving}
                       className={cn(
                         'flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors',
-                        'bg-status-error text-white hover:bg-status-error/80',
+                        'bg-danger text-white hover:bg-danger-hover',
                         'disabled:opacity-40 disabled:cursor-not-allowed',
                       )}
                     >
