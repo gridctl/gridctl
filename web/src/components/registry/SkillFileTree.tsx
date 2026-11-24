@@ -55,12 +55,14 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
         if (cancelled) return;
         setFiles(list);
         setLoadError(null);
+        setLoading(false);
       })
       .catch((err) => {
-        if (!cancelled && !isCancellation(err)) setLoadError(describeError(err, 'Load files').text);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        // A cancelled fetch stays on the loading line rather than claiming
+        // the skill has no files.
+        if (cancelled || isCancellation(err)) return;
+        setLoadError(describeError(err, 'Load files').text);
+        setLoading(false);
       });
     return () => {
       cancelled = true;
@@ -91,6 +93,7 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
       setShowNewFile(false);
       const updated = await fetchSkillFiles(skillName);
       setFiles(updated);
+      setLoadError(null);
     } catch (err) {
       if (!isCancellation(err)) {
         const described = describeError(err, 'Create file');
@@ -105,6 +108,7 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
       showToast('success', `File deleted: ${path}`);
       const updated = await fetchSkillFiles(skillName);
       setFiles(updated);
+      setLoadError(null);
     } catch (err) {
       if (!isCancellation(err)) {
         const described = describeError(err, 'Delete file');
