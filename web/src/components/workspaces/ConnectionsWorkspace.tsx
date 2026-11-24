@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useNavigate, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
 import { Bot, Loader2, Plug, Radio } from 'lucide-react';
 import {
   fetchClients,
@@ -18,6 +18,9 @@ import { useStackStore } from '../../stores/useStackStore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useListNav } from '../../hooks/useListNav';
 import { useInterval } from '../../hooks/useInterval';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
+import { useNavigationGuard } from '../../hooks/useNavigationGuard';
+import { leavesWorkspace } from '../../stores/useNavigationGuardStore';
 import type { AgentProjectionStatus, ClientStatus, SessionEntry, WiringRow } from '../../types';
 import { WORKSPACE_LABELS } from '../../types/workspace';
 import { showToast } from '../ui/Toast';
@@ -290,6 +293,14 @@ export default function ConnectionsWorkspace() {
         .map((c) => ({ client: c, enable: staged[c.slug] })),
     [clients, staged],
   );
+
+  // A reset ends in a full reload, which must not raise the leave prompt.
+  useNavigationGuard({
+    dirty: changes.length > 0 && !resetDialogOpen,
+    label: `${changes.length} staged connection change${changes.length === 1 ? '' : 's'}`,
+    blocks: (to) => leavesWorkspace(to, 'connections'),
+    onDiscard: () => setStaged({}),
+  });
 
   const toggle = useCallback((c: ClientStatus) => {
     setStaged((prev) => {
@@ -584,7 +595,7 @@ function UnjoinedAgentsStrip({
   slugs: string[];
   agentsByClient: Map<string, AgentProjectionStatus[]>;
 }) {
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
   const [expanded, setExpanded] = useState(false);
   const total = slugs.reduce((n, s) => n + (agentsByClient.get(s)?.length ?? 0), 0);
   return (

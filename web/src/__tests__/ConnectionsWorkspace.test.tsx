@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, cleanup, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import ConnectionsWorkspace from '../components/workspaces/ConnectionsWorkspace';
 import { useStackStore } from '../stores/useStackStore';
 import { useContextStore } from '../stores/useContextStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
 import { useAuthStore } from '../stores/useAuthStore';
+import { useUIStore } from '../stores/useUIStore';
+import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
 import { POLLING } from '../lib/constants';
 import * as api from '../lib/api';
 import type { ClientStatus } from '../types';
@@ -406,5 +408,98 @@ describe('ConnectionsWorkspace', () => {
     await waitFor(() => expect(api.fetchClients).toHaveBeenCalledTimes(2));
     expect(screen.getByText('Connections unavailable')).toBeInTheDocument();
     expect(screen.queryByText('No clients available')).not.toBeInTheDocument();
+  });
+});
+
+describe('ConnectionsWorkspace — staged change guard', () => {
+  function LocationProbe() {
+    const location = useLocation();
+    return <div data-testid="location">{location.pathname + location.search}</div>;
+  }
+
+  function renderGuarded() {
+    return render(
+      <MemoryRouter initialEntries={['/connections?client=grok']}>
+        <Routes>
+          <Route path="/connections" element={<ConnectionsWorkspace />} />
+          <Route path="/tools" element={<div>TOOLS PAGE</div>} />
+        </Routes>
+        <NavigationGuardDialog />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+  }
+
+  afterEach(() => {
+    useUIStore.setState({ resetDialogOpen: false });
+  });
+
+  function beforeUnloadPrevented() {
+    const e = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(e);
+    return e.defaultPrevented;
+  }
+
+  it('warns on reload while changes are staged and not after Discard', () => {
+    renderWorkspace();
+    expect(beforeUnloadPrevented()).toBe(false);
+    fireEvent.click(screen.getByRole('switch', { name: 'Link Grok Build' }));
+    expect(beforeUnloadPrevented()).toBe(true);
+    fireEvent.click(screen.getByText('Discard'));
+    expect(beforeUnloadPrevented()).toBe(false);
+  });
+
+  it('does not warn on reload after a full apply', async () => {
+    vi.spyOn(api, 'linkClient').mockResolvedValue({
+      client: 'grok', serverName: 'gridctl', linked: true, declared: true,
+    });
+    renderWorkspace();
+    fireEvent.click(screen.getByRole('switch', { name: 'Link Grok Build' }));
+    fireEvent.click(screen.getByText('Review & Apply'));
+    fireEvent.click(await screen.findByText('Apply changes'));
+    await waitFor(() => expect(screen.queryByText(/pending change/)).not.toBeInTheDocument());
+    expect(beforeUnloadPrevented()).toBe(false);
+  });
+
+  it('does not warn while the reset dialog is open', () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole('switch', { name: 'Link Grok Build' }));
+    act(() => useUIStore.setState({ resetDialogOpen: true }));
+    expect(beforeUnloadPrevented()).toBe(false);
+  });
+
+  it('holds Edit in Tools behind the shared confirm while changes are staged', async () => {
+    renderGuarded();
+    fireEvent.click(screen.getByRole('switch', { name: 'Link Grok Build' }));
+    fireEvent.click(screen.getByRole('button', { name: /access scope/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit in Tools' }));
+
+    expect(
+      await screen.findByRole('alertdialog', { name: 'Discard unsaved changes' }),
+    ).toHaveTextContent('1 staged connection change');
+    expect(screen.getByTestId('location')).toHaveTextContent('/connections?client=grok');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard & leave' }));
+    expect(await screen.findByText('TOOLS PAGE')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/tools?client=grok');
+  });
+
+  it('navigates to Tools at once with nothing staged', async () => {
+    renderGuarded();
+    fireEvent.click(screen.getByRole('button', { name: /access scope/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit in Tools' }));
+    expect(await screen.findByText('TOOLS PAGE')).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('does not prompt when selecting another client in the rail', async () => {
+    renderGuarded();
+    fireEvent.click(screen.getByRole('switch', { name: 'Link Grok Build' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect Cursor' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('location')).toHaveTextContent('/connections?client=cursor'),
+    );
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.getByText('1 pending change')).toBeInTheDocument();
   });
 });
