@@ -487,3 +487,87 @@ describe('VariableInspector — properties and actions', () => {
     expect(screen.getByLabelText('Value hidden')).toBeInTheDocument();
   });
 });
+
+describe('VariableInspector — dirty edit reporting', () => {
+  function lastReport(fn: ReturnType<typeof vi.fn>) {
+    return fn.mock.calls.at(-1)?.[0];
+  }
+
+  async function openEdit() {
+    const onEditDirtyChange = vi.fn();
+    const props = makeProps({ variable: SECRET_VAR, onEditDirtyChange });
+    const view = render(<VariableInspector {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: /edit value/i }));
+    await flush();
+    return { onEditDirtyChange, props, view };
+  }
+
+  it('never reports dirty for an edit form opened and left unchanged', async () => {
+    const { onEditDirtyChange } = await openEdit();
+    expect(onEditDirtyChange).not.toHaveBeenCalledWith(true);
+  });
+
+  it('reports a changed value, then clean after Cancel', async () => {
+    const { onEditDirtyChange } = await openEdit();
+    fireEvent.change(screen.getByPlaceholderText('secret value'), {
+      target: { value: 'next-value' },
+    });
+    expect(lastReport(onEditDirtyChange)).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
+    expect(lastReport(onEditDirtyChange)).toBe(false);
+  });
+
+  it('reports clean after Save', async () => {
+    const { onEditDirtyChange } = await openEdit();
+    fireEvent.change(screen.getByPlaceholderText('secret value'), {
+      target: { value: 'next-value' },
+    });
+    expect(lastReport(onEditDirtyChange)).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    await flush();
+    expect(lastReport(onEditDirtyChange)).toBe(false);
+  });
+
+  it('reports clean when the value is typed back to the seed', async () => {
+    const { onEditDirtyChange } = await openEdit();
+    const input = screen.getByPlaceholderText('secret value');
+    fireEvent.change(input, { target: { value: 'next-value' } });
+    expect(lastReport(onEditDirtyChange)).toBe(true);
+    fireEvent.change(input, { target: { value: 's3cret-value' } });
+    expect(lastReport(onEditDirtyChange)).toBe(false);
+  });
+
+  it('reports a changed type alone as dirty', async () => {
+    const { onEditDirtyChange } = await openEdit();
+    fireEvent.click(screen.getByRole('button', { name: /^number$/i }));
+    expect(lastReport(onEditDirtyChange)).toBe(true);
+  });
+
+  it('reports a changed secret flag alone as dirty', async () => {
+    const { onEditDirtyChange } = await openEdit();
+    fireEvent.click(screen.getByRole('button', { name: /plaintext/i }));
+    expect(lastReport(onEditDirtyChange)).toBe(true);
+  });
+
+  it('reports clean on unmount', async () => {
+    const { onEditDirtyChange, view } = await openEdit();
+    fireEvent.change(screen.getByPlaceholderText('secret value'), {
+      target: { value: 'next-value' },
+    });
+    view.unmount();
+    expect(lastReport(onEditDirtyChange)).toBe(false);
+  });
+
+  it('warns on reload only while the edit is dirty', async () => {
+    await openEdit();
+    const before = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(before);
+    expect(before.defaultPrevented).toBe(false);
+    fireEvent.change(screen.getByPlaceholderText('secret value'), {
+      target: { value: 'next-value' },
+    });
+    const after = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(after);
+    expect(after.defaultPrevented).toBe(true);
+  });
+});

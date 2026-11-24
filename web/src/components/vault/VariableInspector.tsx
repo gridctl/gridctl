@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -24,6 +25,7 @@ import { showToast } from '../ui/Toast';
 import { InspectorHeader, PaneAnchor } from '../inspector';
 import { generateSecret } from '../../lib/generateSecret';
 import { useRevealedValues } from '../../hooks/useRevealedValues';
+import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import { ConsumerList } from './ConsumerList';
 import { formatStampOrUnknown } from '../../lib/time';
 import { isNavigable } from './consumerHelpers';
@@ -115,6 +117,9 @@ export interface VariableInspectorProps {
   onDelete: (key: string) => void;
   onConsumerClick?: (consumer: Consumer) => void;
   onClose: () => void;
+  // Reports whether the inline edit form holds changes, so the workspace can
+  // confirm before a selection change discards them. Reports false on unmount.
+  onEditDirtyChange?: (dirty: boolean) => void;
 }
 
 /**
@@ -140,6 +145,7 @@ export function VariableInspector({
   onDelete,
   onConsumerClick,
   onClose,
+  onEditDirtyChange,
 }: VariableInspectorProps) {
   const { revealed, reveal, hide } = useRevealedValues();
   const [editing, setEditing] = useState(false);
@@ -165,9 +171,10 @@ export function VariableInspector({
   // The original seeded input, so a type round-trip (string → bool → string)
   // can restore it instead of leaving a silently-blanked value that a Save
   // would persist.
-  const seededInputRef = useRef<{ type: VariableType; value: string } | null>(
-    null,
-  );
+  const [seededInput, setSeededInput] = useState<{
+    type: VariableType;
+    value: string;
+  } | null>(null);
 
   // Entering edit mode always seeds the form with the actual stored value —
   // fetched when not already revealed — so saving without touching the input
@@ -182,7 +189,7 @@ export function VariableInspector({
     const current = revealed[forKey];
     if (current !== undefined) {
       const seeded = toInputForm(variable.type, current);
-      seededInputRef.current = { type: variable.type, value: seeded };
+      setSeededInput({ type: variable.type, value: seeded });
       setEditValue(seeded);
       setEditing(true);
       return;
@@ -193,7 +200,7 @@ export function VariableInspector({
       // the form now would seed another variable's edit with this value.
       if (currentKeyRef.current !== forKey) return;
       const seeded = toInputForm(variable.type, detail.value);
-      seededInputRef.current = { type: variable.type, value: seeded };
+      setSeededInput({ type: variable.type, value: seeded });
       setEditValue(seeded);
       setEditing(true);
     } catch {
@@ -313,13 +320,37 @@ export function VariableInspector({
   const handleEditTypeChange = useCallback(
     (next: VariableType) => {
       if (editType === 'bool' || next === 'bool') {
-        const seeded = seededInputRef.current;
-        setEditValue(seeded && seeded.type === next ? seeded.value : '');
+        setEditValue(
+          seededInput && seededInput.type === next ? seededInput.value : '',
+        );
       }
       setEditType(next);
     },
-    [editType],
+    [editType, seededInput],
   );
+
+  const editDirty =
+    editing &&
+    variable !== null &&
+    (editValue !== seededInput?.value ||
+      editType !== variable.type ||
+      editIsSecret !== variable.is_secret);
+
+  const onEditDirtyChangeRef = useRef(onEditDirtyChange);
+  useLayoutEffect(() => {
+    onEditDirtyChangeRef.current = onEditDirtyChange;
+  });
+  useEffect(() => {
+    if (!editDirty) return;
+    onEditDirtyChangeRef.current?.(true);
+    return () => onEditDirtyChangeRef.current?.(false);
+  }, [editDirty]);
+
+  useNavigationGuard({
+    dirty: editDirty,
+    label: `edit to ${key ?? ''}`,
+    onDiscard: cancelEdit,
+  });
 
   const handleRotate = useCallback(async () => {
     if (!variable) return;

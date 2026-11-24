@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import '@testing-library/jest-dom';
 import { VaultWorkspace } from '../components/workspaces/VaultWorkspace';
 import { ToastContainer } from '../components/ui/Toast';
 import { useVaultStore } from '../stores/useVaultStore';
+import { useStackStore } from '../stores/useStackStore';
+import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
 import * as api from '../lib/api';
 
 // Resolve every vault API call to a benign no-op so the workspace renders
@@ -1403,5 +1405,154 @@ describe('VaultWorkspace — Add one on an existing key', () => {
     });
     expect(api.createVariable).not.toHaveBeenCalled();
     expect(await screen.findByText('Variable "API_KEY" replaced')).toBeInTheDocument();
+  });
+});
+
+describe('VaultWorkspace — unsaved inline edit', () => {
+  const testVariables = [
+    { key: 'POSTGRES_URL', type: 'string' as const, is_secret: true },
+    { key: 'REDIS_URL', type: 'string' as const, is_secret: true },
+  ];
+  const testUsage = {
+    POSTGRES_URL: [
+      { kind: 'mcp-server' as const, name: 'postgres', field: 'env.POSTGRES_URL' },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.mocked(api.fetchVariableStoreStatus).mockResolvedValue({
+      locked: false,
+      encrypted: false,
+    });
+    vi.mocked(api.fetchVariables).mockResolvedValue(testVariables);
+    vi.mocked(api.fetchVariableSets).mockResolvedValue([]);
+    vi.mocked(api.fetchVariableUsage).mockResolvedValue(testUsage);
+    vi.mocked(api.getVariable).mockResolvedValue({ value: 'seed' } as never);
+    vi.mocked(api.updateVariable).mockClear();
+    useStackStore.setState({ selectedNodeId: null });
+    useVaultStore.setState({
+      variables: testVariables,
+      sets: [],
+      usage: testUsage,
+      recentlyEdited: {},
+      loading: false,
+      error: null,
+      locked: false,
+      encrypted: false,
+    });
+  });
+
+  function LocationProbe() {
+    const location = useLocation();
+    return <div data-testid="location">{location.pathname + location.search}</div>;
+  }
+
+  function renderGuarded() {
+    return render(
+      <MemoryRouter initialEntries={['/vault']}>
+        <Routes>
+          <Route path="/vault" element={<VaultWorkspace />} />
+          <Route path="/stack" element={<div>STACK PAGE</div>} />
+        </Routes>
+        <NavigationGuardDialog />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+  }
+
+  async function openEdit(change = true) {
+    fireEvent.click(await screen.findByRole('option', { name: /POSTGRES_URL/i }));
+    await screen.findByRole('heading', { name: 'POSTGRES_URL' });
+    fireEvent.click(screen.getByRole('button', { name: /edit value/i }));
+    const input = await screen.findByPlaceholderText<HTMLInputElement>('secret value');
+    if (change) fireEvent.change(input, { target: { value: 'typed' } });
+    return input;
+  }
+
+  it('confirms a row click away from a changed edit; Cancel keeps it', async () => {
+    renderWorkspace();
+    await openEdit();
+    fireEvent.click(screen.getByRole('option', { name: /REDIS_URL/i }));
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Discard changes' });
+    expect(dialog).toHaveTextContent('POSTGRES_URL has unsaved edits');
+    expect(screen.getByRole('heading', { name: 'POSTGRES_URL' })).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'POSTGRES_URL' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText<HTMLInputElement>('secret value').value).toBe('typed');
+  });
+
+  it('moves the selection and saves nothing on confirm', async () => {
+    renderWorkspace();
+    await openEdit();
+    fireEvent.click(screen.getByRole('option', { name: /REDIS_URL/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard' }));
+
+    expect(await screen.findByRole('heading', { name: 'REDIS_URL' })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('secret value')).toBeNull();
+    expect(api.updateVariable).not.toHaveBeenCalled();
+  });
+
+  it('confirms closing the inspector, then shows the overview', async () => {
+    renderWorkspace();
+    await openEdit();
+    fireEvent.click(screen.getByRole('button', { name: /close inspector/i }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('POSTGRES_URL');
+    expect(screen.queryByText('Variables overview')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(await screen.findByText('Variables overview')).toBeInTheDocument();
+  });
+
+  it('switches with no confirm when the edit form is unchanged', async () => {
+    renderWorkspace();
+    await openEdit(false);
+    fireEvent.click(screen.getByRole('option', { name: /REDIS_URL/i }));
+    expect(await screen.findByRole('heading', { name: 'REDIS_URL' })).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('confirms a list key move from the focused Save button', async () => {
+    renderWorkspace();
+    await openEdit();
+    const save = screen.getByRole('button', { name: 'Save' });
+    save.focus();
+    fireEvent.keyDown(save, { key: 'j' });
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('POSTGRES_URL');
+    expect(screen.getByRole('heading', { name: 'POSTGRES_URL' })).toBeInTheDocument();
+  });
+
+  it('holds a consumer jump to Stack behind the shared confirm', async () => {
+    renderGuarded();
+    await openEdit();
+    fireEvent.click(screen.getByRole('button', { name: /go to postgres/i }));
+
+    expect(
+      await screen.findByRole('alertdialog', { name: 'Discard unsaved changes' }),
+    ).toHaveTextContent('edit to POSTGRES_URL');
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/vault/);
+    expect(useStackStore.getState().selectedNodeId).toBeNull();
+
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/vault/);
+    expect(screen.getByPlaceholderText<HTMLInputElement>('secret value').value).toBe('typed');
+    expect(useStackStore.getState().selectedNodeId).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /go to postgres/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard & leave' }));
+    expect(await screen.findByText('STACK PAGE')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/stack');
+    expect(useStackStore.getState().selectedNodeId).toBe('mcp-postgres');
+  });
+
+  it('jumps to Stack at once with the guard host mounted and no edit open', async () => {
+    renderGuarded();
+    fireEvent.click(await screen.findByRole('option', { name: /POSTGRES_URL/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /go to postgres/i }));
+    expect(await screen.findByText('STACK PAGE')).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });

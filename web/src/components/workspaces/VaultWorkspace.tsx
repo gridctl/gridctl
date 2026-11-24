@@ -40,6 +40,7 @@ import { EnvImportModal } from '../vault/EnvImportModal';
 import { WORKSPACE_LABELS } from '../../types/workspace';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
+import { useNavigationGuardStore } from '../../stores/useNavigationGuardStore';
 import { useVaultManager } from '../../hooks/useVaultManager';
 import { listNavProps, useListNav } from '../../hooks/useListNav';
 import { useRevealedValues } from '../../hooks/useRevealedValues';
@@ -546,10 +547,44 @@ export function VaultWorkspace() {
       setPendingEdit(null);
     }
   }
+  // User-driven selection changes confirm first while the inspector holds a
+  // changed inline edit. The dirty flag and the current key are read through
+  // refs so the wrapper keeps one identity and VariableList rows stay memoized.
+  // Programmatic clears (deleted or locked key) call setSelectedKey directly.
+  const editDirtyRef = useRef(false);
+  const handleEditDirtyChange = useCallback((dirty: boolean) => {
+    editDirtyRef.current = dirty;
+  }, []);
+  const [pendingSelect, setPendingSelect] = useState<{
+    key: string | null;
+    from: string | null;
+    activate: boolean;
+  } | null>(null);
+  const requestSelect = useCallback((key: string | null) => {
+    if (editDirtyRef.current && key !== selectedKeyRef.current) {
+      setPendingSelect({ key, from: selectedKeyRef.current, activate: false });
+      return;
+    }
+    setSelectedKey(key);
+  }, [setSelectedKey]);
+
   const activateVariable = useCallback((key: string) => {
+    if (editDirtyRef.current && key !== selectedKeyRef.current) {
+      setPendingSelect({ key, from: selectedKeyRef.current, activate: true });
+      return;
+    }
     setPendingEdit({ key, from: selectedKeyRef.current });
     setSelectedKey(key);
   }, [setSelectedKey]);
+
+  const confirmPendingSelect = useCallback(() => {
+    if (!pendingSelect) return;
+    setPendingSelect(null);
+    if (pendingSelect.activate && pendingSelect.key !== null) {
+      setPendingEdit({ key: pendingSelect.key, from: selectedKeyRef.current });
+    }
+    setSelectedKey(pendingSelect.key);
+  }, [pendingSelect, setSelectedKey]);
 
   const selectedIndex = useMemo(
     () => filteredBySearch.findIndex((v) => v.key === selectedKey),
@@ -561,7 +596,7 @@ export function VaultWorkspace() {
     selectedIndex,
     setSelectedIndex: (i) => {
       const next = filteredBySearch[i];
-      if (next) setSelectedKey(next.key);
+      if (next) requestSelect(next.key);
     },
     onEnter: requestInspectorEdit,
     onEdit: requestInspectorEdit,
@@ -587,9 +622,13 @@ export function VaultWorkspace() {
         target.kind === 'mcp-server'
           ? `mcp-${target.name}`
           : `resource-${target.name}`;
-      selectNode(nodeId);
-      setSidebarOpen(true);
-      navigate('/stack');
+      // A dirty inline edit blocks the jump; the Stack selection is written
+      // only once the navigation proceeds.
+      useNavigationGuardStore.getState().guard('/stack', () => {
+        selectNode(nodeId);
+        setSidebarOpen(true);
+        void navigate('/stack');
+      });
     },
     [selectNode, setSidebarOpen, navigate],
   );
@@ -639,7 +678,8 @@ export function VaultWorkspace() {
       onAssignSet={handleAssignSet}
       onDelete={(key) => setConfirmDelete(key)}
       onConsumerClick={handleConsumerClick}
-      onClose={() => setSelectedKey(null)}
+      onClose={() => requestSelect(null)}
+      onEditDirtyChange={handleEditDirtyChange}
     />
   );
 
@@ -844,7 +884,7 @@ export function VaultWorkspace() {
                     revealed={revealedState.revealed}
                     usage={usage}
                     selectedKey={selectedKey}
-                    onSelect={setSelectedKey}
+                    onSelect={requestSelect}
                     onActivate={activateVariable}
                     compact={compact}
                   />
@@ -924,6 +964,21 @@ export function VaultWorkspace() {
             Delete <span className="font-mono">"{confirmDeleteSet}"</span>
           </span>
         }
+        variant="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={pendingSelect !== null}
+        onClose={() => setPendingSelect(null)}
+        onConfirm={confirmPendingSelect}
+        title="Discard changes"
+        message={
+          <p>
+            <span className="font-mono text-primary">{pendingSelect?.from}</span> has unsaved
+            edits. Discard them?
+          </p>
+        }
+        confirmLabel="Discard"
         variant="danger"
       />
 
