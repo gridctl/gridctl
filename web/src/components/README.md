@@ -287,6 +287,14 @@ workspace-specific props.
   with white text; `status-error` is for text, borders, tints, and dots, not
   a fill under white text. The raw-palette lint rule rejects every default
   Tailwind color family outside tests, including chart files.
+- Don't put a slash opacity modifier on a text token (`text-text-muted/60`,
+  `text-text-secondary/80`, `text-primary/70`), including placeholder and
+  hover states such as `placeholder:text-text-muted/40` and
+  `hover:text-primary/80`. The translucent color blends into the surface
+  and drops below 4.5:1. Use `text-text-muted`, `text-text-secondary`, or
+  `text-primary` at full opacity, and `hover:text-primary-light` for hover
+  feedback on a `text-primary` link. The one exemption is a decorative icon
+  with `aria-hidden` on the same element; lint enforces this.
 - Don't size UI text with a bracketed pixel class. Use `text-3xs`,
   `text-2xs`, `text-xs`, or `text-sm`.
 - Don't pass a raw error to `showToast`, and don't use `String(err)`.
