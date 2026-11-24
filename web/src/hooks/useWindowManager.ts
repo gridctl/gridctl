@@ -7,15 +7,6 @@ import {
   type DetachableWindow,
 } from './useBroadcastChannel';
 
-const WINDOW_TITLES: Record<string, string> = {
-  logs: 'Gridctl - Logs',
-  sidebar: 'Gridctl - Details',
-  editor: 'Gridctl - Editor',
-  registry: 'Gridctl - Library',
-  metrics: 'Gridctl - Metrics',
-  traces: 'Gridctl - Traces',
-};
-
 // Window types whose detached route differs from the default /<type>. Each of
 // these had its /<type> path claimed by an in-shell workspace; the popout
 // moves aside while the type key stays put, so no call-site, broadcast
@@ -192,12 +183,6 @@ export function useWindowManager() {
     }
 
     windowRefs.set(type, newWindow);
-
-    // Update title after load
-    newWindow.addEventListener('load', () => {
-      newWindow.document.title = WINDOW_TITLES[type];
-    });
-
     armClosePoll(type, newWindow);
   }, [markOpened, rollbackBlocked, armClosePoll]);
 
