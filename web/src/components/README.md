@@ -239,7 +239,9 @@ workspace-specific props.
 - Don't add a network poll with `setInterval`. Use `useInterval` so a hidden
   document pauses. The shell status cycle (status, tools, and clients)
   heartbeats every 30 seconds while hidden. Inventory and other workspace
-  polls pause.
+  polls pause. A relative-time label that must advance between polls takes
+  its clock from `useNow` in its own leaf component, as the status bar's
+  "Updated" age does.
 - Don't put behavior-changing logic in `CanvasBase`. Background layers,
   control bars, overlays, and node types all belong in the workspace canvas.
 - Don't render `<main>` inside a workspace, or `role="tab"` on a route link.
