@@ -1,7 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import '@testing-library/jest-dom';
 import { EnvImportModal } from '../components/vault/EnvImportModal';
+import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
+import { useNavigationGuardStore } from '../stores/useNavigationGuardStore';
 import type { ImportVariableInput, Variable } from '../lib/api';
 
 const existing: Variable[] = [
@@ -88,5 +91,203 @@ describe('EnvImportModal — existing keys', () => {
     expect(skip('A')).toBeChecked();
     expect(skip('B')).toBeChecked();
     expect(screen.getByRole('button', { name: 'Import 3' })).toBeInTheDocument();
+  });
+});
+
+describe('EnvImportModal — discard confirm', () => {
+  function renderPlain(initialText = '') {
+    const onClose = vi.fn();
+    const onImport = vi
+      .fn<(vars: ImportVariableInput[]) => Promise<{ imported: number }>>()
+      .mockResolvedValue({ imported: 1 });
+    const view = render(
+      <EnvImportModal
+        onClose={onClose}
+        onImport={onImport}
+        existingVariables={existing}
+        sets={[]}
+        initialText={initialText}
+      />,
+    );
+    return { onClose, onImport, view };
+  }
+
+  const textarea = () =>
+    screen.getByRole('textbox', { name: 'Environment file content' }) as HTMLTextAreaElement;
+  const backdrop = (container: HTMLElement) =>
+    container.querySelector('.absolute.inset-0') as HTMLElement;
+
+  it('closes a pristine modal on Escape with no confirm', () => {
+    const { onClose } = renderPlain();
+    fireEvent.keyDown(textarea(), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('confirms Escape on typed text; Keep editing keeps it and Discard closes', () => {
+    const { onClose } = renderPlain();
+    fireEvent.change(textarea(), { target: { value: 'NEW=1' } });
+    fireEvent.keyDown(textarea(), { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog', { name: 'Discard import' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(textarea().value).toBe('NEW=1');
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(textarea(), { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a second dismiss while the confirm is open', () => {
+    const { onClose } = renderPlain();
+    fireEvent.change(textarea(), { target: { value: 'NEW=1' } });
+    fireEvent.keyDown(textarea(), { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Close import' }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getAllByRole('alertdialog')).toHaveLength(1);
+  });
+
+  it.each([
+    ['the backdrop', (c: HTMLElement) => fireEvent.click(backdrop(c))],
+    ['the close button', () => fireEvent.click(screen.getByRole('button', { name: 'Close import' }))],
+    ['Cancel', () => fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))],
+  ])('confirms %s on typed text', (_name, dismiss) => {
+    const { onClose, view } = renderPlain();
+    fireEvent.change(textarea(), { target: { value: 'NEW=1' } });
+    dismiss(view.container);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog', { name: 'Discard import' })).toBeInTheDocument();
+  });
+
+  it('places the confirm inside the modal panel', () => {
+    renderPlain();
+    fireEvent.change(textarea(), { target: { value: 'NEW=1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    const panel = screen.getByRole('dialog', { name: 'Import variables' });
+    expect(panel).toContainElement(screen.getByRole('alertdialog'));
+  });
+
+  it('closes a seeded, untouched modal on Cancel at once', () => {
+    const { onClose } = renderPlain('A=1\nB=2');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('does not count revealing a value as a change', () => {
+    const { onClose } = renderPlain('A=1\nB=2');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Reveal value' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts a skip choice as a change', () => {
+    const { onClose } = renderPlain('A=1\nB=2');
+    fireEvent.click(skip('A'));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog', { name: 'Discard import' })).toBeInTheDocument();
+  });
+
+  it('counts a set choice as a change', () => {
+    const onClose = vi.fn();
+    render(
+      <EnvImportModal
+        onClose={onClose}
+        onImport={vi.fn()}
+        existingVariables={[]}
+        sets={[{ name: 'dev', count: 0 }]}
+        initialText="C=3"
+      />,
+    );
+    fireEvent.change(screen.getByRole('combobox', { name: 'Variable set' }), {
+      target: { value: 'dev' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  });
+
+  it('counts a type choice as a change', () => {
+    const { onClose } = renderPlain('C=3');
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Variable type' })).getByRole('button', {
+        name: 'number',
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog', { name: 'Discard import' })).toBeInTheDocument();
+  });
+
+  it('closes at once when dismissed during an in-flight import', async () => {
+    const onClose = vi.fn();
+    const onImport = vi.fn(() => new Promise<{ imported: number }>(() => {}));
+    render(
+      <EnvImportModal
+        onClose={onClose}
+        onImport={onImport}
+        existingVariables={[]}
+        sets={[]}
+        initialText=""
+      />,
+    );
+    fireEvent.change(textarea(), { target: { value: 'C=3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Import 1' }));
+    await waitFor(() => expect(onImport).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Close import' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('blocks a guarded navigation while dirty; Discard & leave closes, then proceeds', async () => {
+    const onClose = vi.fn();
+    const proceed = vi.fn();
+    render(
+      <MemoryRouter>
+        <EnvImportModal
+          onClose={onClose}
+          onImport={vi.fn()}
+          existingVariables={[]}
+          sets={[]}
+          initialText=""
+        />
+        <NavigationGuardDialog />
+      </MemoryRouter>,
+    );
+    fireEvent.change(textarea(), { target: { value: 'C=3' } });
+    act(() => {
+      useNavigationGuardStore.getState().guard('/stack', proceed);
+    });
+    expect(proceed).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard & leave' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(proceed).toHaveBeenCalledTimes(1);
+    expect(onClose.mock.invocationCallOrder[0]).toBeLessThan(
+      proceed.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('closes after a successful import with no confirm', async () => {
+    const { onClose, onImport } = renderPlain('C=3');
+    fireEvent.change(textarea(), { target: { value: 'C=3\nD=4' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Import 2' }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(onImport).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('warns on reload while dirty and not while pristine', () => {
+    renderPlain('A=1');
+    const pristine = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(pristine);
+    expect(pristine.defaultPrevented).toBe(false);
+    fireEvent.change(textarea(), { target: { value: 'A=2' } });
+    const dirty = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(dirty);
+    expect(dirty.defaultPrevented).toBe(true);
   });
 });

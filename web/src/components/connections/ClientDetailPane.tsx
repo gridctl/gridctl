@@ -1,5 +1,4 @@
 import { useCallback, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router';
 import { Bot, Cable, ChevronDown, ChevronRight, Copy, Globe, Plug, Radio, Wrench } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
@@ -7,6 +6,7 @@ import { StatePill } from '../ui/StatePill';
 import { ProjectedModelChip } from '../registry/ModelChip';
 import { PackChip } from '../registry/PackChip';
 import { showToast } from '../ui/Toast';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import {
   ClientLinkError,
   adoptWiringEntry,
@@ -60,7 +60,7 @@ export function ClientDetailPane({
   onRefresh,
   onReviewContext,
 }: ClientDetailPaneProps) {
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
   const [busy, setBusy] = useState(false);
   const [confirmAdopt, setConfirmAdopt] = useState<WiringRow | null>(null);
   const [confirmOverwrite, setConfirmOverwrite] = useState<WiringRow | null>(null);
