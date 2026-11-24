@@ -15,7 +15,8 @@ function isPromise(value: void | Promise<void>): value is Promise<void> {
   return typeof (value as Promise<void> | undefined)?.then === 'function';
 }
 
-// One scheduler for network polling. Visibility does not restart the timer and
+// One scheduler for network polling. It also drives the useNow UI clock
+// through lastRunAt. Visibility does not restart the timer and
 // never takes the immediate path. A visibility change reschedules against the
 // interval that is active now and fires only when the last run is missing or
 // already older than that interval.
@@ -39,8 +40,8 @@ export function useInterval(
   const startedRef = useRef(false);
   // The return value is part of the hook contract. State keeps it current
   // for a caller; scheduling reads the ref. The microtask avoids a
-  // synchronous setState in the effect below. No caller reads it today, and
-  // the extra render is the cost of that contract.
+  // synchronous setState in the effect below. useNow reads it as its clock,
+  // so this one write per run is the render that ticks that caller.
   const [lastRunAt, setLastRunAt] = useState<number | null>(null);
 
   useEffect(() => {

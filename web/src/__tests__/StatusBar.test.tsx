@@ -1,13 +1,27 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { StatusBar } from '../components/layout/StatusBar';
 import { useStackStore } from '../stores/useStackStore';
 import { useSpecStore } from '../stores/useSpecStore';
 import { usePinsStore } from '../stores/usePinsStore';
 import { fetchLimits, type ServerPins } from '../lib/api';
+import { formatCompactNumber } from '../lib/format';
+import { formatRelativeTime } from '../lib/time';
 import type { MCPServerStatus, SpecHealth } from '../types';
+
+// Pass-through spies: StatusBar calls formatCompactNumber once per render of
+// the bar (with a token count), and the freshness leaf calls
+// formatRelativeTime once per render of itself.
+vi.mock('../lib/format', async (importActual) => {
+  const actual = await importActual<typeof import('../lib/format')>();
+  return { ...actual, formatCompactNumber: vi.fn(actual.formatCompactNumber) };
+});
+vi.mock('../lib/time', async (importActual) => {
+  const actual = await importActual<typeof import('../lib/time')>();
+  return { ...actual, formatRelativeTime: vi.fn(actual.formatRelativeTime) };
+});
 
 // StatusBar mounts LimitsBadge, whose hook polls GET /api/limits; keep the
 // test hermetic instead of letting a real fetch fail in jsdom.
@@ -292,5 +306,151 @@ describe('StatusBar', () => {
   it('keeps the connection pill from shrinking', () => {
     renderBar();
     expect(screen.getByText('Connected').parentElement).toHaveClass('shrink-0');
+  });
+});
+
+const NOW = new Date('2026-11-24T12:00:00Z').getTime();
+
+async function advance(ms: number) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+}
+
+describe('StatusBar freshness', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('ticks the last-updated age during an outage with no parent render or store write', async () => {
+    useStackStore.setState({
+      lastUpdated: new Date(NOW),
+      connectionStatus: 'disconnected',
+      error: 'Gateway connection unavailable',
+    });
+    renderBar();
+    expect(screen.getByText('Last updated just now')).toBeInTheDocument();
+    await advance(30_000);
+    expect(screen.getByText('Last updated 30s ago')).toBeInTheDocument();
+    await advance(30_000);
+    expect(screen.getByText('Last updated 1m ago')).toBeInTheDocument();
+  });
+
+  it('marks the outage age in the warning tone and the connected age in the muted tone', () => {
+    useStackStore.setState({ lastUpdated: new Date(NOW), connectionStatus: 'error', error: 'boom' });
+    renderBar();
+    const stale = screen.getByText('Last updated just now');
+    expect(stale).toHaveClass('text-status-pending');
+    expect(stale.parentElement!.querySelector('svg')).toHaveClass('text-status-pending');
+    expect(stale.parentElement!.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    cleanup();
+
+    useStackStore.setState({ connectionStatus: 'connected', error: null });
+    renderBar();
+    const fresh = screen.getByText('Updated just now');
+    expect(fresh).not.toHaveClass('text-status-pending');
+    expect(fresh.parentElement).toHaveClass('text-text-muted');
+    expect(fresh.parentElement!.querySelector('svg')).not.toHaveClass('text-status-pending');
+    expect(screen.queryByText(/Last updated/)).not.toBeInTheDocument();
+  });
+
+  it('ages the label while connected when no new poll lands', async () => {
+    useStackStore.setState({ lastUpdated: new Date(NOW), connectionStatus: 'connected' });
+    renderBar();
+    await advance(45_000);
+    expect(screen.getByText('Updated 45s ago')).toBeInTheDocument();
+  });
+
+  it('renders no freshness item before the first successful update', async () => {
+    useStackStore.setState({ lastUpdated: null, connectionStatus: 'disconnected', error: 'x' });
+    renderBar();
+    await advance(5_000);
+    expect(screen.queryByText(/updated/i)).not.toBeInTheDocument();
+  });
+
+  it('re-renders only the freshness leaf on each tick', async () => {
+    useStackStore.setState({
+      lastUpdated: new Date(NOW),
+      connectionStatus: 'connected',
+      tokenUsage: {
+        session: { input_tokens: 10, output_tokens: 0, total_tokens: 10 },
+        per_server: {},
+        format_savings: { original_tokens: 0, formatted_tokens: 0, saved_tokens: 0, savings_percent: 0 },
+      },
+    });
+    renderBar();
+    // Let the mount-time work (LimitsBadge's first poll) settle.
+    await advance(0);
+    expect(formatCompactNumber).toHaveBeenCalled();
+    vi.mocked(formatCompactNumber).mockClear();
+    vi.mocked(formatRelativeTime).mockClear();
+
+    await advance(1000);
+    expect(formatRelativeTime).toHaveBeenCalledTimes(1);
+    await advance(1000);
+    expect(formatRelativeTime).toHaveBeenCalledTimes(2);
+    expect(formatCompactNumber).not.toHaveBeenCalled();
+  });
+});
+
+describe('StatusBar connection state', () => {
+  it('defaults the store to connecting so first paint is not Disconnected', () => {
+    expect(useStackStore.getInitialState().connectionStatus).toBe('connecting');
+  });
+
+  it('shows a neutral Connecting state', () => {
+    useStackStore.setState({ connectionStatus: 'connecting', error: null });
+    renderBar();
+    const label = screen.getByText('Connecting');
+    expect(label).toHaveAttribute('title', 'Connecting');
+    expect(screen.queryByText('Disconnected')).not.toBeInTheDocument();
+    expect(screen.queryByText('Connected')).not.toBeInTheDocument();
+    const item = label.closest('[role="status"]')!;
+    expect(item).not.toHaveClass('text-status-error');
+    expect(item).toHaveClass('text-text-muted');
+    expect(item.querySelector('svg')).toHaveClass('animate-spin');
+    expect(item.querySelector('.animate-pulse')).toBeNull();
+  });
+
+  // A 401 leaves connectionStatus at 'connecting' with any earlier error
+  // retained, so this is also what the bar shows under the credential prompt.
+  it('stays Connecting behind a credential prompt and ignores a retained error', () => {
+    useStackStore.setState({ connectionStatus: 'connecting', error: 'boom' });
+    renderBar();
+    expect(screen.getByText('Connecting')).toBeInTheDocument();
+    expect(screen.queryByText('boom')).not.toBeInTheDocument();
+  });
+
+  it('shows the red error state after a failed poll', () => {
+    useStackStore.setState({ connectionStatus: 'disconnected', error: null });
+    renderBar();
+    const item = screen.getByText('Disconnected').closest('[role="status"]')!;
+    expect(item).toHaveClass('text-status-error');
+    cleanup();
+    useStackStore.setState({ connectionStatus: 'error', error: 'Gateway connection unavailable' });
+    renderBar();
+    expect(screen.getByText('Gateway connection unavailable').closest('[role="status"]')).toHaveClass('text-status-error');
+  });
+
+  it('is a labelled footer landmark whose status region holds only the state label', () => {
+    useStackStore.setState({ connectionStatus: 'connected', lastUpdated: new Date() });
+    renderBar();
+    const bar = screen.getByRole('contentinfo', { name: 'Status bar' });
+    expect(bar.tagName).toBe('FOOTER');
+    const item = screen.getByText('Connected').closest('[role="status"]')!;
+    expect(item).not.toBeNull();
+    expect(item.textContent).not.toContain('pdated');
+    expect(item.textContent).toBe('Connected');
+    for (const svg of Array.from(item.querySelectorAll('svg'))) {
+      expect(svg).toHaveAttribute('aria-hidden', 'true');
+    }
+    expect(item.querySelector('.animate-pulse')).toHaveAttribute('aria-hidden', 'true');
+    const updated = screen.getByText(/^Updated /);
+    expect(updated.closest('[role="status"], [aria-live]')).toBeNull();
   });
 });

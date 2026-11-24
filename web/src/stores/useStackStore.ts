@@ -151,7 +151,7 @@ export const useStackStore = create<StackState>()(
     selectedNodeId: null,
     expandedServers: new Set<string>(),
     layoutEpoch: 0,
-    connectionStatus: 'disconnected',
+    connectionStatus: 'connecting',
     lastUpdated: null,
     isLoading: true,
     error: null,

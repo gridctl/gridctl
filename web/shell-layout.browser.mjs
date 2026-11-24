@@ -244,10 +244,10 @@ try {
       }
     });
     await page.goto(`${origin}/stack`);
-    await page.locator('main + div').getByText('MCP servers').waitFor();
-    await page.locator('main + div').getByText(/^Updated /).waitFor();
+    await page.locator('main + footer').getByText('MCP servers').waitFor();
+    await page.locator('main + footer').getByText(/^Updated /).waitFor();
     for (const label of fixture.alerts) {
-      await page.locator('main + div button').filter({ hasText: label }).first().waitFor();
+      await page.locator('main + footer button').filter({ hasText: label }).first().waitFor();
     }
     // Let the slow poll and the canvas fit finish before measuring.
     await page.waitForFunction(() => document.querySelectorAll('.react-flow__node').length > 0);
@@ -349,7 +349,7 @@ try {
         const hidden = m.counters.filter((c) => c.button && c.rect.top >= m.bar.bottom - EPS);
         check(hidden.length > 0, `${where}: no counter button is hidden by wrapping`, m.counters);
         const before = { connection: m.connection, first: m.alerts[0].rect };
-        await page.locator('main + div').getByRole('button', { name: /experimental flag|Open Metrics workspace/ })
+        await page.locator('main + footer').getByRole('button', { name: /experimental flag|Open Metrics workspace/ })
           .filter({ hasNotText: 'rate limit' }).first().evaluate((el) => el.focus());
         const focused = await page.evaluate(() => document.activeElement?.getAttribute('aria-label'));
         check(/experimental flag|Open Metrics workspace/.test(focused ?? ''), `${where}: focus did not land on a hidden counter`, focused);
