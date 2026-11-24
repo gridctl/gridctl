@@ -113,7 +113,7 @@ There is no template expansion, no variable substitution, no execution layer. Th
 
 ## Authoring in the Library workspace
 
-The web UI's Library tab (Ctrl+2, or ⌘2 on macOS, in the unified shell, also available as the detached `library-window` page) is the primary authoring surface.
+The web UI's Library tab (⌘2 in the unified shell, also available as the detached `library-window` page) is the primary authoring surface.
 
 - **List** every skill in the registry. Filter by state (`active` / `draft` / `disabled`) or by name.
 - **Create** a new skill: gridctl prompts for the name, populates default frontmatter, and opens the editor on the body.
