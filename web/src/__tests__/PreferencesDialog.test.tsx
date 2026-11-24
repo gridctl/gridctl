@@ -82,6 +82,20 @@ describe('PreferencesDialog', () => {
     expect(screen.getByText(/^Ctrl\+\\ toggles compact mode/)).toBeInTheDocument();
   });
 
+  it('moves theme focus and selection together on arrow keys', () => {
+    useUIStore.setState({ themeMode: 'light' });
+    render(<PreferencesDialog />);
+    const group = screen.getByRole('radiogroup', { name: 'Theme' });
+    within(group).getByRole('radio', { name: 'Light' }).focus();
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+    expect(useUIStore.getState().themeMode).toBe('system');
+    const system = within(group).getByRole('radio', { name: 'System' });
+    expect(system).toHaveAttribute('aria-checked', 'true');
+    expect(system).toHaveAttribute('tabindex', '0');
+    expect(system).toHaveFocus();
+  });
+
   it('shows the Mac compact-mode chord on macOS', () => {
     const spy = vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel');
     try {

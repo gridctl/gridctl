@@ -48,4 +48,58 @@ describe('ThemePicker', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Dark' }));
     expect(screen.queryByText(/following system/i)).not.toBeInTheDocument();
   });
+
+  describe('arrow keys', () => {
+    function press(key: string) {
+      fireEvent.keyDown(document.activeElement!, { key });
+    }
+
+    function expectSelected(label: 'Light' | 'Dark' | 'System') {
+      expect(useUIStore.getState().themeMode).toBe(label.toLowerCase());
+      const radio = screen.getByRole('radio', { name: label });
+      expect(radio).toHaveAttribute('aria-checked', 'true');
+      expect(radio).toHaveFocus();
+      const tabStops = screen.getAllByRole('radio').filter((r) => r.getAttribute('tabindex') === '0');
+      expect(tabStops).toEqual([radio]);
+    }
+
+    function startOnLight() {
+      useUIStore.setState({ themeMode: 'light' });
+      render(<ThemePicker />);
+      openPopover();
+      screen.getByRole('radio', { name: 'Light' }).focus();
+    }
+
+    it('ArrowRight moves focus and selection forward and wraps', () => {
+      startOnLight();
+      press('ArrowRight');
+      expectSelected('Dark');
+      press('ArrowRight');
+      expectSelected('System');
+      press('ArrowRight');
+      expectSelected('Light');
+    });
+
+    it('ArrowLeft moves focus and selection backward and wraps', () => {
+      startOnLight();
+      press('ArrowLeft');
+      expectSelected('System');
+      press('ArrowLeft');
+      expectSelected('Dark');
+    });
+
+    it('ArrowDown matches ArrowRight and ArrowUp matches ArrowLeft', () => {
+      startOnLight();
+      press('ArrowDown');
+      expectSelected('Dark');
+      press('ArrowDown');
+      expectSelected('System');
+      press('ArrowUp');
+      expectSelected('Dark');
+      press('ArrowUp');
+      expectSelected('Light');
+      press('ArrowUp');
+      expectSelected('System');
+    });
+  });
 });
