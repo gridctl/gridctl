@@ -171,7 +171,7 @@ export function HeaderTelemetryPill() {
                 'w-full flex items-center justify-center gap-2 px-2 py-2 rounded-lg',
                 'text-xs font-medium transition-all duration-200',
                 inventory.length === 0
-                  ? 'text-text-muted/60 cursor-not-allowed'
+                  ? 'text-text-muted cursor-not-allowed'
                   : 'text-status-error hover:bg-status-error/10',
                 'focus:outline-none focus:ring-2 focus:ring-status-error/30',
               )}

@@ -136,7 +136,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
           autoFocus
           className={cn(
             'flex-1 bg-transparent text-xs text-text-primary',
-            'placeholder:text-text-muted/50',
+            'placeholder:text-text-muted',
           )}
         />
         <span className="text-3xs text-text-muted">
@@ -360,7 +360,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
           ) : (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
-                <Package size={24} className="text-text-muted/30 mx-auto mb-2" />
+                <Package size={24} className="text-text-muted mx-auto mb-2" />
                 <p className="text-3xs text-text-muted">Select a server to preview</p>
               </div>
             </div>

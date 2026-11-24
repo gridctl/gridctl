@@ -61,7 +61,7 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
 
         <button
           onClick={toggleAll}
-          className="flex items-center gap-1.5 text-3xs text-primary hover:text-primary/80 transition-colors px-2 py-1 rounded-lg hover:bg-primary/5"
+          className="flex items-center gap-1.5 text-3xs text-primary transition-colors px-2 py-1 rounded-lg hover:bg-primary/5"
         >
           {previews.filter((p) => p.valid && !p.exists).every((p) => selected.has(p.name))
             ? <CheckSquare size={12} />
@@ -111,7 +111,7 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
                   {isSelected ? (
                     <CheckSquare size={14} className="text-primary" />
                   ) : (
-                    <Square size={14} className={isValid ? 'text-text-muted/40' : 'text-text-muted/20'} />
+                    <Square size={14} className={isValid ? 'text-text-muted' : 'text-text-muted/20'} aria-hidden="true" />
                   )}
                 </button>
 

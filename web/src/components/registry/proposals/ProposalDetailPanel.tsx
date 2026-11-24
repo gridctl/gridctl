@@ -73,14 +73,14 @@ export function ProposalDetailPanel({ proposal, onClose, onChanged }: ProposalDe
         {detailError && <FailureBanner message={detailError} onRetry={retry} className="mx-0 mt-0" />}
         <ProposalSummary proposal={shown} refreshed={detail !== null} failed={detailError !== null} />
         <section aria-label="Diff" className="space-y-1">
-          <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
+          <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted">
             Diff{shown.files && shown.files.length > 0 ? ` (${shown.files.map(escapeNonPrintable).join(', ')})` : ''}
           </h3>
           <UnifiedDiffView diff={shown.diff} />
         </section>
         {(shown.findings?.length ?? 0) > 0 && (
           <section className="space-y-1.5">
-            <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">Findings (advisory)</h3>
+            <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted">Findings (advisory)</h3>
             <FindingsList findings={shown.findings ?? []} />
           </section>
         )}
@@ -173,7 +173,7 @@ function UnifiedDiffLine({ line }: { line: UnifiedLine }) {
         line.kind === 'added' && 'bg-status-running/10 text-status-running',
         line.kind === 'removed' && 'bg-status-error/10 text-status-error',
         line.kind === 'context' && 'text-text-secondary',
-        line.kind === 'hunk' && 'text-primary/80',
+        line.kind === 'hunk' && 'text-primary',
         (line.kind === 'header' || line.kind === 'note') && 'text-text-muted',
       )}
     >
@@ -186,7 +186,7 @@ function EvidenceList({ label, items }: { label: string; items: string[] }) {
   if (items.length === 0) return null;
   return (
     <section className="space-y-1">
-      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">{label}</h3>
+      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted">{label}</h3>
       <ol className="list-decimal pl-5 text-2xs font-mono space-y-0.5">
         {items.map((ref, i) => (
           <li key={`${i}-${ref}`} className="break-all">{escapeNonPrintable(ref)}</li>
@@ -200,7 +200,7 @@ function TextField({ label, value }: { label: string; value?: string }) {
   if (!value) return null;
   return (
     <section className="space-y-1">
-      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">{label}</h3>
+      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted">{label}</h3>
       <p className="text-2xs whitespace-pre-wrap break-words">{escapeNonPrintable(value)}</p>
     </section>
   );
@@ -216,7 +216,7 @@ function VerdictSection({ proposal }: { proposal: Proposal }) {
       : 'Approved (verdict recorded; nothing was written)';
   return (
     <section aria-label="Verdict" className="space-y-1 rounded-lg border border-border-subtle p-3">
-      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">Verdict</h3>
+      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted">Verdict</h3>
       <p className="text-xs">{outcome}</p>
       <p className="text-2xs text-text-muted" title={v.at}>
         {formatRelativeTime(new Date(v.at))}

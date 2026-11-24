@@ -380,7 +380,7 @@ export function VariableInspector({
               {variable.is_secret ? 'Secret' : 'Plaintext'}
             </span>
             {variable.type === 'string' ? (
-              <span className="text-3xs font-mono text-text-muted/60">
+              <span className="text-3xs font-mono text-text-muted">
                 string
               </span>
             ) : (
@@ -446,7 +446,7 @@ export function VariableInspector({
                 in the current stack.yaml, and not injected via{' '}
                 <code>secrets.sets</code>.
               </p>
-              <p className="text-3xs text-text-muted/80 leading-relaxed">
+              <p className="text-3xs text-text-muted leading-relaxed">
                 Only variable references are indexed; plain env strings are not.
               </p>
               <button
@@ -842,7 +842,7 @@ function InspectorOverview({
 
 function Tip({ children }: { children: ReactNode }) {
   return (
-    <li className="text-2xs text-text-muted leading-relaxed pl-3 relative before:content-['·'] before:absolute before:left-0 before:text-text-muted/60">
+    <li className="text-2xs text-text-muted leading-relaxed pl-3 relative before:content-['·'] before:absolute before:left-0 before:text-text-muted">
       {children}
     </li>
   );
@@ -875,7 +875,7 @@ function MetaRow({
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-2">
-      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
+      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted">
         {title}
       </h3>
       {children}

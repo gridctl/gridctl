@@ -201,7 +201,7 @@ function ProjectionRow({
           onClick={() => navigate(`/connections?client=${encodeURIComponent(s.client)}`)}
           title={`Open ${agentClientName(s.client)} in Connections`}
           aria-label={`Open ${agentClientName(s.client)} in Connections`}
-          className="p-0.5 rounded text-text-muted/60 hover:text-primary transition-colors flex-shrink-0"
+          className="p-0.5 rounded text-text-muted hover:text-primary transition-colors flex-shrink-0"
         >
           <Cable size={12} />
         </button>
@@ -219,7 +219,7 @@ function ProjectionRow({
         {s.target}
       </span>
       {s.detail && (
-        <span className="text-2xs text-text-muted/80" data-testid="projection-detail">
+        <span className="text-2xs text-text-muted" data-testid="projection-detail">
           {s.detail}
         </span>
       )}

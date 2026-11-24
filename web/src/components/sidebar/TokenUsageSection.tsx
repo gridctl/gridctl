@@ -79,7 +79,7 @@ export function TokenUsageSection({ serverName }: TokenUsageSectionProps) {
       {/* Sparkline */}
       {chartData.length > 1 && (
         <div className="pt-1">
-          <span className="text-3xs text-text-muted/60 uppercase tracking-wider block mb-1">Last 30 min</span>
+          <span className="text-3xs text-text-muted uppercase tracking-wider block mb-1">Last 30 min</span>
           <div className="rounded-md bg-background/50 p-1.5" role="img" aria-label={`Token usage trend for ${serverName} over last 30 minutes`}>
             <SparkChart
               data={chartData}

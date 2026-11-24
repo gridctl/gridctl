@@ -88,7 +88,7 @@ export function ServerToolScopeGroup({
       {/* All / Custom segmented toggle. "All" reads as a complete, positive
           state — never an indeterminate checkbox. */}
       <div className="flex items-center gap-2">
-        <span className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">tools</span>
+        <span className="text-3xs uppercase tracking-[0.18em] text-text-muted">tools</span>
         <div className="ml-auto flex items-center gap-1.5">
           {mode === 'custom' && (
             <span className="font-mono text-3xs text-primary" aria-live="polite">
@@ -111,7 +111,7 @@ export function ServerToolScopeGroup({
       </div>
 
       {mode === 'all' && (
-        <p className="text-3xs text-text-muted/70 leading-relaxed">
+        <p className="text-3xs text-text-muted leading-relaxed">
           All {total} tool{total === 1 ? '' : 's'} of{' '}
           <span className="font-mono text-text-secondary">{serverName}</span> are exposed.
         </p>
@@ -121,7 +121,7 @@ export function ServerToolScopeGroup({
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="w-full flex items-center gap-1.5 text-left text-3xs text-text-muted/80 hover:text-text-secondary transition-colors"
+          className="w-full flex items-center gap-1.5 text-left text-3xs text-text-muted hover:text-text-secondary transition-colors"
         >
           <ChevronRight size={11} aria-hidden="true" />
           <span>
@@ -137,7 +137,7 @@ export function ServerToolScopeGroup({
           <button
             type="button"
             onClick={() => setExpanded(false)}
-            className="w-full flex items-center gap-1.5 text-left text-3xs text-text-muted/80 hover:text-text-secondary transition-colors"
+            className="w-full flex items-center gap-1.5 text-left text-3xs text-text-muted hover:text-text-secondary transition-colors"
           >
             <ChevronDown size={11} aria-hidden="true" />
             <span>{selectedCount} of {total} tools selected</span>
@@ -148,7 +148,7 @@ export function ServerToolScopeGroup({
             <div className="relative">
               <Search
                 size={11}
-                className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted/60"
+                className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted"
                 aria-hidden="true"
               />
               <input
@@ -158,7 +158,7 @@ export function ServerToolScopeGroup({
                 placeholder={`Filter ${total} tools…`}
                 aria-label={`Filter ${serverName} tools`}
                 disabled={disabled}
-                className="w-full rounded-md border border-border/50 bg-background/70 pl-6 pr-2 py-1 text-2xs text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50"
+                className="w-full rounded-md border border-border/50 bg-background/70 pl-6 pr-2 py-1 text-2xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50"
               />
             </div>
           )}
@@ -181,7 +181,7 @@ export function ServerToolScopeGroup({
 
           <div className="rounded-md border border-border/30 bg-background/40 max-h-56 overflow-y-auto scrollbar-dark divide-y divide-border/15">
             {visible.length === 0 && (
-              <p className="px-3 py-3 text-3xs text-text-muted/60 italic text-center">
+              <p className="px-3 py-3 text-3xs text-text-muted italic text-center">
                 No tools match &ldquo;{query}&rdquo;.
               </p>
             )}
@@ -216,7 +216,7 @@ export function ServerToolScopeGroup({
                       {tool.name}
                     </span>
                     {tool.description && (
-                      <span className="block text-3xs text-text-muted/70 truncate leading-snug">
+                      <span className="block text-3xs text-text-muted truncate leading-snug">
                         {tool.description}
                       </span>
                     )}

@@ -73,7 +73,7 @@ export function PinsSkillDetail({ name, pin, onReset }: PinsSkillDetailProps) {
           className="flex items-center gap-1 text-2xs text-text-muted ml-auto"
           title={pin.last_verified_at || undefined}
         >
-          <Clock size={10} className="text-text-muted/60" />
+          <Clock size={10} className="text-text-muted" />
           {pin.last_verified_at
             ? `verified ${formatRelativeTime(new Date(pin.last_verified_at))}`
             : 'never verified'}
@@ -83,7 +83,7 @@ export function PinsSkillDetail({ name, pin, onReset }: PinsSkillDetailProps) {
       <div className="flex items-center gap-4 text-2xs text-text-muted flex-wrap">
         {/* Origin is factual provenance, never a trust judgment. */}
         <span className="flex items-center gap-1" title={pin.origin?.commitSha || undefined}>
-          <GitBranch size={10} className="text-text-muted/60" />
+          <GitBranch size={10} className="text-text-muted" />
           {pin.source === 'git' && pin.origin?.repo
             ? `Imported: ${pin.origin.repo}${pin.origin.ref ? `@${pin.origin.ref}` : ''}`
             : 'Local'}
@@ -110,7 +110,7 @@ export function PinsSkillDetail({ name, pin, onReset }: PinsSkillDetailProps) {
 
       {!hasDrift && (pin.findings?.length ?? 0) > 0 && (
         <section className="space-y-2 max-w-3xl">
-          <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
+          <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted">
             Advisory findings on the pinned content
           </h3>
           <FindingsList findings={pin.findings} />
@@ -118,7 +118,7 @@ export function PinsSkillDetail({ name, pin, onReset }: PinsSkillDetailProps) {
       )}
 
       <section id={TOOLS_SECTION_ID} className="space-y-2 max-w-3xl">
-        <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
+        <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted">
           Pinned file digests
         </h3>
         <div className="rounded-lg border border-border/40 bg-background/60 overflow-hidden">
@@ -354,7 +354,7 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
 
           {diff.findings.length > 0 && (
             <div className="space-y-1.5">
-              <h4 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
+              <h4 className="text-3xs uppercase tracking-[0.18em] text-text-muted">
                 Advisory findings on the new content
               </h4>
               <FindingsList findings={diff.findings} />
@@ -418,7 +418,7 @@ function SkillDocumentDiff({
   const shown = tokens.slice(0, MAX_DIFF_LINES);
   return (
     <div className="space-y-1">
-      <h4 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
+      <h4 className="text-3xs uppercase tracking-[0.18em] text-text-muted">
         SKILL.md ({changed} {changed === 1 ? 'line' : 'lines'} changed)
       </h4>
       <div className="rounded border border-border/40 bg-background/60 overflow-x-auto max-h-96 overflow-y-auto scrollbar-dark">

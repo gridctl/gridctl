@@ -103,7 +103,7 @@ export function MarkdownPreview({
   if (view.kind === 'empty') {
     return (
       <div className="flex items-center justify-center h-full min-h-[200px]">
-        <p className="text-text-muted/40 text-sm italic">{emptyHint}</p>
+        <p className="text-text-muted text-sm italic">{emptyHint}</p>
       </div>
     );
   }

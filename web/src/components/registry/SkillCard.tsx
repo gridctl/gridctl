@@ -133,7 +133,7 @@ export const SkillCard = memo(({
             </button>
           )}
           <div className="p-1.5 rounded-md border bg-surface-highlight/60 border-border/40 flex-shrink-0 mt-0.5 transition-colors duration-200 group-hover:bg-primary/10 group-hover:border-primary/20 group-focus-within:bg-primary/10 group-focus-within:border-primary/20">
-            <BookOpen size={14} className="text-text-muted transition-colors duration-200 group-hover:text-primary/70 group-focus-within:text-primary/70" />
+            <BookOpen size={14} className="text-text-muted transition-colors duration-200 group-hover:text-primary group-focus-within:text-primary" />
           </div>
           <span title={skill.name} className="font-semibold log-text text-text-primary truncate flex-1 min-w-0 leading-tight mt-0.5">
             {skill.name}
@@ -142,7 +142,7 @@ export const SkillCard = memo(({
             <span
               title={source.repo}
               aria-label={`Imported from ${source.repo}`}
-              className="flex-shrink-0 inline-flex items-center text-text-muted/50 transition-colors group-hover:text-text-muted/80 mt-0.5"
+              className="flex-shrink-0 inline-flex items-center text-text-muted transition-colors group-hover:text-text-secondary mt-0.5"
             >
               <GitBranch size={12} />
             </span>
@@ -163,7 +163,7 @@ export const SkillCard = memo(({
         {/* Description */}
         <p className={cn(
           'log-text leading-relaxed line-clamp-2',
-          skill.description ? 'text-text-secondary' : 'text-text-muted/40 italic',
+          skill.description ? 'text-text-secondary' : 'text-text-muted italic',
         )}>
           {skill.description || 'No description'}
         </p>
@@ -183,7 +183,7 @@ export const SkillCard = memo(({
             </span>
           )}
           {category && metaSummary && (
-            <span aria-hidden="true" className="text-text-muted/40">·</span>
+            <span aria-hidden="true" className="text-text-muted">·</span>
           )}
           {metaSummary && <span className="truncate min-w-0">{metaSummary}</span>}
           <span className="flex-1 min-w-0" aria-hidden="true" />

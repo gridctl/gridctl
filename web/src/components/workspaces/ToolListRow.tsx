@@ -207,7 +207,7 @@ export const ToolListRow = memo(function ToolListRow({
               />
               <span>{AUDIT_STYLES[auditState].label}</span>
               {auditState !== 'disabled' && lastUsed && (
-                <span className="text-text-muted/70 truncate">
+                <span className="text-text-muted truncate">
                   · {lastUsed}
                 </span>
               )}
@@ -218,7 +218,7 @@ export const ToolListRow = memo(function ToolListRow({
           size={13}
           className={cn(
             'flex-shrink-0 mt-0.5 transition-colors',
-            isActive ? 'text-primary' : 'text-text-muted/40',
+            isActive ? 'text-primary' : 'text-text-muted',
           )}
           aria-hidden="true"
         />

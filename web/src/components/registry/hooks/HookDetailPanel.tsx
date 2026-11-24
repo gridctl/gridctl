@@ -222,7 +222,7 @@ function UnsupportedChips({ clients }: { clients: HookUnsupportedClient[] }) {
           <span
             key={c.slug}
             title={c.location}
-            className="text-3xs px-1.5 py-0.5 rounded border border-border/40 text-text-muted/80"
+            className="text-3xs px-1.5 py-0.5 rounded border border-border/40 text-text-muted"
           >
             {c.name}
             {c.covered_by ? ` via ${c.covered_by}` : ''}
@@ -303,7 +303,7 @@ function HookPinPanel({ name, onRefresh }: { name: string; onRefresh: () => Prom
       {loadError && <p className="text-xs text-status-error">{loadError}</p>}
       {findingsExist && (
         <section className="space-y-2 max-w-3xl">
-          <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
+          <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted">
             Advisory findings on the pinned content
           </h3>
           <FindingsList findings={findings} />
@@ -370,7 +370,7 @@ function HookDocumentDiff({ oldDocument, newDocument }: { oldDocument: string; n
   const shown = tokens.slice(0, MAX_DIFF_LINES);
   return (
     <div className="space-y-1">
-      <h4 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
+      <h4 className="text-3xs uppercase tracking-[0.18em] text-text-muted">
         hook.json ({changed} {changed === 1 ? 'line' : 'lines'} changed)
       </h4>
       <div className="rounded border border-border/40 bg-background/60 overflow-x-auto max-h-40 overflow-y-auto" aria-label="Hook pin diff">

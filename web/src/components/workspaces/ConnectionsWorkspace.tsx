@@ -594,7 +594,7 @@ function UnjoinedAgentsStrip({
         aria-expanded={expanded}
         className="w-full flex items-center gap-2 px-5 py-2 text-left hover:bg-surface-highlight/40 transition-colors"
       >
-        <Bot size={12} className="text-text-muted/70 flex-shrink-0" aria-hidden="true" />
+        <Bot size={12} className="text-text-muted flex-shrink-0" aria-hidden="true" />
         <span className="text-2xs text-text-muted">
           {total} agent projection{total === 1 ? '' : 's'} on non-client targets (
           {slugs.map(agentClientName).join(', ')})
@@ -617,7 +617,7 @@ function UnjoinedAgentsStrip({
                 >
                   {row.agent}
                 </button>
-                <span className="text-3xs text-text-muted/70 ml-auto">{row.state}</span>
+                <span className="text-3xs text-text-muted ml-auto">{row.state}</span>
               </li>
             )),
           )}
@@ -641,7 +641,7 @@ function UnattributedSessionsStrip({ sessions }: { sessions: SessionEntry[] }) {
         aria-expanded={expanded}
         className="w-full flex items-center gap-2 px-5 py-2 text-left hover:bg-surface-highlight/40 transition-colors"
       >
-        <Radio size={12} className="text-text-muted/70 flex-shrink-0" aria-hidden="true" />
+        <Radio size={12} className="text-text-muted flex-shrink-0" aria-hidden="true" />
         <span className="text-2xs text-text-muted">
           {sessions.length} session{sessions.length === 1 ? '' : 's'} not matched to a linked client
         </span>

@@ -242,7 +242,7 @@ function ConfigureView({
   return (
     <>
       <fieldset className="space-y-1.5">
-        <legend className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">Scope</legend>
+        <legend className="text-3xs uppercase tracking-[0.18em] text-text-muted">Scope</legend>
         <div className="flex gap-2">
           <SegButton active={scope === 'fleet'} onClick={() => onScope('fleet')}>
             All {servers.length} servers
@@ -279,7 +279,7 @@ function ConfigureView({
       </fieldset>
 
       <fieldset className="space-y-1.5">
-        <legend className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">Action</legend>
+        <legend className="text-3xs uppercase tracking-[0.18em] text-text-muted">Action</legend>
         <div className="flex gap-2">
           <SegButton active={action === 'expose-all'} onClick={() => onAction('expose-all')}>
             Expose all tools
@@ -296,7 +296,7 @@ function ConfigureView({
           </SegButton>
         </div>
         {!usageReady && (
-          <p className="text-3xs text-text-muted/70">
+          <p className="text-3xs text-text-muted">
             Disable unused needs the usage snapshot; loading it now (or usage is unavailable on
             this gateway).
           </p>
@@ -315,7 +315,7 @@ function ConfigureView({
             onChange={(e) => onPattern(e.target.value)}
             placeholder="delete_*"
             spellCheck={false}
-            className="w-full bg-background/60 border border-border/40 rounded-md px-2.5 py-1.5 text-sm font-mono text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50"
+            className="w-full bg-background/60 border border-border/40 rounded-md px-2.5 py-1.5 text-sm font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50"
           />
         </div>
       )}

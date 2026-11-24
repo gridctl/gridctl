@@ -111,7 +111,7 @@ export const LogLine = memo(function LogLine({
               className={cn(
                 'inline-flex items-center gap-1 min-w-0 font-mono log-text text-left rounded self-start',
                 'hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50',
-                source === GATEWAY_LOG_SOURCE ? 'text-primary/80' : 'text-tertiary-light/90'
+                source === GATEWAY_LOG_SOURCE ? 'text-primary' : 'text-tertiary-light/90'
               )}
             >
               <span
@@ -126,7 +126,7 @@ export const LogLine = memo(function LogLine({
             <span
               className={cn(
                 'inline-flex items-center gap-1 min-w-0 font-mono log-text',
-                source === GATEWAY_LOG_SOURCE ? 'text-primary/80' : 'text-tertiary-light/90'
+                source === GATEWAY_LOG_SOURCE ? 'text-primary' : 'text-tertiary-light/90'
               )}
               title={source}
             >

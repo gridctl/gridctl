@@ -145,7 +145,7 @@ export function SidebarTelemetrySection({ serverName }: Props) {
             'inline-flex items-center gap-1.5 ml-auto px-2 py-1 rounded-md',
             'text-2xs font-medium transition-colors',
             serverInventory.length === 0
-              ? 'text-text-muted/60 cursor-not-allowed'
+              ? 'text-text-muted cursor-not-allowed'
               : 'text-status-error hover:bg-status-error/10',
             'focus:outline-none focus:ring-2 focus:ring-status-error/30',
           )}

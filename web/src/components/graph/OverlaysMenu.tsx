@@ -64,7 +64,7 @@ export function OverlaysMenu() {
         aria-label="Canvas overlays"
         className="absolute bottom-full left-0 mb-2 w-44 p-1"
       >
-          <div className="px-2 py-1 text-3xs uppercase tracking-[0.18em] text-text-muted/70">
+          <div className="px-2 py-1 text-3xs uppercase tracking-[0.18em] text-text-muted">
             Overlays
           </div>
           {items.map(({ key, label, icon: Icon, active, toggle, accent }) => (

@@ -223,7 +223,7 @@ export function LogsView({
       {/* Keyboard hint strip. Nowrap so the wider 10 px labels scroll
           sideways instead of wrapping inside h-5. A visible scrollbar
           would cover that line, so the bar is hidden. */}
-      <div className="flex items-center gap-2 px-3 h-5 min-w-0 flex-shrink-0 border-t border-border/20 text-3xs text-text-muted/60 select-none overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex items-center gap-2 px-3 h-5 min-w-0 flex-shrink-0 border-t border-border/20 text-3xs text-text-muted select-none overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <span><kbd className="font-mono">j</kbd>/<kbd className="font-mono">k</kbd> navigate</span>
         <span><kbd className="font-mono">↵</kbd> expand</span>
         <span><kbd className="font-mono">/</kbd> search</span>

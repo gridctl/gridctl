@@ -34,7 +34,7 @@ import {
 
 const labelClass = 'block text-xs text-text-secondary mb-1.5';
 const inputClass =
-  'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors';
+  'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors';
 
 // Above this many operations, exposing the whole spec is worth a nudge. Cursor
 // drops tools past roughly 40 and VS Code hard-caps at 128, so a spec this size
@@ -441,13 +441,13 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
                   onValueChange={setQuery}
                   placeholder="Search operations..."
                   aria-label="Search operations"
-                  className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+                  className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
                 />
               </div>
 
               <Command.List className="max-h-72 overflow-y-auto" aria-label="Available operations">
                 <Command.Empty>
-                  <p className="text-2xs text-text-muted/60 italic py-4 px-3 text-center">
+                  <p className="text-2xs text-text-muted italic py-4 px-3 text-center">
                     No operations match the current search and filters
                   </p>
                 </Command.Empty>
@@ -612,9 +612,9 @@ const OperationRow = memo(function OperationRow({
           )}
         </div>
         {op.summary && <div className="text-3xs text-text-muted truncate mt-0.5">{op.summary}</div>}
-        <div className="text-3xs font-mono text-text-muted/80 truncate mt-0.5">
+        <div className="text-3xs font-mono text-text-muted truncate mt-0.5">
           {op.operation_id}
-          {differs && <span className="text-text-muted/60"> → {op.tool_name}</span>}
+          {differs && <span className="text-text-muted"> → {op.tool_name}</span>}
         </div>
       </div>
     </Command.Item>
@@ -656,7 +656,7 @@ function ManualEntry({
 // what it removes cannot be restored from the runtime Tools Whitelist.
 function StaticCaption() {
   return (
-    <p className="mt-2 text-3xs text-text-muted/80">
+    <p className="mt-2 text-3xs text-text-muted">
       Operations excluded here never become tools, so they cannot be re-enabled from the Tools
       Whitelist after deploy. The Tools Whitelist in Advanced is the reversible runtime filter.
     </p>

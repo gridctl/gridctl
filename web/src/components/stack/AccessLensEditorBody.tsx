@@ -79,7 +79,7 @@ export function AccessLensEditorBody({ servers }: AccessLensEditorBodyProps) {
   return (
     <div className="px-4 py-3 space-y-3">
       <div className="flex items-center gap-2">
-        <ShieldCheck size={14} className="text-primary/70" aria-hidden="true" />
+        <ShieldCheck size={14} className="text-primary" aria-hidden="true" />
         <h3 className="text-sm font-medium text-text-primary">{clientName}</h3>
         <span className="font-mono text-3xs text-text-muted">{clientSlug}</span>
       </div>
@@ -125,7 +125,7 @@ export function AccessLensEditorBody({ servers }: AccessLensEditorBodyProps) {
 
       <div className="rounded-lg border border-border/40 bg-background/60 divide-y divide-border/20">
         {serverNames.length === 0 && (
-          <p className="px-3 py-4 text-2xs text-text-muted/60 italic text-center">
+          <p className="px-3 py-4 text-2xs text-text-muted italic text-center">
             No MCP servers in the active stack.
           </p>
         )}

@@ -597,7 +597,7 @@ function DiffRow({
         ) : description ? (
           escapeNonPrintable(description)
         ) : (
-          <em className="text-text-muted/60">no description</em>
+          <em className="text-text-muted">no description</em>
         )}
       </span>
     </div>

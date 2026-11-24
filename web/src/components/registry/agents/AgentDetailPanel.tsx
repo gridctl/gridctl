@@ -78,7 +78,7 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
   if (!agent) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-2 text-text-muted p-6 text-center">
-        <Bot size={24} className="text-text-muted/40" />
+        <Bot size={24} className="text-text-muted" />
         <p className="text-sm">Select an agent to inspect it</p>
       </div>
     );
@@ -143,7 +143,7 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
         {tab === 'overview' && (
           <div id="agent-tab-overview" role="tabpanel" aria-labelledby="agent-tabbtn-overview" className="p-5 flex flex-col gap-4">
             <p className="text-sm text-text-secondary leading-relaxed">
-              {agent.description || <span className="italic text-text-muted/50">No description</span>}
+              {agent.description || <span className="italic text-text-muted">No description</span>}
             </p>
 
             {modelPref && (
@@ -171,7 +171,7 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
                   </div>
                 )}
                 <ModelHonorList honor={modelPref.honor} clients={modelPref.clients} />
-                <p className="text-3xs text-text-muted/70">
+                <p className="text-3xs text-text-muted">
                   A preference is a durable default per projection target; clients keep their own
                   resolution order and may override it.
                 </p>
@@ -191,7 +191,7 @@ export function AgentDetailPanel({ agent, statuses, onClose, onEdit, onDelete, o
                     </span>
                   </div>
                 ))}
-                <p className="text-3xs text-text-muted/70">
+                <p className="text-3xs text-text-muted">
                   Translated per client on sync; lossy renders drop what a dialect cannot express.
                 </p>
               </div>

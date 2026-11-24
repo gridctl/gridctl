@@ -73,7 +73,7 @@ function ClientList({
 }) {
   return (
     <aside aria-label="Client list" className="w-56 flex-shrink-0 border-r border-border-subtle overflow-y-auto scrollbar-dark py-2 pr-2">
-      <div className="px-3 pb-2 text-3xs font-medium text-text-muted/60 uppercase tracking-[0.3em]">
+      <div className="px-3 pb-2 text-3xs font-medium text-text-muted uppercase tracking-[0.3em]">
         clients
       </div>
       {clients.map((c) => {
@@ -178,7 +178,7 @@ function ClientScopePane({
   return (
     <div className="px-5 py-4 space-y-3" aria-busy={isSaving}>
       <div className="flex items-center gap-2">
-        <ShieldCheck size={14} className="text-primary/70" aria-hidden="true" />
+        <ShieldCheck size={14} className="text-primary" aria-hidden="true" />
         <h3 className="text-sm font-medium text-text-primary">{client.name}</h3>
         <span className="font-mono text-3xs text-text-muted">{client.slug}</span>
       </div>
@@ -227,7 +227,7 @@ function ClientScopePane({
 
       <div className="rounded-lg border border-border/40 bg-background/60 divide-y divide-border/20">
         {serverNames.length === 0 && (
-          <p className="px-3 py-4 text-2xs text-text-muted/60 italic text-center">
+          <p className="px-3 py-4 text-2xs text-text-muted italic text-center">
             No MCP servers in the active stack.
           </p>
         )}
@@ -357,7 +357,7 @@ function EmptyClients() {
     <div className="h-full flex items-center justify-center px-6 py-12">
       <div className="max-w-xs text-center space-y-3">
         <div className="mx-auto w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-          <Users size={22} className="text-primary/70" />
+          <Users size={22} className="text-primary" />
         </div>
         <p className="text-xs text-text-muted leading-relaxed">
           No linked clients yet. Run <span className="font-mono text-text-secondary">gridctl link</span>{' '}

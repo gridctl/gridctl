@@ -421,7 +421,7 @@ export function PinsWorkspace() {
               compact ? 'py-2' : 'py-3',
             )}
           >
-            <div className="font-sans text-text-muted/60 text-3xs uppercase tracking-[0.4em]">
+            <div className="font-sans text-text-muted text-3xs uppercase tracking-[0.4em]">
               pins
             </div>
             <div className="font-mono text-3xs text-text-muted">

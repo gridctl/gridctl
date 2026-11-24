@@ -150,7 +150,7 @@ export function RecipePicker({ onSelect, onClose }: RecipePickerProps) {
           ) : (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
-                <Layers size={24} className="text-text-muted/30 mx-auto mb-2" />
+                <Layers size={24} className="text-text-muted mx-auto mb-2" />
                 <p className="text-3xs text-text-muted">Select a recipe to preview</p>
               </div>
             </div>

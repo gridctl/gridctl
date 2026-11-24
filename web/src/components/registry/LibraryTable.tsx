@@ -182,7 +182,7 @@ export function LibraryTable({
                     {src && (
                       <GitBranch
                         size={11}
-                        className="text-text-muted/50 flex-shrink-0"
+                        className="text-text-muted flex-shrink-0"
                         aria-label={`Imported from ${src.repo}`}
                       />
                     )}

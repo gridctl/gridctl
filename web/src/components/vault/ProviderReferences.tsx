@@ -40,7 +40,7 @@ export function ProviderReferenceSection({
   const current = references.find((ref) => ref.key === selected) ?? null;
   return (
     <section aria-label="Provider references" className="px-6 pb-6">
-      <h2 className="text-3xs uppercase tracking-[0.24em] text-text-muted/50 mb-2">
+      <h2 className="text-3xs uppercase tracking-[0.24em] text-text-muted mb-2">
         Provider references
       </h2>
       <div role="listbox" aria-label="Provider references">

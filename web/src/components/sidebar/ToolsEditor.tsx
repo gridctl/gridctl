@@ -139,13 +139,13 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
               onValueChange={setQuery}
               placeholder="Search tools..."
               aria-label="Search tools"
-              className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+              className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
             />
           </div>
 
           <Command.List className="max-h-60 overflow-y-auto" aria-label="Available tools">
             <Command.Empty>
-              <p className="text-2xs text-text-muted/60 italic py-4 px-3 text-center">
+              <p className="text-2xs text-text-muted italic py-4 px-3 text-center">
                 {allTools.length === 0
                   ? 'No tools discovered for this server yet.'
                   : `No tools match "${query}"`}

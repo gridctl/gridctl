@@ -518,7 +518,7 @@ function ConfirmView({ preview, tier, phrase, onPhrase, onBack, onCancel, onConf
             aria-describedby="reset-purge-consequences"
             className={cn(
               'w-full rounded-md border bg-background/60 px-2.5 py-1.5 font-mono text-2xs',
-              'text-text-primary placeholder:text-text-muted/60 focus:outline-none focus:ring-1',
+              'text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1',
               phraseOk && phrase !== ''
                 ? 'border-status-error/60 focus:ring-status-error/50'
                 : 'border-border/40 focus:ring-primary/40',

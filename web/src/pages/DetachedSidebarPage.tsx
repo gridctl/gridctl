@@ -216,7 +216,7 @@ function DetachedSidebarPageContent() {
         {!isLoading && !selectedData && contentState === 'select' && (
           <div className="h-full flex flex-col items-center justify-center text-text-muted gap-3 animate-fade-in-scale">
             <div className="p-4 rounded-xl bg-surface-elevated/50 border border-border/30">
-              <Layers size={32} className="text-text-muted/50" />
+              <Layers size={32} className="text-text-muted" />
             </div>
             <span className="text-sm">Select a node to view details</span>
           </div>

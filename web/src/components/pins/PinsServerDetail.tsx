@@ -133,7 +133,7 @@ export function PinsServerDetail({
           className="flex items-center gap-1 text-2xs text-text-muted ml-auto"
           title={sp.last_verified_at || undefined}
         >
-          <Clock size={10} className="text-text-muted/60" />
+          <Clock size={10} className="text-text-muted" />
           {sp.last_verified_at
             ? `verified ${formatRelativeTime(new Date(sp.last_verified_at))}`
             : 'never verified'}
@@ -167,7 +167,7 @@ export function PinsServerDetail({
 
       <section id={TOOLS_SECTION_ID} className="space-y-2 max-w-5xl">
         <div className="flex items-center gap-2">
-          <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
+          <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted">
             Pinned tool records
           </h3>
           <button

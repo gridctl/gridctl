@@ -33,7 +33,7 @@ export function SplitPaneHandle({
           size={12}
           className={cn(
             'text-text-muted transition-colors',
-            isDragging ? 'text-primary' : 'hover:text-primary/60',
+            isDragging ? 'text-primary' : 'hover:text-primary',
           )}
         />
       </div>

@@ -14,7 +14,7 @@ import { escapeNonPrintable } from '../../../lib/nonPrintable';
 import { ShieldAlert, ChevronDown, ChevronRight } from 'lucide-react';
 
 const inputClass =
-  'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors';
+  'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors';
 const labelClass = 'block text-xs text-text-secondary mb-1.5';
 
 interface ToolsPickerProps {
@@ -275,7 +275,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
               onValueChange={setQuery}
               placeholder="Search tools..."
               aria-label="Search tools"
-              className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+              className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
             />
           </div>
 
@@ -284,7 +284,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
             aria-label="Available tools"
           >
             <Command.Empty>
-              <p className="text-2xs text-text-muted/60 italic py-4 px-3 text-center">
+              <p className="text-2xs text-text-muted italic py-4 px-3 text-center">
                 No tools match "{query}"
               </p>
             </Command.Empty>
@@ -467,7 +467,7 @@ function ManualEntry({
         </button>
       </div>
       {value.length === 0 && (
-        <p className="text-3xs text-text-muted/60 italic py-2">
+        <p className="text-3xs text-text-muted italic py-2">
           All tools exposed (no whitelist)
         </p>
       )}

@@ -293,7 +293,7 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
           </button>
           <button
             onClick={() => { setEditingSkill(undefined); setShowEditor(true); }}
-            className="flex items-center gap-1 text-3xs text-primary hover:text-primary/80 transition-colors"
+            className="flex items-center gap-1 text-3xs text-primary hover:text-primary-light transition-colors"
           >
             <Plus size={10} /> New
           </button>
@@ -303,14 +303,14 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
       {/* Search */}
       <div className="px-2 py-1.5 border-b border-border/20 flex-shrink-0" role="search">
         <div className="relative">
-          <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted/50" />
+          <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted" />
           <input
             ref={searchInputRef}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search skills..."
             aria-label="Filter skills"
-            className="w-full bg-background/40 border border-border/30 rounded-lg pl-7 pr-7 py-1 text-xs text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/40"
+            className="w-full bg-background/40 border border-border/30 rounded-lg pl-7 pr-7 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/40"
           />
           {searchQuery && (
             <button
@@ -420,7 +420,7 @@ function SkillsList({
   if ((skills ?? []).length === 0) {
     return (
       <div className="p-6 text-center">
-        <BookOpen size={24} className="text-text-muted/30 mx-auto mb-2" />
+        <BookOpen size={24} className="text-text-muted mx-auto mb-2" />
         <p className="text-text-muted text-xs">
           {isFiltered ? 'No matching skills' : 'No skills registered'}
         </p>
@@ -511,7 +511,7 @@ function SkillItem({
         <div className="p-0.5 text-text-muted">
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </div>
-        <BookOpen size={12} className="text-primary/60 flex-shrink-0" />
+        <BookOpen size={12} className="text-primary flex-shrink-0" />
         <span className="text-xs font-medium text-text-primary flex-1 text-left truncate">
           {skill.name}
         </span>

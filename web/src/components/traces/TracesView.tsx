@@ -374,10 +374,10 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
           {/* Counts, right-aligned within the left cluster */}
           <span className="ml-auto text-3xs text-text-muted font-mono whitespace-nowrap flex-shrink-0 hidden sm:block">
             {displayTraces.length} matching
-            {infraHidden > 0 && <span className="text-text-muted/60"> · {infraHidden} infra hidden</span>}
+            {infraHidden > 0 && <span className="text-text-muted"> · {infraHidden} infra hidden</span>}
             {bufferCapacity > 0 && (
               <span
-                className={cn(bufferPressure >= 0.9 ? 'text-status-pending' : 'text-text-muted/60')}
+                className={cn(bufferPressure >= 0.9 ? 'text-status-pending' : 'text-text-muted')}
                 title={`Ring buffer: ${bufferSize} of ${bufferCapacity} traces (gateway.tracing.max_traces)`}
               >
                 {' '}· {bufferSize}/{bufferCapacity}
@@ -426,7 +426,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                   'backdrop-blur-xl shadow-bevel animate-fade-in-scale'
                 )}
               >
-                <div className="px-1 py-1 text-3xs uppercase tracking-[0.18em] text-text-muted/70">
+                <div className="px-1 py-1 text-3xs uppercase tracking-[0.18em] text-text-muted">
                   Filters
                 </div>
                 <label className="flex items-center justify-between gap-2 px-1 py-1.5 text-3xs text-text-secondary">
@@ -645,7 +645,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                 {/* Keyboard hint strip. Nowrap so the wider 10 px labels scroll
                     sideways instead of wrapping inside h-5. A visible scrollbar
                     would cover that line, so the bar is hidden. */}
-                <div className="flex items-center gap-2 px-3 h-5 min-w-0 flex-shrink-0 border-t border-border/20 text-3xs text-text-muted/60 select-none overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="flex items-center gap-2 px-3 h-5 min-w-0 flex-shrink-0 border-t border-border/20 text-3xs text-text-muted select-none overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   <span><kbd className="font-mono">j</kbd>/<kbd className="font-mono">k</kbd> navigate</span>
                   <span><kbd className="font-mono">↵</kbd> open</span>
                   <span><kbd className="font-mono">esc</kbd> close</span>

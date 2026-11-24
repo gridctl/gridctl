@@ -241,7 +241,7 @@ export function SkillDetailPanel({
             <button
               type="button"
               onClick={() => onEdit(skill)}
-              className="flex items-center gap-1 px-2 py-1 text-2xs font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-md transition-colors"
+              className="flex items-center gap-1 px-2 py-1 text-2xs font-medium text-primary bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-md transition-colors"
             >
               <Pencil size={11} /> Edit
             </button>
@@ -548,7 +548,7 @@ function SkillOverview({
             {skill.description}
           </p>
         ) : (
-          <p className="text-2xs text-text-muted/70 italic">No description.</p>
+          <p className="text-2xs text-text-muted italic">No description.</p>
         )}
       </Section>
 
@@ -560,7 +560,7 @@ function SkillOverview({
               {calls} {calls === 1 ? 'call' : 'calls'}
             </p>
           ) : (
-            <p className="text-2xs text-text-muted/80 leading-relaxed">
+            <p className="text-2xs text-text-muted leading-relaxed">
               No recorded calls{observedSince ? `, tracking since ${formatLastUsed(observedSince)}` : ''}.
               Counts are cumulative across served clients, so a zero may mean the skill predates tracking.
             </p>
@@ -653,7 +653,7 @@ function SkillOverview({
               )}
             </dl>
             <ModelHonorList honor={skill.modelPreference.honor} />
-            <p className="text-3xs text-text-muted/70 leading-relaxed">
+            <p className="text-3xs text-text-muted leading-relaxed">
               A preference is a durable default per projection target; clients keep their own
               resolution order and may override it.
             </p>
@@ -731,7 +731,7 @@ function SkillOverview({
                 onClick={() => onSelectRelated?.(rel.name)}
                 className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-surface-highlight/60 transition-colors group"
               >
-                <BookOpen size={12} className="text-text-muted group-hover:text-primary/70 flex-shrink-0 transition-colors" />
+                <BookOpen size={12} className="text-text-muted group-hover:text-primary flex-shrink-0 transition-colors" />
                 <span className="text-xs text-text-secondary group-hover:text-text-primary truncate flex-1 transition-colors">
                   {rel.name}
                 </span>
@@ -770,7 +770,7 @@ function MetaRow({ label, value, mono }: { label: string; value: ReactNode; mono
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-2">
-      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">{title}</h3>
+      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted">{title}</h3>
       {children}
     </section>
   );
@@ -781,7 +781,7 @@ function SkillDetailEmpty() {
     <div className="h-full flex items-center justify-center px-6 text-center">
       <div className="space-y-3">
         <div className="mx-auto w-12 h-12 rounded-2xl bg-surface-highlight/40 border border-border/40 flex items-center justify-center">
-          <BookOpen size={20} className="text-text-muted/60" aria-hidden="true" />
+          <BookOpen size={20} className="text-text-muted" aria-hidden="true" />
         </div>
         <p className="text-xs text-text-muted leading-relaxed max-w-[220px]">
           Select a skill to inspect its details, instructions, and files.

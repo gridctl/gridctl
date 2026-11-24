@@ -263,7 +263,7 @@ function Section({
 
 // --- Form field components ---
 
-const inputClass = 'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors';
+const inputClass = 'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors';
 const labelClass = 'block text-xs text-text-secondary mb-1.5';
 
 function CustomHeadersEditor({
@@ -347,7 +347,7 @@ function KeyValueEditor({
         </button>
       </div>
       {entries.length === 0 && (
-        <p className="text-3xs text-text-muted/60 italic py-2">No entries</p>
+        <p className="text-3xs text-text-muted italic py-2">No entries</p>
       )}
       <div className="space-y-1.5">
         {entries.map(([key, val], i) => (
@@ -424,7 +424,7 @@ function CommandArrayBuilder({
         </button>
       </div>
       {value.length === 0 && (
-        <p className="text-3xs text-text-muted/60 italic py-2">No command specified</p>
+        <p className="text-3xs text-text-muted italic py-2">No command specified</p>
       )}
       <div className="space-y-1.5">
         {value.map((item, i) => (
@@ -2102,7 +2102,7 @@ function SourceAuthField({
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center gap-2 px-3 py-2 text-2xs text-text-secondary hover:text-text-primary transition-colors"
       >
-        <ShieldCheck size={12} className="text-primary/70" />
+        <ShieldCheck size={12} className="text-primary" />
         <span className="font-medium">Repository Authentication</span>
         <span className="text-text-muted text-3xs">
           {value ? '' : '(optional, for private repos)'}
