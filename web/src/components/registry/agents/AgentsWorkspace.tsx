@@ -6,6 +6,7 @@ import { WORKSPACE_LABELS } from '../../../types/workspace';
 import { IconButton } from '../../ui/IconButton';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import { showToast } from '../../ui/Toast';
+import { FailedState, FailureBanner } from '../../ui/EmptyState';
 import { WorkspaceShell } from '../../layout/WorkspaceShell';
 import { useCommandRegistry } from '../../../hooks/useCommandRegistry';
 import { useRegistryStore } from '../../../stores/useRegistryStore';
@@ -44,6 +45,7 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
   const agents = useRegistryStore((s) => s.agents);
   const agentStatuses = useRegistryStore((s) => s.agentStatuses);
   const openWizard = useWizardStore((s) => s.open);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const isLoading = agents === null;
   const hasAgents = (agents ?? []).length > 0;
@@ -85,11 +87,9 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
       ]);
       useRegistryStore.getState().setAgents(list);
       useRegistryStore.getState().setAgentStatuses(statuses);
+      setLoadError(null);
     } catch (err) {
-      if (!isCancellation(err)) {
-        const described = describeError(err, 'Load agents');
-        showToast('error', described.text, { detail: described.fullDetail });
-      }
+      if (!isCancellation(err)) setLoadError(describeError(err, 'Load agents').text);
     }
   }, []);
 
@@ -97,6 +97,7 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
   // agent imported via the CLI appears as soon as the segment mounts (or on
   // Refresh / after wizard import).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async callback; state is set only after await, not synchronously
     void refresh();
   }, [refresh]);
 
@@ -387,7 +388,25 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto scrollbar-dark">
+          <div className="flex-1 overflow-y-auto scrollbar-dark flex flex-col">
+            {isLoading && loadError && (
+              <FailedState
+                feature="Agents"
+                message={loadError}
+                onRetry={() => {
+                  setLoadError(null);
+                  void refresh();
+                }}
+                className="flex-1"
+              />
+            )}
+            {isLoading && !loadError && (
+              <p className="px-6 py-4 text-xs text-text-muted">Loading agents…</p>
+            )}
+            {!isLoading && loadError && (
+              <FailureBanner message={loadError} onRetry={() => void refresh()} className="mx-4" />
+            )}
+
             {!isLoading && !hasAgents && (
               <div className="h-full flex flex-col items-center justify-center text-text-muted gap-3 animate-fade-in-scale p-8 text-center">
                 <div className="p-4 rounded-xl bg-surface-elevated/50 border border-border/30">

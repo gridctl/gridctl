@@ -4,7 +4,7 @@ import { List, Package, RefreshCw, Bot, FileDiff } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { WORKSPACE_LABELS } from '../../../types/workspace';
 import { IconButton } from '../../ui/IconButton';
-import { showToast } from '../../ui/Toast';
+import { FailedState, FailureBanner } from '../../ui/EmptyState';
 import { WorkspaceShell } from '../../layout/WorkspaceShell';
 import { useCommandRegistry } from '../../../hooks/useCommandRegistry';
 import { LibraryKindSwitch } from '../LibraryKindSwitch';
@@ -27,6 +27,7 @@ export function HooksWorkspace({ onKindChange }: HooksWorkspaceProps) {
   const [hooks, setHooks] = useState<RegistryHook[] | null>(null);
   const [statuses, setStatuses] = useState<HookProjectionStatus[] | null>(null);
   const [unsupported, setUnsupported] = useState<HookUnsupportedClient[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const searchQuery = searchParams.get('q') ?? '';
   const selectedName = searchParams.get('selected');
 
@@ -57,11 +58,9 @@ export function HooksWorkspace({ onKindChange }: HooksWorkspaceProps) {
       setHooks(list.hooks ?? []);
       setUnsupported(list.unsupported_clients ?? []);
       setStatuses(rows ?? []);
+      setLoadError(null);
     } catch (err) {
-      if (!isCancellation(err)) {
-        const described = describeError(err, 'Load hooks');
-        showToast('error', described.text, { detail: described.fullDetail });
-      }
+      if (!isCancellation(err)) setLoadError(describeError(err, 'Load hooks').text);
     }
   }, []);
 
@@ -185,7 +184,21 @@ export function HooksWorkspace({ onKindChange }: HooksWorkspaceProps) {
             />
           </div>
           <div className="flex-1 overflow-auto px-6 pb-6 flex flex-col gap-4">
-            {hooks === null && <p className="text-xs text-text-muted">Loading hooks…</p>}
+            {hooks === null && loadError && (
+              <FailedState
+                feature="Hooks"
+                message={loadError}
+                onRetry={() => {
+                  setLoadError(null);
+                  void refresh();
+                }}
+                className="flex-1"
+              />
+            )}
+            {hooks !== null && loadError && (
+              <FailureBanner message={loadError} onRetry={() => void refresh()} className="mx-0 mt-0" />
+            )}
+            {hooks === null && !loadError && <p className="text-xs text-text-muted">Loading hooks…</p>}
             {hooks !== null && groups.length === 0 && (
               <p className="text-xs text-text-muted">No hooks imported. Hooks enter through a pack.</p>
             )}

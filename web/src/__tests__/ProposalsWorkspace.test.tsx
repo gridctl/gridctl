@@ -181,6 +181,59 @@ describe('ProposalsWorkspace', () => {
   });
 });
 
+describe('Proposals load failures', () => {
+  it('shows a failed list state with Retry and no toast, then recovers', async () => {
+    vi.mocked(fetchProposals).mockRejectedValue(new Error('offline'));
+    renderWorkspace();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Proposals unavailable');
+    expect(alert).toHaveTextContent('Load proposals failed: offline.');
+    expect(screen.queryByText('Loading proposals…')).not.toBeInTheDocument();
+    expect(showToast).not.toHaveBeenCalled();
+
+    vi.mocked(fetchProposals).mockResolvedValue(list(approved, pending));
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    const rows = await screen.findByRole('list', { name: 'Proposals' });
+    await waitFor(() => expect(within(rows).getAllByRole('button')).toHaveLength(1));
+    expect(screen.queryByText('Proposals unavailable')).not.toBeInTheDocument();
+  });
+
+  it('keeps the list under a banner when a refresh fails', async () => {
+    renderWorkspace();
+    const rows = await screen.findByRole('list', { name: 'Proposals' });
+    await waitFor(() => expect(within(rows).getAllByRole('button')).toHaveLength(1));
+
+    vi.mocked(fetchProposals).mockRejectedValueOnce(new Error('offline'));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Load proposals failed: offline.');
+    expect(within(rows).getAllByRole('button')).toHaveLength(1);
+  });
+
+  it('keeps approve disabled with a visible reason when the detail fetch fails', async () => {
+    vi.mocked(fetchProposal).mockRejectedValueOnce(new Error('offline'));
+    renderWorkspace(`/library?kind=proposal&selected=${pending.id}`);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Load proposal failed: offline.');
+    const summary = screen.getByRole('region', { name: 'Summary' });
+    expect(within(summary).getByText('unavailable')).toBeInTheDocument();
+    expect(within(summary).queryByText('loading')).not.toBeInTheDocument();
+    expect(
+      screen.getByText('The current base and pin status could not be loaded. Retry to enable Approve.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    expect(showToast).not.toHaveBeenCalled();
+
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(within(summary).getByText('pinned')).toBeInTheDocument());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText(/could not be loaded/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/requires a reason/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+  });
+});
+
 describe('LibraryKindSwitch', () => {
   it('loads the pending count when no count is passed', async () => {
     render(<LibraryKindSwitch kind="skill" onChange={() => {}} />);

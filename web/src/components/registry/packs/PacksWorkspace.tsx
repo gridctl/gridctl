@@ -5,6 +5,7 @@ import { cn } from '../../../lib/cn';
 import { WORKSPACE_LABELS } from '../../../types/workspace';
 import { IconButton } from '../../ui/IconButton';
 import { showToast } from '../../ui/Toast';
+import { FailedState, FailureBanner } from '../../ui/EmptyState';
 import { WorkspaceShell } from '../../layout/WorkspaceShell';
 import { useCommandRegistry } from '../../../hooks/useCommandRegistry';
 import { useRegistryStore } from '../../../stores/useRegistryStore';
@@ -44,6 +45,7 @@ export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
   // segment's own fetch: a pack imported moments ago must never have its
   // own deep link toast-and-cleared against a stale list.
   const [segmentLoaded, setSegmentLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const setSelectedName = useCallback((name: string | null) => {
     setSearchParams(
@@ -65,11 +67,9 @@ export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
       const list = await fetchPacks();
       useRegistryStore.getState().setPacks(list);
       setSegmentLoaded(true);
+      setLoadError(null);
     } catch (err) {
-      if (!isCancellation(err)) {
-        const described = describeError(err, 'Load packs');
-        showToast('error', described.text, { detail: described.fullDetail });
-      }
+      if (!isCancellation(err)) setLoadError(describeError(err, 'Load packs').text);
     }
   }, []);
 
@@ -80,13 +80,11 @@ export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
         if (cancelled) return;
         useRegistryStore.getState().setPacks(list);
         setSegmentLoaded(true);
+        setLoadError(null);
       })
       .catch((err) => {
         if (cancelled) return;
-        if (!isCancellation(err)) {
-          const described = describeError(err, 'Load packs');
-          showToast('error', described.text, { detail: described.fullDetail });
-        }
+        if (!isCancellation(err)) setLoadError(describeError(err, 'Load packs').text);
       });
     return () => {
       cancelled = true;
@@ -233,8 +231,23 @@ export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
             </div>
           </header>
 
-          <div className="flex-1 overflow-y-auto scrollbar-dark">
-            {isLoading && (
+          <div className="flex-1 overflow-y-auto scrollbar-dark flex flex-col">
+            {isLoading && loadError && (
+              <FailedState
+                feature="Packs"
+                message={loadError}
+                onRetry={() => {
+                  setLoadError(null);
+                  void refresh();
+                }}
+                className="flex-1"
+              />
+            )}
+            {!isLoading && loadError && (
+              <FailureBanner message={loadError} onRetry={() => void refresh()} className="mx-4" />
+            )}
+
+            {isLoading && !loadError && (
               <div className="h-full flex items-center justify-center text-sm text-text-muted">
                 Loading packs…
               </div>

@@ -349,6 +349,56 @@ describe('PacksWorkspace', () => {
   });
 });
 
+describe('PacksWorkspace load failures', () => {
+  it('shows a failed state with Retry when nothing is loaded, then recovers', async () => {
+    vi.mocked(fetchPacks).mockRejectedValueOnce(new Error('offline'));
+    renderWorkspace();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Packs unavailable');
+    expect(alert).toHaveTextContent('Load packs failed: offline.');
+    expect(screen.queryByText('Loading packs…')).not.toBeInTheDocument();
+    expect(screen.queryByText('No packs imported')).not.toBeInTheDocument();
+
+    vi.mocked(fetchPacks).mockResolvedValue([listItem()]);
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByLabelText('Installed packs')).toBeInTheDocument();
+    expect(screen.queryByText('Packs unavailable')).not.toBeInTheDocument();
+  });
+
+  it('keeps cached packs under a banner and does not clear a deep link', async () => {
+    useRegistryStore.setState({ packs: [listItem()] });
+    vi.mocked(fetchPacks).mockRejectedValue(new Error('offline'));
+    renderWorkspace('/library?kind=pack&selected=team-pack');
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Load packs failed: offline.');
+    expect(within(alert).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    const list = screen.getByLabelText('Installed packs');
+    expect(within(list).getByText('team-pack')).toBeInTheDocument();
+    // The selection survives: the detail pane loads the pack instead of
+    // returning to its empty prompt.
+    expect(await screen.findByText('team-style')).toBeInTheDocument();
+    expect(screen.queryByText('Select a pack to inspect its resources.')).not.toBeInTheDocument();
+  });
+
+  it('shows a failed pack detail with Retry on a non-409 error', async () => {
+    vi.mocked(fetchPacks).mockResolvedValue([listItem()]);
+    vi.mocked(fetchPackDetail).mockRejectedValueOnce(new HTTPError(500, 'boom'));
+    renderWorkspace('/library?kind=pack&selected=team-pack');
+
+    const failed = await screen.findByText('Pack unavailable');
+    const alert = failed.closest('[role="alert"]') as HTMLElement;
+    expect(alert).toHaveTextContent('Load pack failed: boom.');
+    expect(screen.queryByText('Loading pack…')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pack name collision')).not.toBeInTheDocument();
+
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('team-style')).toBeInTheDocument();
+    expect(screen.queryByText('Pack unavailable')).not.toBeInTheDocument();
+  });
+});
+
 describe('PackImportWizard', () => {
   const previewResult: PackPreview = {
     pack: 'team-pack',

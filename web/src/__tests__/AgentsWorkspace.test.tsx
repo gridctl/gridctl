@@ -184,6 +184,46 @@ describe('AgentsWorkspace', () => {
   });
 });
 
+describe('AgentsWorkspace load failures', () => {
+  it('shows a failed state with Retry when nothing is loaded, then recovers', async () => {
+    vi.mocked(fetchRegistryAgents).mockRejectedValueOnce(new Error('offline'));
+    vi.mocked(fetchAgentProjectionStatus).mockResolvedValue([]);
+    renderWorkspace();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Agents unavailable');
+    expect(alert).toHaveTextContent('Load agents failed: offline.');
+    expect(screen.queryByText('Loading agents…')).not.toBeInTheDocument();
+    expect(screen.queryByText('No agents imported')).not.toBeInTheDocument();
+
+    vi.mocked(fetchRegistryAgents).mockResolvedValue([reviewer]);
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('code-reviewer')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows a loading line while the first fetch is pending', () => {
+    vi.mocked(fetchRegistryAgents).mockReturnValue(new Promise(() => {}));
+    vi.mocked(fetchAgentProjectionStatus).mockResolvedValue([]);
+    renderWorkspace();
+    expect(screen.getByText('Loading agents…')).toBeInTheDocument();
+  });
+
+  it('keeps cached agents under a banner when the segment fetch fails', async () => {
+    useRegistryStore.setState({ agents: [reviewer, localAgent], agentStatuses: [] });
+    vi.mocked(fetchRegistryAgents).mockRejectedValue(new Error('offline'));
+    vi.mocked(fetchAgentProjectionStatus).mockResolvedValue([]);
+    renderWorkspace();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Load agents failed: offline.');
+    expect(within(alert).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.queryByText('Agents unavailable')).not.toBeInTheDocument();
+    expect(screen.getByText('code-reviewer')).toBeInTheDocument();
+    expect(screen.getByText('local-helper')).toBeInTheDocument();
+  });
+});
+
 describe('describeSyncResults', () => {
   it('warns instead of claiming success when every client was unavailable', () => {
     const outcome = describeSyncResults([

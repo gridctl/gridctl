@@ -4,7 +4,7 @@ import { Bot, List, Package, RefreshCw, Webhook } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { WORKSPACE_LABELS } from '../../../types/workspace';
 import { IconButton } from '../../ui/IconButton';
-import { showToast } from '../../ui/Toast';
+import { FailedState, FailureBanner } from '../../ui/EmptyState';
 import { WorkspaceShell } from '../../layout/WorkspaceShell';
 import { useCommandRegistry } from '../../../hooks/useCommandRegistry';
 import { LibraryKindSwitch } from '../LibraryKindSwitch';
@@ -35,6 +35,7 @@ export function ProposalsWorkspace({ onKindChange }: ProposalsWorkspaceProps) {
   const [proposals, setProposals] = useState<Proposal[] | null>(null);
   const [skipped, setSkipped] = useState<ProposalSkipped[]>([]);
   const [truncated, setTruncated] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const statusParam = searchParams.get('status');
   const status: ProposalStatusFilter = isProposalStatusFilter(statusParam) ? statusParam : 'pending';
   const selectedId = searchParams.get('selected');
@@ -65,11 +66,9 @@ export function ProposalsWorkspace({ onKindChange }: ProposalsWorkspaceProps) {
       setProposals(doc.proposals ?? []);
       setSkipped(doc.skipped ?? []);
       setTruncated(Boolean(doc.truncated));
+      setLoadError(null);
     } catch (err) {
-      if (!isCancellation(err)) {
-        const described = describeError(err, 'Load proposals');
-        showToast('error', described.text, { detail: described.fullDetail });
-      }
+      if (!isCancellation(err)) setLoadError(describeError(err, 'Load proposals').text);
     }
   }, []);
 
@@ -183,7 +182,21 @@ export function ProposalsWorkspace({ onKindChange }: ProposalsWorkspaceProps) {
             ))}
           </div>
           <div className="flex-1 overflow-auto px-6 pb-6 flex flex-col gap-2">
-            {proposals === null && <p className="text-xs text-text-muted">Loading proposals…</p>}
+            {proposals === null && loadError && (
+              <FailedState
+                feature="Proposals"
+                message={loadError}
+                onRetry={() => {
+                  setLoadError(null);
+                  void refresh();
+                }}
+                className="flex-1"
+              />
+            )}
+            {proposals !== null && loadError && (
+              <FailureBanner message={loadError} onRetry={() => void refresh()} className="mx-0 mt-0" />
+            )}
+            {proposals === null && !loadError && <p className="text-xs text-text-muted">Loading proposals…</p>}
             {proposals !== null && proposals.length === 0 && (
               <p className="text-xs text-text-muted">
                 No proposals. Stage one with <span className="font-mono">gridctl propose</span>.
