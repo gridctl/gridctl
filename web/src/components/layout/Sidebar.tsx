@@ -18,6 +18,7 @@ import {
   SlidersHorizontal,
   Power,
 } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
@@ -45,6 +46,7 @@ import { useUIStore } from '../../stores/useUIStore';
 import { useAccessLensStore } from '../../stores/useAccessLensStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { formatRelativeTime } from '../../lib/time';
+import { restoreNodeFocus } from '../../lib/inspectorFocus';
 import type { MCPServerNodeData, ResourceNodeData, ClientNodeData } from '../../types';
 
 export function Sidebar() {
@@ -52,6 +54,9 @@ export function Sidebar() {
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   const sidebarDetached = useUIStore((s) => s.sidebarDetached);
   const selectNode = useStackStore((s) => s.selectNode);
+  const selectedNodeId = useStackStore((s) => s.selectedNodeId);
+  const focusRequest = useUIStore((s) => s.inspectorFocusRequest);
+  const requestInspectorFocus = useUIStore((s) => s.requestInspectorFocus);
   const autoscaleHistory = useStackStore((s) => s.autoscaleHistory);
   const autoscaleDecisions = useStackStore((s) => s.autoscaleDecisions);
   const clients = useStackStore((s) => s.clients);
@@ -61,7 +66,21 @@ export function Sidebar() {
   const { openDetachedWindow, focusDetachedWindow } = useWindowManager();
   const navigate = useNavigate();
 
+  // Keyboard and palette activation leave a focus request naming the node.
+  // Honor it once that node's heading is mounted; drop it when the selection
+  // has moved on or resolves to nothing, so it never applies to a later one.
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const hasData = Boolean(selectedData);
+  useEffect(() => {
+    if (focusRequest === null) return;
+    if (focusRequest === selectedNodeId && hasData) {
+      headingRef.current?.focus({ preventScroll: true });
+    }
+    requestInspectorFocus(null);
+  }, [focusRequest, selectedNodeId, hasData, requestInspectorFocus]);
+
   const handleClose = () => {
+    restoreNodeFocus(selectedNodeId);
     setSidebarOpen(false);
     selectNode(null);
   };
@@ -73,7 +92,7 @@ export function Sidebar() {
 
   // Gateway and skill groups get the registry sidebar
   if (selectedData.type === 'gateway' || selectedData.type === 'skill-group') {
-    return <GatewaySidebar onClose={handleClose} />;
+    return <GatewaySidebar onClose={handleClose} headingRef={headingRef} />;
   }
 
   const isServer = selectedData.type === 'mcp-server';
@@ -178,6 +197,7 @@ export function Sidebar() {
           </>
         }
         onClose={handleClose}
+        headingRef={headingRef}
         actions={
           <PopoutButton onClick={handlePopout} detached={sidebarDetached} />
         }

@@ -67,6 +67,7 @@ export function Canvas() {
   const connectionStatus = useStackStore((s) => s.connectionStatus);
   const gatewayInfo = useStackStore((s) => s.gatewayInfo);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
+  const requestInspectorFocus = useUIStore((s) => s.requestInspectorFocus);
   const edgeStyle = useUIStore((s) => s.edgeStyle);
   const toggleEdgeStyle = useUIStore((s) => s.toggleEdgeStyle);
   const compactCards = useUIStore((s) => s.compactCards);
@@ -125,14 +126,20 @@ export function Canvas() {
     return () => clearCanvasActions();
   }, [fitView, zoomIn, zoomOut, registerCanvasActions, clearCanvasActions]);
 
+  // The canvas is read-only: the graph mirrors the running stack, so a
+  // removal from React Flow would only hide an element until the next poll.
   const onNodesChange = useCallback((changes: NodeChange[]) => {
+    const kept = changes.filter((change) => change.type !== 'remove');
+    if (kept.length === 0) return;
     const store = useStackStore.getState();
-    setNodes(applyNodeChanges(changes, store.nodes));
-    recordDraggedPositions(changes);
+    setNodes(applyNodeChanges(kept, store.nodes));
+    recordDraggedPositions(kept);
   }, [setNodes, recordDraggedPositions]);
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
-    setEdges(applyEdgeChanges(changes, useStackStore.getState().edges));
+    const kept = changes.filter((change) => change.type !== 'remove');
+    if (kept.length === 0) return;
+    setEdges(applyEdgeChanges(kept, useStackStore.getState().edges));
   }, [setEdges]);
   // Live theme colors so JS-set edge/grid colors follow [data-theme].
   const colors = useThemeColors();
@@ -290,7 +297,9 @@ export function Canvas() {
   // must not select them or open the sidebar. The node already stops
   // propagation; this early return is the belt-and-suspenders guard.
   // Returns whether the node was activated, so Space can preventDefault only then.
-  const activateNode = useCallback((node: ActivatableNode): boolean => {
+  // Keyboard activation asks the inspector to take focus; a mouse click and an
+  // Access Lens draft toggle leave focus where it is.
+  const activateNode = useCallback((node: ActivatableNode, fromKeyboard: boolean): boolean => {
     const nodeType = node.data?.type;
     if (nodeType === 'tool' || nodeType === 'tool-overflow') return false;
     // In Access Lens, a server-node click grants/revokes it in the draft instead
@@ -301,11 +310,12 @@ export function Canvas() {
     }
     selectNode(node.id);
     setSidebarOpen(true);
+    requestInspectorFocus(fromKeyboard ? node.id : null);
     return true;
-  }, [selectNode, setSidebarOpen, lensActive, toggleDraftServer]);
+  }, [selectNode, setSidebarOpen, requestInspectorFocus, lensActive, toggleDraftServer]);
 
   const onNodeClick = useCallback((_: MouseEvent, node: ActivatableNode) => {
-    activateNode(node);
+    activateNode(node, false);
   }, [activateNode]);
 
   // React Flow's node wrapper handles Enter and Space itself and does not call
@@ -331,7 +341,7 @@ export function Canvas() {
     if (!id) return;
     const node = nodes.find((item) => item.id === id);
     if (!node) return;
-    const activated = activateNode(node);
+    const activated = activateNode(node, true);
     if (event.key === ' ' && activated) event.preventDefault();
   }, [nodes, activateNode]);
 
@@ -416,6 +426,9 @@ export function Canvas() {
         nodes={styledNodes}
         edges={styledEdges}
         nodeTypes={nodeTypes}
+        nodesConnectable={false}
+        edgesFocusable={false}
+        deleteKeyCode={null}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}

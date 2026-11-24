@@ -18,9 +18,15 @@ vi.mock('../hooks/useCommandRegistry', () => ({
   }),
 }));
 
+const uiState = vi.hoisted(() => ({
+  activeWorkspace: 'stack',
+  inspectorFocusRequest: null as string | null,
+}));
+
 vi.mock('../stores/useUIStore', () => ({
-  useUIStore: vi.fn((selector: (s: object) => unknown) =>
-    selector({ activeWorkspace: 'stack' }),
+  useUIStore: Object.assign(
+    vi.fn((selector: (s: object) => unknown) => selector(uiState)),
+    { getState: () => uiState },
   ),
 }));
 
@@ -58,6 +64,7 @@ describe('CommandPalette', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    uiState.inspectorFocusRequest = null;
     mockGetRecentCommands.mockReturnValue([]);
     mockGetSortedCommands.mockReturnValue([]);
   });
@@ -178,6 +185,42 @@ describe('CommandPalette', () => {
       expect(mockRecordUsage).toHaveBeenCalledWith('navigate:traces');
       expect(onSelectFn).toHaveBeenCalledOnce();
       expect(onClose).toHaveBeenCalledOnce();
+    });
+
+    it('leaves focus to the inspector after a command that requests it', () => {
+      const frames: FrameRequestCallback[] = [];
+      const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((cb) => {
+        frames.push(cb);
+        return frames.length;
+      });
+      const outside = document.createElement('button');
+      const heading = document.createElement('h2');
+      heading.tabIndex = -1;
+      document.body.append(outside, heading);
+      outside.focus();
+      const cmd = makeCommand({
+        id: 'node:github',
+        label: 'Inspect github',
+        onSelect: () => {
+          uiState.inspectorFocusRequest = 'mcp-github';
+        },
+      });
+      mockGetSortedCommands.mockImplementation((query?: string, scope?: string) =>
+        !query && scope === 'canvas' ? [cmd] : [],
+      );
+      render(<CommandPalette isOpen={true} onClose={onClose} />);
+
+      fireEvent.click(screen.getByText('Inspect github'));
+      // Stands in for the Sidebar effect, which focuses the heading after the
+      // command commits and before the palette's restore frame would run.
+      heading.focus();
+      frames.forEach((cb) => cb(0));
+
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(document.activeElement).toBe(heading);
+      raf.mockRestore();
+      outside.remove();
+      heading.remove();
     });
 
     it('shows a toast and does not call onSelect for unavailable commands', () => {

@@ -159,6 +159,12 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   setMetricsDetached: (detached: boolean) => void;
   setTracesDetached: (detached: boolean) => void;
 
+  // Node id whose inspector heading should take focus once the Stack
+  // inspector shows it. Set by keyboard and palette activation only; the
+  // Sidebar honors or clears it. Not persisted.
+  inspectorFocusRequest: string | null;
+  requestInspectorFocus: (nodeId: string | null) => void;
+
   // Command palette state (not persisted)
   commandPaletteOpen: boolean;
   setCommandPaletteOpen: (open: boolean) => void;
@@ -392,8 +398,17 @@ export const useUIStore = create<UIState>()(
       accessEditorOpen: false,
       accessEditorSeedSlug: null,
 
-      setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
-      toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+      inspectorFocusRequest: null,
+      requestInspectorFocus: (inspectorFocusRequest) => set({ inspectorFocusRequest }),
+
+      setSidebarOpen: (sidebarOpen) =>
+        set(sidebarOpen ? { sidebarOpen } : { sidebarOpen, inspectorFocusRequest: null }),
+      toggleSidebar: () =>
+        set((s) =>
+          s.sidebarOpen
+            ? { sidebarOpen: false, inspectorFocusRequest: null }
+            : { sidebarOpen: true },
+        ),
       setActiveTab: (activeTab) => set({ activeTab }),
       setEdgeStyle: (edgeStyle) => set({ edgeStyle }),
       toggleEdgeStyle: () =>
