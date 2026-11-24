@@ -855,7 +855,7 @@ function ToolsHeader({
                 value={auditWindow}
                 onChange={(e) => onWindowChange(e.target.value as AuditWindow)}
                 aria-label="Audit lookback window"
-                className="bg-background/60 border border-border/40 rounded-md px-1.5 py-1 text-3xs text-text-secondary focus:outline-none focus:border-primary/50"
+                className="bg-background/60 border border-border/40 rounded-md px-1.5 py-1 text-3xs text-text-secondary"
               >
                 {AUDIT_WINDOWS.map((w) => (
                   <option key={w.id} value={w.id}>
@@ -925,7 +925,7 @@ function ToolsHeader({
               : `Search tools across all ${serverCount} servers…`
           }
           aria-label="Search tools across all servers"
-          className="w-full bg-background/60 border border-border/40 rounded-lg pl-9 pr-8 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+          className="w-full bg-background/60 border border-border/40 rounded-lg pl-9 pr-8 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors"
         />
         {searching && (
           <button
@@ -1348,7 +1348,7 @@ function ServerDetail({
               value={sortMode}
               onChange={(e) => onSort(e.target.value as ToolSortMode)}
               aria-label="Sort tools"
-              className="bg-background/60 border border-border/40 rounded-md px-1.5 py-1 text-3xs text-text-secondary focus:outline-none focus:border-primary/50"
+              className="bg-background/60 border border-border/40 rounded-md px-1.5 py-1 text-3xs text-text-secondary"
             >
               {TOOL_SORT_MODES.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -1361,7 +1361,7 @@ function ServerDetail({
       </div>
 
       <div className="rounded-lg border border-border/40 bg-background/60 overflow-hidden">
-        <Command shouldFilter={false} label={`Tools for ${server.name}`} className="flex flex-col">
+        <Command shouldFilter={false} label={`Tools for ${server.name}`} className="group/cmd flex flex-col">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30">
             <Search size={12} className="text-text-muted flex-shrink-0" aria-hidden="true" />
             <Command.Input
@@ -1369,7 +1369,7 @@ function ServerDetail({
               onValueChange={setQuery}
               placeholder={`Filter ${server.name} tools…`}
               aria-label="Filter tools"
-              className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+              className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted"
             />
           </div>
 

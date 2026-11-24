@@ -34,7 +34,7 @@ import {
 
 const labelClass = 'block text-xs text-text-secondary mb-1.5';
 const inputClass =
-  'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors';
+  'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-colors';
 
 // Above this many operations, exposing the whole spec is worth a nudge. Cursor
 // drops tools past roughly 40 and VS Code hard-caps at 128, so a spec this size
@@ -433,7 +433,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
               </div>
             )}
 
-            <Command shouldFilter={false} label="Operations Picker" className="flex flex-col">
+            <Command shouldFilter={false} label="Operations Picker" className="group/cmd flex flex-col">
               <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30">
                 <Search size={12} className="text-text-muted flex-shrink-0" aria-hidden="true" />
                 <Command.Input
@@ -441,7 +441,7 @@ export function OperationsPicker({ spec, tls, operations, onChange }: Operations
                   onValueChange={setQuery}
                   placeholder="Search operations..."
                   aria-label="Search operations"
-                  className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+                  className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted"
                 />
               </div>
 
@@ -579,10 +579,10 @@ const OperationRow = memo(function OperationRow({
       aria-checked={selectable ? checked : undefined}
       aria-label={operationRowLabel(op)}
       className={cn(
-        'flex items-start gap-2.5 px-3 py-2 select-none outline-none transition-colors',
+        'flex items-start gap-2.5 px-3 py-2 select-none transition-colors',
         selectable ? 'cursor-pointer hover:bg-surface-highlight/50' : 'cursor-default',
         '[&[data-selected=true]]:bg-primary/[0.06]',
-        'focus-visible:bg-primary/[0.06]',
+        'group-focus-within/cmd:data-[selected=true]:outline-2 group-focus-within/cmd:data-[selected=true]:-outline-offset-2 group-focus-within/cmd:data-[selected=true]:outline-primary',
         checked && 'bg-primary/[0.03]',
       )}
     >

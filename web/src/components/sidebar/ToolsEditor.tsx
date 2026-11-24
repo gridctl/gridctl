@@ -131,7 +131,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
           </div>
         </div>
 
-        <Command shouldFilter={false} label="Tools Editor" className="flex flex-col">
+        <Command shouldFilter={false} label="Tools Editor" className="group/cmd flex flex-col">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30">
             <Search size={12} className="text-text-muted flex-shrink-0" aria-hidden="true" />
             <Command.Input
@@ -139,7 +139,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
               onValueChange={setQuery}
               placeholder="Search tools..."
               aria-label="Search tools"
-              className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+              className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted"
             />
           </div>
 
@@ -161,10 +161,10 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
                   aria-checked={isSelected}
                   aria-label={opt.name}
                   className={cn(
-                    'flex items-start gap-2.5 px-3 py-2 cursor-pointer select-none outline-none transition-colors',
+                    'flex items-start gap-2.5 px-3 py-2 cursor-pointer select-none transition-colors',
                     'hover:bg-surface-highlight/50',
                     '[&[data-selected=true]]:bg-primary/[0.06]',
-                    'focus-visible:bg-primary/[0.06]',
+                    'group-focus-within/cmd:data-[selected=true]:outline-2 group-focus-within/cmd:data-[selected=true]:-outline-offset-2 group-focus-within/cmd:data-[selected=true]:outline-primary',
                     isSelected && 'bg-primary/[0.03]',
                   )}
                 >

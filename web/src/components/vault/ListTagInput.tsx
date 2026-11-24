@@ -83,7 +83,7 @@ export function ListTagInput({
         onClick={() => inputRef.current?.focus()}
         className={cn(
           'flex flex-wrap items-center gap-1.5 w-full bg-surface border border-border rounded-lg px-2 py-1.5',
-          'focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/30 transition-colors cursor-text',
+          'transition-colors cursor-text',
           compact ? 'min-h-[2rem]' : 'min-h-[2.25rem]',
         )}
       >

@@ -204,7 +204,7 @@ export function SpecTab() {
         </div>
 
         <button type="button" onClick={exportSpec} disabled={exporting} aria-describedby="stack-export-notice"
-          className="px-2.5 py-1 rounded-md text-xs font-medium text-text-muted hover:text-text-secondary hover:bg-surface-highlight/40 focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50">
+          className="px-2.5 py-1 rounded-md text-xs font-medium text-text-muted hover:text-text-secondary hover:bg-surface-highlight/40 disabled:opacity-50">
           {exporting ? 'Exporting...' : 'Export YAML'}
         </button>
         <button

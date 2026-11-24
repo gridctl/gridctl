@@ -383,7 +383,7 @@ export function BreakdownTable({
               }
               className={cn(
                 'border-b border-border/20 last:border-0 transition-colors',
-                onSelectRow && 'cursor-pointer focus-visible:outline focus-visible:outline-1 focus-visible:outline-primary/60',
+                onSelectRow && 'cursor-pointer focus-visible:-outline-offset-2',
                 selected ? 'bg-primary/[0.07]' : 'hover:bg-surface-highlight/30',
               )}
             >

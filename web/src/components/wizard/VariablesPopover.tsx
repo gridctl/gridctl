@@ -317,7 +317,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
             placeholder="Filter variables..."
             aria-label="Filter variables"
             autoFocus
-            className="w-full bg-background/60 border border-border/40 rounded-lg pl-7 pr-3 py-1.5 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors"
+            className="w-full bg-background/60 border border-border/40 rounded-lg pl-7 pr-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted transition-colors"
           />
         </div>
       </div>
@@ -395,7 +395,7 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
             placeholder="VARIABLE_KEY"
             aria-label="Variable key"
             aria-describedby={conflict ? conflictNoticeId : undefined}
-            className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors"
+            className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted transition-colors"
           />
           {conflict && (
             <p id={conflictNoticeId} role="status" className="text-3xs text-status-pending">

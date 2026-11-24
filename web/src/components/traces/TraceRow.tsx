@@ -70,7 +70,9 @@ export const TraceRow = memo(function TraceRow({
           ? 'bg-primary/5 border-l-2 border-l-primary'
           : isHighlighted
             ? 'bg-surface-highlight/30'
-            : 'hover:bg-surface-highlight/20'
+            : 'hover:bg-surface-highlight/20',
+        isHighlighted &&
+          'group-focus-within/grid:outline-2 group-focus-within/grid:-outline-offset-2 group-focus-within/grid:outline-primary'
       )}
     >
       <td

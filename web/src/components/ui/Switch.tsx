@@ -40,7 +40,6 @@ export function Switch({
       }}
       className={cn(
         'relative inline-flex flex-shrink-0 items-center rounded-full border transition-colors',
-        'outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
         'disabled:opacity-40 disabled:cursor-not-allowed',
         compact ? 'h-4 w-7' : 'h-5 w-9',
         checked

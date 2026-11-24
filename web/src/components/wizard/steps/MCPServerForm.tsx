@@ -263,7 +263,7 @@ function Section({
 
 // --- Form field components ---
 
-const inputClass = 'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors';
+const inputClass = 'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-colors';
 const labelClass = 'block text-xs text-text-secondary mb-1.5';
 
 function CustomHeadersEditor({

@@ -722,7 +722,7 @@ function TypePicker({
               onClick={() => !isGated && onSelect(rt.type)}
               title={isGated ? 'Requires an active stack — create a Stack first' : undefined}
               className={cn(
-                'group relative flex flex-col items-center text-center p-5 rounded-xl border transition-all duration-200',
+                'group relative flex flex-col items-center text-center p-5 rounded-xl border transition-all duration-200 focus-visible:-outline-offset-2',
                 'animate-fade-in-up',
                 isGated
                   ? 'opacity-40 cursor-not-allowed bg-surface-overlay-2 border-border-subtle'
@@ -863,7 +863,7 @@ function ExpertEditor({
         className={cn(
           'w-full flex-1 min-h-0 font-mono text-2xs leading-[1.7] resize-none',
           'bg-background/40 border rounded-xl px-4 py-3',
-          'focus:outline-none focus:border-primary/50 text-text-primary',
+          'text-text-primary',
           'placeholder:text-text-muted scrollbar-dark transition-colors',
           error ? 'border-status-error/30' : 'border-border/40',
         )}

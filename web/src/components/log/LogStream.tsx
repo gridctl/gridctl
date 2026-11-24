@@ -172,7 +172,9 @@ export function LogStream({
   );
 
   const rowClass = (i: number) =>
-    activeNavKey === keys[i] ? 'bg-surface-highlight/40' : undefined;
+    activeNavKey === keys[i]
+      ? 'bg-surface-highlight/40 group-focus-within/grid:outline-2 group-focus-within/grid:-outline-offset-2 group-focus-within/grid:outline-primary'
+      : undefined;
 
   return (
     <div
@@ -262,7 +264,7 @@ export function LogStream({
               tabIndex={0}
               {...listNavProps}
               aria-activedescendant={navIndex >= 0 ? `log-row-${navIndex}` : undefined}
-              className="relative w-full rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+              className="group/grid relative w-full rounded focus-visible:-outline-offset-2"
               style={{ height: virtualizer.getTotalSize() }}
             >
               {virtualizer.getVirtualItems().map((item) => (
@@ -290,7 +292,7 @@ export function LogStream({
             tabIndex={0}
             {...listNavProps}
             aria-activedescendant={navIndex >= 0 ? `log-row-${navIndex}` : undefined}
-            className="divide-y divide-border/20 rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+            className="group/grid divide-y divide-border/20 rounded focus-visible:-outline-offset-2"
           >
             {logs.map((log, i) => (
               <div

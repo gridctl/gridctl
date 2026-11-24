@@ -130,7 +130,6 @@ export function SidebarTelemetrySection({ serverName }: Props) {
               'inline-flex items-center gap-1.5 px-2 py-1 rounded-md',
               'text-2xs font-medium text-text-secondary',
               'hover:bg-surface-highlight transition-colors',
-              'focus:outline-none focus:ring-2 focus:ring-primary/30',
             )}
           >
             <RotateCcw size={11} />
@@ -147,7 +146,6 @@ export function SidebarTelemetrySection({ serverName }: Props) {
             serverInventory.length === 0
               ? 'text-text-muted cursor-not-allowed'
               : 'text-status-error hover:bg-status-error/10',
-            'focus:outline-none focus:ring-2 focus:ring-status-error/30',
           )}
         >
           <Trash2 size={11} />
@@ -220,7 +218,6 @@ function TriStateRow({ signal, state, globalDefault, busy, onClick }: RowProps) 
         'w-full flex items-center justify-between gap-3 px-2 py-1.5 rounded-lg',
         'transition-all duration-200 group',
         'hover:bg-surface-highlight/60',
-        'focus:outline-none focus:ring-2 focus:ring-primary/30',
         busy && 'opacity-60 cursor-wait',
       )}
     >

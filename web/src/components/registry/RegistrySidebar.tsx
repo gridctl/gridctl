@@ -312,7 +312,7 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search skills..."
             aria-label="Filter skills"
-            className="w-full bg-background/40 border border-border/30 rounded-lg pl-7 pr-7 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/40"
+            className="w-full bg-background/40 border border-border/30 rounded-lg pl-7 pr-7 py-1 text-xs text-text-primary placeholder:text-text-muted"
           />
           {searchQuery && (
             <button
@@ -320,7 +320,7 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
               onClick={() => setSearchQuery('')}
               title="Clear search"
               aria-label="Clear search"
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-surface-highlight transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-surface-highlight transition-colors"
             >
               <X size={12} className="text-text-muted" />
             </button>
@@ -534,7 +534,7 @@ function SkillItem({
           title={isActive ? 'Disable skill' : 'Activate skill'}
           aria-label={isActive ? 'Disable skill' : 'Activate skill'}
           className={cn(
-            'p-2 rounded transition-all duration-200 group focus:outline-none focus:ring-2 focus:ring-primary/30',
+            'p-2 rounded transition-all duration-200 group',
             isActive ? 'hover:bg-status-pending/10' : 'hover:bg-status-running/10',
           )}
         >

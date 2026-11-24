@@ -316,7 +316,7 @@ export function SkillImportWizard() {
                   type="checkbox"
                   checked={agentsTrustAck}
                   onChange={(e) => setAgentsTrustAck(e.target.checked)}
-                  className="mt-0.5 rounded border-border/40 bg-background/60 text-primary focus:ring-primary/50"
+                  className="mt-0.5 rounded border-border/40 bg-background/60 text-primary"
                 />
                 <span className="text-xs text-text-secondary">
                   Import the flagged agents anyway. This grants the import trust to proceed
@@ -471,7 +471,7 @@ function ConfigureStep({
                 checked={config.activate}
                 onChange={(e) => updateConfig(preview.name, { activate: e.target.checked })}
                 aria-label={`Activate ${preview.name} after import`}
-                className="rounded border-border/40 bg-background/60 text-primary focus:ring-primary/50"
+                className="rounded border-border/40 bg-background/60 text-primary"
               />
               <span className="text-xs text-text-secondary">Activate after import</span>
             </label>
@@ -518,7 +518,7 @@ function ConfigureStep({
               type="checkbox"
               checked={trustAck}
               onChange={(e) => onTrustAckChange(e.target.checked)}
-              className="mt-0.5 rounded border-border/40 bg-background/60 text-primary focus:ring-primary/50"
+              className="mt-0.5 rounded border-border/40 bg-background/60 text-primary"
             />
             <span className="text-xs text-text-secondary">
               Import the flagged skills anyway, despite the security findings listed above.
@@ -571,7 +571,7 @@ function AgentsBrowseSection({
               checked={selected.has(a.name)}
               onChange={() => toggle(a.name)}
               disabled={!a.valid}
-              className="mt-0.5 rounded border-border/40 bg-background/60 text-primary focus:ring-primary/50"
+              className="mt-0.5 rounded border-border/40 bg-background/60 text-primary"
             />
             <span className="flex-1 min-w-0">
               <span className="flex items-center gap-2">

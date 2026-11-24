@@ -202,8 +202,8 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
                 'w-full bg-background/60 border rounded-lg pl-9 pr-3 py-2.5 text-xs',
                 'text-text-primary placeholder:text-text-muted transition-colors',
                 error
-                  ? 'border-status-error/40 focus:border-status-error/60'
-                  : 'border-border/40 focus:border-primary/50',
+                  ? 'border-status-error/40'
+                  : 'border-border/40',
               )}
               autoFocus
             />
@@ -238,7 +238,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
               value={ref}
               onChange={(e) => setRef(e.target.value)}
               placeholder="main, v1.0, ^1.2"
-              className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors"
+              className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-colors"
             />
           </div>
           <div className="space-y-1">
@@ -251,7 +251,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
               value={path}
               onChange={(e) => setPath(e.target.value)}
               placeholder="skills/"
-              className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors"
+              className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-colors"
             />
           </div>
         </div>

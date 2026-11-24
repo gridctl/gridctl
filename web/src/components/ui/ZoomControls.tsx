@@ -29,7 +29,7 @@ export function ZoomControls({
         title="Decrease font size (Ctrl+Scroll down)"
         aria-label="Decrease font size"
         className={cn(
-          'p-1 transition-all duration-200',
+          'p-1 transition-all duration-200 focus-visible:-outline-offset-2',
           'hover:bg-surface-highlight hover:text-text-primary',
           'disabled:opacity-30 disabled:cursor-not-allowed',
           'text-text-muted'
@@ -43,7 +43,7 @@ export function ZoomControls({
         disabled={isDefault}
         title="Reset font size"
         className={cn(
-          'px-1.5 py-1 text-3xs font-mono tabular-nums transition-all duration-200 min-w-[32px] text-center',
+          'px-1.5 py-1 text-3xs font-mono tabular-nums transition-all duration-200 min-w-[32px] text-center focus-visible:-outline-offset-2',
           isDefault
             ? 'text-text-muted'
             : 'text-primary hover:bg-surface-highlight cursor-pointer'
@@ -59,7 +59,7 @@ export function ZoomControls({
         title="Increase font size (Ctrl+Scroll up)"
         aria-label="Increase font size"
         className={cn(
-          'p-1 transition-all duration-200',
+          'p-1 transition-all duration-200 focus-visible:-outline-offset-2',
           'hover:bg-surface-highlight hover:text-text-primary',
           'disabled:opacity-30 disabled:cursor-not-allowed',
           'text-text-muted'

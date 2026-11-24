@@ -126,7 +126,7 @@ export function WorkspaceShell({
       )}
 
       {left && (
-        <Separator id="sep-left" className="group/separator relative w-1.5 select-none">
+        <Separator id="sep-left" className="group/separator relative w-1.5 select-none focus-visible:-outline-offset-2">
           <SeparatorBody orientation="vertical" />
         </Separator>
       )}
@@ -140,7 +140,7 @@ export function WorkspaceShell({
       </Panel>
 
       {right && (
-        <Separator id="sep-right" className="group/separator relative w-1.5 select-none">
+        <Separator id="sep-right" className="group/separator relative w-1.5 select-none focus-visible:-outline-offset-2">
           <SeparatorBody orientation="vertical" />
         </Separator>
       )}

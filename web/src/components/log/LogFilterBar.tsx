@@ -101,7 +101,6 @@ export function LogFilterBar({
             'w-full pl-7 pr-3 py-1.5 text-xs font-mono',
             'bg-background/60 border border-border/50 rounded-md',
             'text-text-primary placeholder:text-text-muted',
-            'focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20',
             'transition-all duration-200'
           )}
         />

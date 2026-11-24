@@ -38,7 +38,7 @@ export function NewSetForm({
         aria-label="New set name"
         autoFocus
         className={cn(
-          'flex-1 bg-surface border border-border rounded-lg px-2 py-1 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 outline-none transition-colors',
+          'flex-1 bg-surface border border-border rounded-lg px-2 py-1 text-xs font-mono text-text-primary placeholder:text-text-muted transition-colors',
           enableZoom && 'log-text',
         )}
         onKeyDown={(e) => {

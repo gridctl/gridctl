@@ -96,7 +96,6 @@ export function HeaderTelemetryPill() {
           anyOn
             ? 'border-status-running/30 hover:border-status-running/50'
             : 'border-border/50 hover:border-text-muted/40',
-          'focus:outline-none focus:ring-2 focus:ring-primary/30',
         )}
       >
         <Database size={12} className={anyOn ? 'text-status-running' : 'text-text-muted'} />
@@ -135,7 +134,6 @@ export function HeaderTelemetryPill() {
                       'w-full flex items-center justify-between gap-3 px-2 py-2 rounded-lg',
                       'transition-all duration-200 group',
                       'hover:bg-surface-highlight/60',
-                      'focus:outline-none focus:ring-2 focus:ring-primary/30',
                       isBusy && 'opacity-60 cursor-wait',
                     )}
                   >
@@ -173,7 +171,6 @@ export function HeaderTelemetryPill() {
                 inventory.length === 0
                   ? 'text-text-muted cursor-not-allowed'
                   : 'text-status-error hover:bg-status-error/10',
-                'focus:outline-none focus:ring-2 focus:ring-status-error/30',
               )}
             >
               <Trash2 size={12} />

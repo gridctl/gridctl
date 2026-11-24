@@ -146,9 +146,9 @@ export function VariableValueInput({
             }}
             className={cn(
               'w-full bg-surface border rounded-lg px-3 py-2 text-xs font-mono text-text-primary',
-              'placeholder:text-text-muted focus:ring-1 focus:ring-primary/30 outline-none transition-colors',
+              'placeholder:text-text-muted transition-colors',
               isSecret ? 'pr-10' : 'pr-3',
-              showError ? 'border-status-error/50' : 'border-border focus:border-primary/50',
+              showError ? 'border-status-error/50' : 'border-border',
               compact && 'py-1.5',
               enableZoom && 'log-text',
             )}

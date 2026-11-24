@@ -315,7 +315,7 @@ function ConfigureView({
             onChange={(e) => onPattern(e.target.value)}
             placeholder="delete_*"
             spellCheck={false}
-            className="w-full bg-background/60 border border-border/40 rounded-md px-2.5 py-1.5 text-sm font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50"
+            className="w-full bg-background/60 border border-border/40 rounded-md px-2.5 py-1.5 text-sm font-mono text-text-primary placeholder:text-text-muted"
           />
         </div>
       )}

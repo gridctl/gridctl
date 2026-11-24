@@ -88,7 +88,7 @@ export function VaultEncryptForm({
         placeholder="New passphrase"
         aria-label="New passphrase"
         autoFocus
-        className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors"
+        className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted transition-colors"
       />
       <input
         type="password"
@@ -99,7 +99,7 @@ export function VaultEncryptForm({
         }}
         placeholder="Confirm passphrase"
         aria-label="Confirm passphrase"
-        className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors"
+        className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted transition-colors"
         onKeyDown={(e) => {
           if (e.key === 'Enter') handleSubmit();
         }}

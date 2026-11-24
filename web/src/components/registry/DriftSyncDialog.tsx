@@ -97,7 +97,6 @@ export function DriftSyncDialog({
             className={cn(
               'px-3 py-1.5 text-xs rounded-lg transition-colors',
               'text-text-secondary hover:text-text-primary bg-surface-elevated hover:bg-surface-highlight',
-              'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-offset-2 focus:ring-offset-background',
               busy && 'opacity-50 cursor-not-allowed',
             )}
           >
@@ -110,7 +109,6 @@ export function DriftSyncDialog({
             className={cn(
               'px-3 py-1.5 text-xs font-medium rounded-lg transition-colors',
               'text-status-error bg-status-error/10 hover:bg-status-error/20 border border-status-error/30',
-              'focus:outline-none focus:ring-2 focus:ring-status-error/40 focus:ring-offset-2 focus:ring-offset-background',
               busy && 'opacity-50 cursor-not-allowed',
             )}
           >
@@ -124,7 +122,6 @@ export function DriftSyncDialog({
             className={cn(
               'px-3 py-1.5 text-xs font-medium rounded-lg transition-colors',
               'bg-primary text-background hover:bg-primary-light',
-              'focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2 focus:ring-offset-background',
               busy && 'opacity-50 cursor-not-allowed',
             )}
           >

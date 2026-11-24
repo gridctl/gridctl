@@ -27,6 +27,7 @@ function TextSizeRow({ spec }: { spec: TextZoomSpec }) {
           type="button"
           size="sm"
           variant="ghost"
+          className="focus-visible:-outline-offset-2"
           onClick={zoomOut}
           disabled={isMin}
           aria-label={`Decrease ${spec.label} text size`}
@@ -37,6 +38,7 @@ function TextSizeRow({ spec }: { spec: TextZoomSpec }) {
           type="button"
           size="sm"
           variant="ghost"
+          className="focus-visible:-outline-offset-2"
           onClick={zoomIn}
           disabled={isMax}
           aria-label={`Increase ${spec.label} text size`}
@@ -47,6 +49,7 @@ function TextSizeRow({ spec }: { spec: TextZoomSpec }) {
           type="button"
           size="sm"
           variant="ghost"
+          className="focus-visible:-outline-offset-2"
           onClick={resetZoom}
           disabled={isDefault}
           aria-label={`Reset ${spec.label} text size`}

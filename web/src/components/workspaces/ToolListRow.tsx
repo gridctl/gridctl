@@ -117,10 +117,10 @@ export const ToolListRow = memo(function ToolListRow({
         aria-current={isActive}
         aria-label={`${opt.name} details`}
         className={cn(
-          'flex items-start gap-2.5 px-3 py-2 cursor-pointer select-none outline-none transition-colors',
+          'flex items-start gap-2.5 px-3 py-2 cursor-pointer select-none transition-colors',
           'hover:bg-surface-highlight/40',
           '[&[data-selected=true]]:bg-surface-highlight/40',
-          'focus-visible:bg-surface-highlight/40',
+          'group-focus-within/cmd:data-[selected=true]:outline-2 group-focus-within/cmd:data-[selected=true]:-outline-offset-2 group-focus-within/cmd:data-[selected=true]:outline-primary',
         )}
       >
         <button

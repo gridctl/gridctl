@@ -59,7 +59,7 @@ export const VariableRow = memo(function VariableRow({
       }}
       className={cn(
         'w-full text-left px-6 border-l-2 border-b border-border-subtle/40 transition-colors',
-        'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 focus-visible:ring-inset',
+        'focus-visible:-outline-offset-2',
         VARIABLE_ROW_GRID,
         compact ? 'py-1.5' : 'py-2.5',
         selected

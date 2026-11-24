@@ -151,7 +151,7 @@ export function AgentEditor({ isOpen, agent, onClose, onSaved }: AgentEditorProp
             disabled={loading}
             spellCheck={false}
             aria-label={`AGENT.md content for ${agent.name}`}
-            className="w-full h-80 bg-background/60 border border-border/40 rounded-lg p-3 text-xs font-mono text-text-primary leading-relaxed resize-y focus:outline-none focus:border-primary/50 transition-colors scrollbar-dark"
+            className="w-full h-80 bg-background/60 border border-border/40 rounded-lg p-3 text-xs font-mono text-text-primary leading-relaxed resize-y transition-colors scrollbar-dark"
           />
         ) : (
           <div className="h-80 overflow-y-auto scrollbar-dark border border-border/30 rounded-lg p-3 skill-md">

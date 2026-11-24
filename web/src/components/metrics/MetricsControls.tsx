@@ -42,7 +42,7 @@ export function MetricsControls({
               onClick={() => onTimeRange(range.value)}
               aria-pressed={timeRange === range.value}
               className={cn(
-                'px-2.5 py-1 text-3xs font-medium transition-colors',
+                'px-2.5 py-1 text-3xs font-medium transition-colors focus-visible:-outline-offset-2',
                 timeRange === range.value
                   ? 'bg-primary/15 text-primary'
                   : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight/40',
