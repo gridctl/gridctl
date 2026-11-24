@@ -62,7 +62,7 @@ Enter or Space on a node, and a palette Inspect command, call
 `requestInspectorFocus(nodeId)` on `useUIStore`; the Stack `Sidebar` focuses
 the inspector heading once that node is shown and clears the request either
 way. A mouse click clears it. Before the inspector closes (its close button
-or Escape in AppShell), `restoreNodeFocus` in `lib/inspectorFocus.ts`
+or Escape in AppShell while `sidebarOpen` is set), `restoreNodeFocus` in `lib/inspectorFocus.ts`
 returns focus to the node, but only when focus is inside the inspector or
 on `<body>`.
 

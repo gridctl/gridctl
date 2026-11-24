@@ -82,7 +82,9 @@ export function AppShell() {
       ? () => useCanvasActionsStore.getState().fitView({ padding: 0.2, duration: 300 })
       : undefined,
     onEscape: () => {
-      restoreNodeFocus(useStackStore.getState().selectedNodeId);
+      if (useUIStore.getState().sidebarOpen) {
+        restoreNodeFocus(useStackStore.getState().selectedNodeId);
+      }
       selectNode(null);
       setSidebarOpen(false);
     },

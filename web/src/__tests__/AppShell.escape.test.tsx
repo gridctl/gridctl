@@ -52,6 +52,27 @@ describe('AppShell Escape', () => {
     wrapper.remove();
   });
 
+  it('does not focus the node when the inspector is already closed', () => {
+    useUIStore.setState({ sidebarOpen: false });
+    const wrapper = document.createElement('div');
+    wrapper.className = 'react-flow__node';
+    wrapper.setAttribute('data-id', 'mcp-github');
+    wrapper.tabIndex = 0;
+    document.body.appendChild(wrapper);
+    (document.activeElement as HTMLElement | null)?.blur();
+    render(
+      <MemoryRouter initialEntries={['/stack']}>
+        <Routes>
+          <Route path="*" element={<AppShell />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.activeElement).toBe(document.body);
+    expect(useStackStore.getState().selectedNodeId).toBeNull();
+    wrapper.remove();
+  });
+
   it('does not take focus from an element outside the inspector', () => {
     const wrapper = document.createElement('div');
     wrapper.className = 'react-flow__node';
