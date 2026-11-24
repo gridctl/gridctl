@@ -16,27 +16,36 @@ describe('SHORTCUT_BINDINGS', () => {
     }
   });
 
-  it('scopes global handler chords to Global, not Stack', () => {
+  it('scopes shell chords to Global and fit and zoom to Stack', () => {
     const globalChords = [
-      ['f'],
-      ['⌘', '0'],
       ['Escape'],
-      ['⌘', '+'],
-      ['⌘', '−'],
-      ['⌘', '⇧', 'R'],
-      ['⌘', 'J'],
-      ['⌘', 'K'],
-      ['⌘', '\\'],
+      ['Mod', 'Shift', 'R'],
+      ['Mod', 'J'],
+      ['Mod', 'K'],
+      ['Mod', '\\'],
       ['?'],
     ];
+    const stackChords = [['f'], ['Mod', '0'], ['Mod', '+'], ['Mod', '−']];
+    const scopesOf = (keys: string[]) =>
+      SHORTCUT_BINDINGS.filter((binding) => binding.keys.join('+') === keys.join('+')).map((b) => b.scope);
     for (const keys of globalChords) {
-      const row = SHORTCUT_BINDINGS.find(
-        (binding) => binding.keys.join('+') === keys.join('+') && binding.scope === SHORTCUT_SCOPE.global,
-      );
-      expect(row, keys.join('+')).toBeDefined();
-      expect(row?.scope).toBe('Global');
+      expect(scopesOf(keys), keys.join('+')).toContain('Global');
     }
-    expect(SHORTCUT_BINDINGS.some((binding) => binding.scope === 'Stack')).toBe(false);
+    for (const keys of stackChords) {
+      const scopes = scopesOf(keys).filter((scope) => scope === 'Global' || scope === 'Stack');
+      expect(scopes, keys.join('+')).toEqual(['Stack']);
+    }
+    expect(SHORTCUT_SCOPE_ORDER.indexOf(SHORTCUT_SCOPE.stack)).toBe(
+      SHORTCUT_SCOPE_ORDER.indexOf(SHORTCUT_SCOPE.workspaces) + 1,
+    );
+  });
+
+  it('stores Mod and Shift tokens instead of Mac symbols', () => {
+    for (const binding of SHORTCUT_BINDINGS) {
+      for (const key of binding.keys) {
+        expect(key, binding.label).not.toMatch(/[⌘⇧]/);
+      }
+    }
   });
 
   it('generates one Workspaces row per workspace config label', () => {
@@ -44,13 +53,13 @@ describe('SHORTCUT_BINDINGS', () => {
     expect(rows).toHaveLength(9);
     expect(rows.map((row) => row.label)).toEqual(WORKSPACE_CONFIG.map((workspace) => workspace.label));
     expect(rows.map((row) => row.keys)).toEqual(
-      WORKSPACE_CONFIG.map((workspace) => ['⌘', workspace.shortcutKey]),
+      WORKSPACE_CONFIG.map((workspace) => ['Mod', workspace.shortcutKey]),
     );
   });
 
   it('lists the Pins approve chord under its own scope', () => {
     expect(SHORTCUT_SCOPE_ORDER).toContain(SHORTCUT_SCOPE.pins);
     const rows = SHORTCUT_BINDINGS.filter((binding) => binding.scope === SHORTCUT_SCOPE.pins);
-    expect(rows).toEqual([{ keys: ['⌘', 'Enter'], label: 'Approve drift', scope: 'Pins' }]);
+    expect(rows).toEqual([{ keys: ['Mod', 'Enter'], label: 'Approve drift', scope: 'Pins' }]);
   });
 });

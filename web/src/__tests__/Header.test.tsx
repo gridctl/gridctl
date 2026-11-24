@@ -106,11 +106,22 @@ describe('Header', () => {
   it('keeps header actions mounted and lets the workspace strip scroll', () => {
     renderHeader();
     const create = screen.getByRole('button', { name: 'Create new' });
-    expect(screen.getByRole('button', { name: 'Refresh (⌘⇧R)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh (Ctrl+Shift+R)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reload Config' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Command Palette (⌘K)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Command Palette (Ctrl+K)' })).toBeInTheDocument();
     expect(create.closest('div')).toHaveClass('shrink-0');
     expect(screen.getByRole('navigation', { name: 'Workspaces' })).toHaveClass('overflow-x-auto');
+  });
+
+  it('shows Mac chord labels in the header tooltips on macOS', () => {
+    const spy = vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel');
+    try {
+      renderHeader();
+      expect(screen.getByRole('button', { name: 'Refresh (⌘⇧R)' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Command Palette (⌘K)' })).toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('offers Forget credential only while a credential is held', () => {
