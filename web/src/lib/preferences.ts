@@ -53,10 +53,43 @@ export function subscribePref(name: string, listener: () => void): () => void {
     listeners.set(name, set);
   }
   set.add(listener);
+  attachStorageListener();
   return () => {
     set.delete(listener);
-    if (set.size === 0) listeners.delete(name);
+    if (set.size === 0 && listeners.get(name) === set) listeners.delete(name);
+    if (listeners.size === 0) detachStorageListener();
   };
+}
+
+// The storage event fires only in other documents on the same origin, so a
+// write here notifies through writePref and a write from another window
+// (a popout, a second tab, Preferences in the main shell) arrives here.
+let storageAttached = false;
+
+function handleStorage(event: StorageEvent) {
+  try {
+    if (event.storageArea !== localStorage) return;
+  } catch {
+    return;
+  }
+  if (event.key === null) {
+    for (const name of [...listeners.keys()]) notifyPref(name);
+    return;
+  }
+  if (!event.key.startsWith(PREF_PREFIX)) return;
+  notifyPref(event.key.slice(PREF_PREFIX.length));
+}
+
+function attachStorageListener() {
+  if (storageAttached || typeof window === 'undefined') return;
+  window.addEventListener('storage', handleStorage);
+  storageAttached = true;
+}
+
+function detachStorageListener() {
+  if (!storageAttached) return;
+  window.removeEventListener('storage', handleStorage);
+  storageAttached = false;
 }
 
 function notifyPref(name: string) {

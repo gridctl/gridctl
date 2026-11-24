@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { migratePreferences, prefKey, readPref, writePref } from '../lib/preferences';
+import { act, renderHook } from '@testing-library/react';
+import { migratePreferences, prefKey, readPref, subscribePref, usePref, writePref } from '../lib/preferences';
 
 const LEGACY = [
   ['gridctl-log-font-size', 'log-font-size', '11'],
@@ -65,6 +66,89 @@ describe('migratePreferences', () => {
       getItem.mockRestore();
       writePref('zoom-fallback', '16');
       localStorage.removeItem(prefKey('zoom-fallback'));
+    }
+  });
+});
+
+describe('cross-window preference updates', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  function storageEvent(key: string | null, newValue: string | null = null) {
+    window.dispatchEvent(new StorageEvent('storage', { key, newValue, storageArea: localStorage }));
+  }
+
+  it('re-renders a mounted usePref consumer when another window writes its key', () => {
+    const { result } = renderHook(() => usePref('library-zoom'));
+    expect(result.current).toBeNull();
+    localStorage.setItem(prefKey('library-zoom'), '16');
+    act(() => storageEvent(prefKey('library-zoom'), '16'));
+    expect(result.current).toBe('16');
+  });
+
+  it('notifies only the matching preference and ignores unrelated keys', () => {
+    const zoom = vi.fn();
+    const other = vi.fn();
+    const offZoom = subscribePref('library-zoom', zoom);
+    const offOther = subscribePref('tools-zoom', other);
+    try {
+      storageEvent(prefKey('library-zoom'), '15');
+      expect(zoom).toHaveBeenCalledTimes(1);
+      expect(other).not.toHaveBeenCalled();
+
+      storageEvent('gridctl-ui-storage', '{}');
+      storageEvent('library-zoom', '15');
+      expect(zoom).toHaveBeenCalledTimes(1);
+    } finally {
+      offZoom();
+      offOther();
+    }
+  });
+
+  it('notifies every preference when storage is cleared', () => {
+    const zoom = vi.fn();
+    const other = vi.fn();
+    const offZoom = subscribePref('library-zoom', zoom);
+    const offOther = subscribePref('tools-zoom', other);
+    try {
+      storageEvent(null);
+      expect(zoom).toHaveBeenCalledTimes(1);
+      expect(other).toHaveBeenCalledTimes(1);
+    } finally {
+      offZoom();
+      offOther();
+    }
+  });
+
+  it('ignores sessionStorage events', () => {
+    const zoom = vi.fn();
+    const off = subscribePref('library-zoom', zoom);
+    try {
+      window.dispatchEvent(new StorageEvent('storage', { key: prefKey('library-zoom'), storageArea: sessionStorage }));
+      expect(zoom).not.toHaveBeenCalled();
+    } finally {
+      off();
+    }
+  });
+
+  it('removes the window listener after the last unsubscribe', () => {
+    const add = vi.spyOn(window, 'addEventListener');
+    const remove = vi.spyOn(window, 'removeEventListener');
+    const zoom = vi.fn();
+    const off = subscribePref('library-zoom', zoom);
+    const offSecond = subscribePref('library-zoom', vi.fn());
+    try {
+      expect(add.mock.calls.filter(([type]) => type === 'storage')).toHaveLength(1);
+      off();
+      expect(remove.mock.calls.filter(([type]) => type === 'storage')).toHaveLength(0);
+      offSecond();
+      expect(remove.mock.calls.filter(([type]) => type === 'storage')).toHaveLength(1);
+      storageEvent(prefKey('library-zoom'), '15');
+      expect(zoom).not.toHaveBeenCalled();
+    } finally {
+      add.mockRestore();
+      remove.mockRestore();
     }
   });
 });
