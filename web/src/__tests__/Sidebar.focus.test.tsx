@@ -164,12 +164,14 @@ describe('Stack inspector focus', () => {
   });
 
   it('does nothing on close when the node no longer exists', () => {
+    const other = addNodeWrapper('gateway');
     useStackStore.setState({ selectedNodeId: 'mcp-vault' });
     renderInspector();
     const close = screen.getByRole('button', { name: 'Close inspector' });
     close.focus();
-    fireEvent.click(close);
+    expect(() => fireEvent.click(close)).not.toThrow();
     expect(useUIStore.getState().sidebarOpen).toBe(false);
+    expect(document.activeElement).not.toBe(other);
   });
 
   it('keeps collapsed section controls out of the inspector', () => {
