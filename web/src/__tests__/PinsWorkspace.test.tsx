@@ -575,10 +575,10 @@ describe('PinsWorkspace', () => {
     const approveButton = screen.getByRole('button', { name: /approve/i });
     expect(approveButton).toHaveAttribute('aria-keyshortcuts', 'Control+Enter Meta+Enter');
     const hint = approveButton.nextElementSibling as HTMLElement;
-    expect(hint.textContent).toBe('⌘Enter');
+    expect(hint.textContent).toBe('CtrlEnter');
 
     const command = registryProbe?.commands.find((c) => c.id === 'pins:approve');
-    expect(command?.shortcut).toEqual(['⌘', 'Enter']);
+    expect(command?.shortcut).toEqual(['Mod', 'Enter']);
   });
 
   it('moves focus with the selection after a rail row is clicked', async () => {

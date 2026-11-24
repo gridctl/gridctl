@@ -20,7 +20,7 @@ export interface PaletteCommand {
   // workspace-specific commands list the workspaces they belong to.
   workspaces?: Workspace[];
   icon?: ReactNode;     // Lucide icon element
-  shortcut?: string[];  // e.g., ['Cmd', '0'] for Zoom to fit
+  shortcut?: string[];  // key tokens, e.g., [MOD_KEY, '0'] for Zoom to fit
   keywords?: string[];  // additional fuzzy match terms
   onSelect: () => void; // action to execute
   unavailable?: boolean; // show unavailable indicator; toast on select instead of executing

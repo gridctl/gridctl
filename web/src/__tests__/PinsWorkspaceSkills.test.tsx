@@ -185,7 +185,7 @@ describe('PinsWorkspace skills kind', () => {
 
     const approveBtn = await screen.findByRole('button', { name: 'Approve' });
     expect(approveBtn).toHaveAttribute('aria-keyshortcuts', 'Control+Enter Meta+Enter');
-    expect((approveBtn.nextElementSibling as HTMLElement).textContent).toBe('⌘Enter');
+    expect((approveBtn.nextElementSibling as HTMLElement).textContent).toBe('CtrlEnter');
 
     const reason = screen.getByLabelText('Approval reason');
     // Disabled: the chord does nothing and leaves the event alone.

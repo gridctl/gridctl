@@ -1,6 +1,6 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { PreferencesDialog } from '../components/shell/PreferencesDialog';
 import { ShortcutsPanel } from '../components/shell/ShortcutsPanel';
 import { useTextZoom } from '../hooks/useTextZoom';
@@ -79,7 +79,17 @@ describe('PreferencesDialog', () => {
     expect(screen.getAllByText('Tools').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Traces').length).toBeGreaterThan(0);
     expect(screen.getByText('Log font size')).toBeInTheDocument();
-    expect(screen.getByText(/Cmd\+Backslash toggles compact mode/)).toBeInTheDocument();
+    expect(screen.getByText(/^Ctrl\+\\ toggles compact mode/)).toBeInTheDocument();
+  });
+
+  it('shows the Mac compact-mode chord on macOS', () => {
+    const spy = vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel');
+    try {
+      render(<PreferencesDialog />);
+      expect(screen.getByText(/^⌘\\ toggles compact mode/)).toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
@@ -90,7 +100,7 @@ describe('ShortcutsPanel', () => {
 
   it('lists the required chords once, with Global scope on the shell chords', () => {
     render(<ShortcutsPanel />);
-    const required = ['f', '[', ']', 'n', 'e', 'd', 'j', 'k', '/', 'Enter', 'Escape', '⌘', '?', '⇧'];
+    const required = ['f', '[', ']', 'n', 'e', 'd', 'j', 'k', '/', 'Enter', 'Escape', 'Ctrl', '?', 'Shift'];
     for (const key of required) {
       expect(screen.getAllByText(key).length).toBeGreaterThan(0);
     }
@@ -98,7 +108,32 @@ describe('ShortcutsPanel', () => {
       expect(screen.getAllByText(workspace.label).length).toBeGreaterThan(0);
     }
     expect(screen.getAllByText('Global').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Stack', { selector: '.sr-only' })).not.toBeInTheDocument();
+    expect(screen.queryByText('⌘')).not.toBeInTheDocument();
+    expect(screen.queryByText('⇧')).not.toBeInTheDocument();
+  });
+
+  it('shows Mac key symbols on macOS', () => {
+    const spy = vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel');
+    try {
+      render(<ShortcutsPanel />);
+      expect(screen.getAllByText('⌘').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('⇧').length).toBeGreaterThan(0);
+      expect(screen.queryByText('Ctrl')).not.toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('groups fit and zoom under Stack, not Global', () => {
+    render(<ShortcutsPanel />);
+    const stack = screen.getByRole('region', { name: 'Stack' });
+    expect(within(stack).getAllByText('Fit view')).toHaveLength(2);
+    expect(within(stack).getByText('Zoom in')).toBeInTheDocument();
+    expect(within(stack).getByText('Zoom out')).toBeInTheDocument();
+    const global = screen.getByRole('region', { name: 'Global' });
+    expect(within(global).queryByText('Fit view')).not.toBeInTheDocument();
+    expect(within(global).queryByText('Zoom in')).not.toBeInTheDocument();
+    expect(within(global).queryByText('Zoom out')).not.toBeInTheDocument();
   });
 });
 

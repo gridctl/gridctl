@@ -3,6 +3,7 @@ import { Suspense, lazy, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router';
 import { cn } from '../../lib/cn';
+import { formatShortcut, MOD_KEY, SHIFT_KEY } from '../../lib/platform';
 import { IconButton } from '../ui/IconButton';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
@@ -163,7 +164,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         <IconButton
           icon={Command}
           onClick={toggleCommandPalette}
-          tooltip="Command Palette (⌘K)"
+          tooltip={`Command Palette (${formatShortcut([MOD_KEY, 'K'])})`}
           className="hover:text-primary hover:border-primary/30"
         />
         <IconButton
@@ -180,7 +181,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
             isRefreshing && 'animate-spin',
             'hover:text-primary hover:border-primary/30'
           )}
-          tooltip="Refresh (⌘⇧R)"
+          tooltip={`Refresh (${formatShortcut([MOD_KEY, SHIFT_KEY, 'R'])})`}
         />
         <IconButton
           icon={RotateCcw}

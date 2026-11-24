@@ -1,4 +1,5 @@
 import { WORKSPACE_CONFIG } from '../types/workspace';
+import { MOD_KEY, SHIFT_KEY } from './platform';
 
 export interface ShortcutBinding {
   keys: string[];
@@ -9,6 +10,7 @@ export interface ShortcutBinding {
 export const SHORTCUT_SCOPE = {
   global: 'Global',
   workspaces: 'Workspaces',
+  stack: 'Stack',
   panels: 'Panels',
   lists: 'Lists',
   library: 'Library',
@@ -20,6 +22,7 @@ export const SHORTCUT_SCOPE = {
 export const SHORTCUT_SCOPE_ORDER: readonly string[] = [
   SHORTCUT_SCOPE.global,
   SHORTCUT_SCOPE.workspaces,
+  SHORTCUT_SCOPE.stack,
   SHORTCUT_SCOPE.panels,
   SHORTCUT_SCOPE.lists,
   SHORTCUT_SCOPE.library,
@@ -29,28 +32,29 @@ export const SHORTCUT_SCOPE_ORDER: readonly string[] = [
 ];
 
 // Ctrl/Cmd+Enter approves the selected Pins drift (usePinsCommands).
-export const PINS_APPROVE_KEYS = ['⌘', 'Enter'];
+export const PINS_APPROVE_KEYS = [MOD_KEY, 'Enter'];
 
-// One static table. Scope follows the handler that fires the chord, not the
-// palette hint. Workspace rows are generated so a new workspace cannot drift.
+// One static table of key tokens; ShortcutKeys resolves Mod and Shift for the
+// platform. Scope follows the handler that fires the chord, not the palette
+// hint. Workspace rows are generated so a new workspace cannot drift.
 const workspaceBindings: ShortcutBinding[] = WORKSPACE_CONFIG.map((workspace) => ({
-  keys: ['⌘', workspace.shortcutKey],
+  keys: [MOD_KEY, workspace.shortcutKey],
   label: workspace.label,
   scope: SHORTCUT_SCOPE.workspaces,
 }));
 
 export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
-  { keys: ['f'], label: 'Fit view', scope: SHORTCUT_SCOPE.global },
-  { keys: ['⌘', '0'], label: 'Fit view', scope: SHORTCUT_SCOPE.global },
   { keys: ['Escape'], label: 'Close panel', scope: SHORTCUT_SCOPE.global },
-  { keys: ['⌘', '+'], label: 'Zoom in', scope: SHORTCUT_SCOPE.global },
-  { keys: ['⌘', '−'], label: 'Zoom out', scope: SHORTCUT_SCOPE.global },
-  { keys: ['⌘', '⇧', 'R'], label: 'Refresh', scope: SHORTCUT_SCOPE.global },
-  { keys: ['⌘', 'J'], label: 'Open Logs', scope: SHORTCUT_SCOPE.global },
-  { keys: ['⌘', 'K'], label: 'Command palette', scope: SHORTCUT_SCOPE.global },
-  { keys: ['⌘', '\\'], label: 'Toggle compact mode', scope: SHORTCUT_SCOPE.global },
+  { keys: [MOD_KEY, SHIFT_KEY, 'R'], label: 'Refresh', scope: SHORTCUT_SCOPE.global },
+  { keys: [MOD_KEY, 'J'], label: 'Open Logs', scope: SHORTCUT_SCOPE.global },
+  { keys: [MOD_KEY, 'K'], label: 'Command palette', scope: SHORTCUT_SCOPE.global },
+  { keys: [MOD_KEY, '\\'], label: 'Toggle compact mode', scope: SHORTCUT_SCOPE.global },
   { keys: ['?'], label: 'Keyboard shortcuts', scope: SHORTCUT_SCOPE.global },
   ...workspaceBindings,
+  { keys: ['f'], label: 'Fit view', scope: SHORTCUT_SCOPE.stack },
+  { keys: [MOD_KEY, '0'], label: 'Fit view', scope: SHORTCUT_SCOPE.stack },
+  { keys: [MOD_KEY, '+'], label: 'Zoom in', scope: SHORTCUT_SCOPE.stack },
+  { keys: [MOD_KEY, '−'], label: 'Zoom out', scope: SHORTCUT_SCOPE.stack },
   { keys: ['['], label: 'Toggle left rail', scope: SHORTCUT_SCOPE.panels },
   { keys: [']'], label: 'Toggle right rail', scope: SHORTCUT_SCOPE.panels },
   { keys: ['j'], label: 'Move down', scope: SHORTCUT_SCOPE.lists },

@@ -2,6 +2,7 @@ import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
 import { Switch } from '../ui/Switch';
 import { useTextZoom } from '../../hooks/useTextZoom';
+import { formatShortcut, MOD_KEY } from '../../lib/platform';
 import { TEXT_ZOOM_ROWS, type TextZoomSpec } from '../../lib/textZoomDefaults';
 import { COMPACT_MODE_WORKSPACES, useUIStore } from '../../stores/useUIStore';
 import { WORKSPACE_CONFIG } from '../../types/workspace';
@@ -79,7 +80,7 @@ export function PreferencesDialog() {
         <section className="space-y-2">
           <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted">Compact mode</h3>
           <p className="text-2xs text-text-muted">
-            Cmd+Backslash toggles compact mode for the current workspace.
+            {formatShortcut([MOD_KEY, '\\'])} toggles compact mode for the current workspace.
           </p>
           <ul className="space-y-1">
             {COMPACT_MODE_WORKSPACES.map((id) => {
