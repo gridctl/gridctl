@@ -1,7 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import '@testing-library/jest-dom';
 import { EnvImportModal } from '../components/vault/EnvImportModal';
+import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
+import { useNavigationGuardStore } from '../stores/useNavigationGuardStore';
 import type { ImportVariableInput, Variable } from '../lib/api';
 
 const existing: Variable[] = [
@@ -206,6 +209,66 @@ describe('EnvImportModal — discard confirm', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  });
+
+  it('counts a type choice as a change', () => {
+    const { onClose } = renderPlain('C=3');
+    fireEvent.click(
+      within(screen.getByRole('group', { name: 'Variable type' })).getByRole('button', {
+        name: 'number',
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog', { name: 'Discard import' })).toBeInTheDocument();
+  });
+
+  it('closes at once when dismissed during an in-flight import', async () => {
+    const onClose = vi.fn();
+    const onImport = vi.fn(() => new Promise<{ imported: number }>(() => {}));
+    render(
+      <EnvImportModal
+        onClose={onClose}
+        onImport={onImport}
+        existingVariables={[]}
+        sets={[]}
+        initialText=""
+      />,
+    );
+    fireEvent.change(textarea(), { target: { value: 'C=3' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Import 1' }));
+    await waitFor(() => expect(onImport).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Close import' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('blocks a guarded navigation while dirty; Discard & leave closes, then proceeds', async () => {
+    const onClose = vi.fn();
+    const proceed = vi.fn();
+    render(
+      <MemoryRouter>
+        <EnvImportModal
+          onClose={onClose}
+          onImport={vi.fn()}
+          existingVariables={[]}
+          sets={[]}
+          initialText=""
+        />
+        <NavigationGuardDialog />
+      </MemoryRouter>,
+    );
+    fireEvent.change(textarea(), { target: { value: 'C=3' } });
+    act(() => {
+      useNavigationGuardStore.getState().guard('/stack', proceed);
+    });
+    expect(proceed).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard & leave' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(proceed).toHaveBeenCalledTimes(1);
+    expect(onClose.mock.invocationCallOrder[0]).toBeLessThan(
+      proceed.mock.invocationCallOrder[0],
+    );
   });
 
   it('closes after a successful import with no confirm', async () => {
