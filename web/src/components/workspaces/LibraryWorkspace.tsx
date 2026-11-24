@@ -921,13 +921,13 @@ export function LibraryWorkspace() {
           {/* Search + Filter bar */}
           <div className="px-4 pt-3 pb-2.5 bg-surface/60 backdrop-blur-sm border-b border-border/40 flex flex-col gap-2 flex-shrink-0">
             <div className="relative">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted/50 pointer-events-none" />
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
               <input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search skills…"
                 aria-label="Filter skills"
-                className="w-full bg-background/60 border border-border/40 rounded-lg pl-9 pr-8 py-2 text-sm text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50 transition-colors"
+                className="w-full bg-background/60 border border-border/40 rounded-lg pl-9 pr-8 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
               />
               {searchQuery && (
                 <button
@@ -1048,7 +1048,7 @@ export function LibraryWorkspace() {
                   searchQuery ? (
                     <button
                       onClick={() => setSearchQuery('')}
-                      className="text-xs text-primary hover:text-primary/80 transition-colors underline underline-offset-2"
+                      className="text-xs text-primary hover:text-primary-light transition-colors underline underline-offset-2"
                     >
                       Clear search
                     </button>
@@ -1225,7 +1225,7 @@ function GroupByControl({
   const options = hasCategories ? GROUP_OPTIONS : GROUP_OPTIONS.filter((o) => o.key !== 'category');
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Group skills by">
-      <span className="text-3xs uppercase tracking-wider text-text-muted/60 mr-0.5">Group</span>
+      <span className="text-3xs uppercase tracking-wider text-text-muted mr-0.5">Group</span>
       {options.map((opt) => (
         <button
           key={opt.key}
@@ -1261,7 +1261,7 @@ function SortControl({ mode, onChange, usageAvailable }: { mode: SortMode; onCha
   const options = usageAvailable ? [...SORT_OPTIONS, USAGE_SORT_OPTION] : SORT_OPTIONS;
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Sort skills by">
-      <span className="text-3xs uppercase tracking-wider text-text-muted/60 mr-0.5">Sort</span>
+      <span className="text-3xs uppercase tracking-wider text-text-muted mr-0.5">Sort</span>
       {options.map((opt) => (
         <button
           key={opt.key}
@@ -1289,7 +1289,7 @@ function SortControl({ mode, onChange, usageAvailable }: { mode: SortMode; onCha
 function WindowControl({ window, onChange }: { window: AuditWindow; onChange: (w: AuditWindow) => void }) {
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Stale lookback window">
-      <span className="text-3xs uppercase tracking-wider text-text-muted/60 mr-0.5">Window</span>
+      <span className="text-3xs uppercase tracking-wider text-text-muted mr-0.5">Window</span>
       {AUDIT_WINDOWS.map((opt) => (
         <button
           key={opt.id}

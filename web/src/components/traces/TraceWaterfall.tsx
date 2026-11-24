@@ -333,11 +333,11 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
                 )}
               />
               <div className="flex-1 grid grid-cols-3 items-center h-full min-w-0 overflow-hidden" aria-hidden="true">
-                <span className="min-w-0 overflow-hidden whitespace-nowrap text-left text-3xs text-text-muted/70 font-mono">0</span>
-                <span className="min-w-0 overflow-hidden whitespace-nowrap text-center text-3xs text-text-muted/70 font-mono">
+                <span className="min-w-0 overflow-hidden whitespace-nowrap text-left text-3xs text-text-muted font-mono">0</span>
+                <span className="min-w-0 overflow-hidden whitespace-nowrap text-center text-3xs text-text-muted font-mono">
                   {formatDuration(totalDuration / 2)}
                 </span>
-                <span className="min-w-0 overflow-hidden whitespace-nowrap text-right text-3xs text-text-muted/70 font-mono">
+                <span className="min-w-0 overflow-hidden whitespace-nowrap text-right text-3xs text-text-muted font-mono">
                   {formatDuration(totalDuration)}
                 </span>
               </div>
@@ -414,7 +414,7 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
                     <div className="w-24 flex flex-col items-end justify-center leading-tight flex-shrink-0">
                       <span className="text-3xs text-text-muted font-mono whitespace-nowrap">{formatDuration(span.duration)}</span>
                       {hasChildren && selfMs != null && (
-                        <span className="text-3xs text-text-muted/60 font-mono whitespace-nowrap">self {formatDuration(selfMs)}</span>
+                        <span className="text-3xs text-text-muted font-mono whitespace-nowrap">self {formatDuration(selfMs)}</span>
                       )}
                     </div>
                   </div>

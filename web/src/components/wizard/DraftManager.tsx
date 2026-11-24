@@ -149,7 +149,7 @@ export function DraftManager({ className }: DraftManagerProps) {
               onKeyDown={(e) => e.key === 'Enter' && handleSave()}
               placeholder="Draft name..."
               aria-label="Draft name"
-              className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50"
+              className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted"
               autoFocus
             />
             <button
@@ -206,7 +206,7 @@ export function DraftManager({ className }: DraftManagerProps) {
                     disabled={deleting === draft.id}
                     title="Delete draft"
                     aria-label={`Delete draft ${draft.name}`}
-                    className="p-1 rounded text-text-muted/40 hover:text-status-error opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 transition-all duration-200"
+                    className="p-1 rounded text-text-muted hover:text-status-error opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 transition-all duration-200"
                   >
                     {deleting === draft.id ? (
                       <Loader2 size={12} className="animate-spin" />

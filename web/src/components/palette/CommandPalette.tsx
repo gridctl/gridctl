@@ -89,7 +89,7 @@ function PaletteItem({ command, onSelect, showBadge }: PaletteItemProps) {
       )}
       <span className="flex-1 text-sm truncate">{command.label}</span>
       {command.unavailable ? (
-        <span className="shrink-0 text-3xs text-text-muted/60 font-mono">unavailable</span>
+        <span className="shrink-0 text-3xs text-text-muted font-mono">unavailable</span>
       ) : (
         <>
           {showBadge && <SectionBadge section={command.section} />}
@@ -247,7 +247,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                     e.preventDefault();
                     setInputValue('');
                   }}
-                  className="text-primary/50 hover:text-primary transition-colors ml-0.5"
+                  className="text-primary hover:text-text-primary transition-colors ml-0.5"
                   aria-label="Clear scope filter"
                 >
                   <X size={10} />
@@ -317,10 +317,10 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                     <div className="flex flex-col items-center gap-2 py-10 text-center">
                       <p className="text-sm text-text-muted">Start typing to search commands</p>
                       <p className="text-xs text-text-muted opacity-60">
-                        <code className="text-primary/70">t:</code> traces ·{' '}
+                        <code className="text-primary">t:</code> traces ·{' '}
                         <code className="text-secondary/70">v:</code> variables ·{' '}
                         <code className="text-tertiary/70">r:</code> library ·{' '}
-                        <code className="text-text-muted/70">{'>'}</code> actions
+                        <code className="text-text-muted">{'>'}</code> actions
                       </p>
                     </div>
                   )}
@@ -337,9 +337,9 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                       </span>
                     </p>
                     <p className="text-xs text-text-muted opacity-70 leading-relaxed">
-                      Try <code className="text-primary/80">{'>'}</code> for actions ·{' '}
+                      Try <code className="text-primary">{'>'}</code> for actions ·{' '}
                       <code className="text-secondary/80">v:</code> for Variables ·{' '}
-                      <code className="text-primary/70">t:</code> for Traces ·{' '}
+                      <code className="text-primary">t:</code> for Traces ·{' '}
                       <code className="text-tertiary/70">r:</code> for Library
                     </p>
                   </div>
@@ -366,7 +366,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
               select
             </span>
             <span className="ml-auto text-3xs text-text-muted opacity-50">
-              <code className="text-primary/80">t:</code>{' '}
+              <code className="text-primary">t:</code>{' '}
               <code className="text-secondary/80">v:</code>{' '}
               <code className="text-tertiary/80">r:</code>{' '}
               <code>{'>'}</code>

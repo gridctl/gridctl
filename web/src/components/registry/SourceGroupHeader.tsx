@@ -107,7 +107,7 @@ export function SourceGroupHeader({
             <span className="text-3xs uppercase tracking-widest font-medium truncate">{label}</span>
           </button>
           {shortSha && (
-            <span className="text-3xs font-mono text-text-muted/60" title={source?.commitSha}>
+            <span className="text-3xs font-mono text-text-muted" title={source?.commitSha}>
               {shortSha}
             </span>
           )}
@@ -120,7 +120,7 @@ export function SourceGroupHeader({
               onClick={(e) => e.stopPropagation()}
               title="Open repository on GitHub"
               aria-label={`Open ${label} on GitHub`}
-              className="text-text-muted/50 hover:text-primary transition-colors flex-shrink-0"
+              className="text-text-muted hover:text-primary transition-colors flex-shrink-0"
             >
               <ExternalLink size={11} />
             </a>

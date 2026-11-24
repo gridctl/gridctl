@@ -79,7 +79,7 @@ export function LogsWorkspace() {
               compact ? 'py-2' : 'py-3',
             )}
           >
-            <div className="font-sans text-text-muted/60 text-3xs uppercase tracking-[0.4em]">logs</div>
+            <div className="font-sans text-text-muted text-3xs uppercase tracking-[0.4em]">logs</div>
             <div className="font-mono text-3xs text-text-muted truncate">
               {source ?? 'all sources'}
             </div>
@@ -123,7 +123,7 @@ function SourceRail({ compact, source, onSelectSource, serverNames, totalCount, 
   return (
     <aside aria-label="Logs rail" className="h-full flex flex-col bg-surface border-r border-border-subtle">
       <div className={cn('flex-shrink-0 px-3 border-b border-border-subtle/60', compact ? 'py-2' : 'py-3')}>
-        <div className="text-3xs font-medium text-text-muted/60 uppercase tracking-[0.3em]">sources</div>
+        <div className="text-3xs font-medium text-text-muted uppercase tracking-[0.3em]">sources</div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-2 py-2 space-y-0.5">
         <SourcePill

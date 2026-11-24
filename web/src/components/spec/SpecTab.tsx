@@ -18,7 +18,7 @@ function highlightYAMLLine(line: string): HighlightedToken[] {
 
   // Comment lines
   if (line.trimStart().startsWith('#')) {
-    return [{ text: line, className: 'text-text-muted/60 italic' }];
+    return [{ text: line, className: 'text-text-muted italic' }];
   }
 
   // Key-value pairs
@@ -256,7 +256,7 @@ export function SpecTab() {
                   className="group"
                 >
                   {/* Line number */}
-                  <td className="w-12 pr-3 text-right text-text-muted/40 select-none align-top py-px">
+                  <td className="w-12 pr-3 text-right text-text-muted select-none align-top py-px">
                     {lineNum}
                   </td>
 

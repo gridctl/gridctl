@@ -780,7 +780,7 @@ function ToolsHeader({
       )}
     >
       <div className="flex items-center gap-3">
-        <div className="font-sans text-text-muted/60 text-3xs uppercase tracking-[0.4em]">
+        <div className="font-sans text-text-muted text-3xs uppercase tracking-[0.4em]">
           tools
         </div>
         <div className="font-mono text-3xs text-text-muted">
@@ -869,7 +869,7 @@ function ToolsHeader({
       </div>
 
       {optimizeUnusedCount !== null && (
-        <p className="text-3xs text-text-muted/80 leading-relaxed" role="status">
+        <p className="text-3xs text-text-muted leading-relaxed" role="status">
           <span className="text-status-pending font-medium">Optimize</span> suggests{' '}
           <span className="text-text-secondary font-medium">{optimizeUnusedCount}</span> unused{' '}
           {optimizeUnusedCount === 1 ? 'tool' : 'tools'} (7d)
@@ -889,7 +889,7 @@ function ToolsHeader({
       )}
 
       {auditMode && (
-        <p className="text-3xs text-text-muted/80 leading-relaxed" role="status">
+        <p className="text-3xs text-text-muted leading-relaxed" role="status">
           <span className="text-status-running">●</span> used ·{' '}
           <span className="text-status-pending">●</span> unused ·{' '}
           <span className="text-text-muted">●</span> disabled — &ldquo;unused&rdquo; means no
@@ -914,7 +914,7 @@ function ToolsHeader({
       <div className="relative">
         <Search
           size={13}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted/50 pointer-events-none"
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none"
         />
         <input
           value={query}
@@ -925,7 +925,7 @@ function ToolsHeader({
               : `Search tools across all ${serverCount} servers…`
           }
           aria-label="Search tools across all servers"
-          className="w-full bg-background/60 border border-border/40 rounded-lg pl-9 pr-8 py-2 text-sm text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50 transition-colors"
+          className="w-full bg-background/60 border border-border/40 rounded-lg pl-9 pr-8 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
         />
         {searching && (
           <button
@@ -978,7 +978,7 @@ function ServerRail({
           compact ? 'py-2' : 'py-3',
         )}
       >
-        <div className="text-3xs font-medium text-text-muted/60 uppercase tracking-[0.3em]">
+        <div className="text-3xs font-medium text-text-muted uppercase tracking-[0.3em]">
           servers
         </div>
       </div>
@@ -997,7 +997,7 @@ function ServerRail({
           />
         ))}
         {servers.length === 0 && (
-          <p className="px-3 py-2 text-3xs text-text-muted/60 leading-relaxed">
+          <p className="px-3 py-2 text-3xs text-text-muted leading-relaxed">
             No MCP servers in the active stack.
           </p>
         )}
@@ -1369,13 +1369,13 @@ function ServerDetail({
               onValueChange={setQuery}
               placeholder={`Filter ${server.name} tools…`}
               aria-label="Filter tools"
-              className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+              className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
             />
           </div>
 
           <Command.List className="max-h-[60vh] overflow-y-auto" aria-label="Available tools">
             <Command.Empty>
-              <p className="text-2xs text-text-muted/60 italic py-4 px-3 text-center">
+              <p className="text-2xs text-text-muted italic py-4 px-3 text-center">
                 {rows.length === 0
                   ? 'No tools discovered for this server yet.'
                   : visible.length === 0
@@ -1565,7 +1565,7 @@ interface GlobalResultsProps {
 function GlobalResults({ results, query, serverCount, onPick, auditFor }: GlobalResultsProps) {
   return (
     <div className="px-6 py-4 max-w-4xl space-y-2">
-      <p className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
+      <p className="text-3xs uppercase tracking-[0.18em] text-text-muted">
         Searching all {serverCount} {serverCount === 1 ? 'server' : 'servers'} ·{' '}
         {results.length} {results.length === 1 ? 'match' : 'matches'}
       </p>
@@ -1585,8 +1585,8 @@ function GlobalResults({ results, query, serverCount, onPick, auditFor }: Global
               >
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-mono truncate">
-                    <span className="text-primary/80">{r.server}</span>
-                    <span className="text-text-muted/60 mx-1">›</span>
+                    <span className="text-primary">{r.server}</span>
+                    <span className="text-text-muted mx-1">›</span>
                     <span className="text-text-primary">{r.tool}</span>
                   </div>
                   {r.description && (
@@ -1610,7 +1610,7 @@ function GlobalResults({ results, query, serverCount, onPick, auditFor }: Global
                     </div>
                   )}
                 </div>
-                <ChevronRight size={13} className="text-text-muted/50 flex-shrink-0 mt-0.5" />
+                <ChevronRight size={13} className="text-text-muted flex-shrink-0 mt-0.5" />
               </button>
             );
           })}

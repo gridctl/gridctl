@@ -737,7 +737,7 @@ export function VaultWorkspace() {
                   <div className="relative flex-1">
                     <Search
                       size={13}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted/50 pointer-events-none"
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none"
                     />
                     <input
                       value={searchQuery}
@@ -750,7 +750,7 @@ export function VaultWorkspace() {
                             : `Search ${activeSet}…`
                       }
                       aria-label="Filter variables"
-                      className="w-full bg-background/60 border border-border/40 rounded-lg pl-9 pr-8 py-2 text-sm text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50 transition-colors"
+                      className="w-full bg-background/60 border border-border/40 rounded-lg pl-9 pr-8 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
                     />
                     {searchQuery && (
                       <button
@@ -854,7 +854,7 @@ export function VaultWorkspace() {
               {/* Keyboard hint strip. Nowrap so the wider 10 px labels scroll
                   sideways instead of wrapping inside h-5. A visible scrollbar
                   would cover that line, so the bar is hidden. */}
-              <div className="flex items-center gap-2 px-3 h-5 min-w-0 flex-shrink-0 border-t border-border/20 text-3xs text-text-muted/60 select-none overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="flex items-center gap-2 px-3 h-5 min-w-0 flex-shrink-0 border-t border-border/20 text-3xs text-text-muted select-none overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <span><kbd className="font-mono">j</kbd>/<kbd className="font-mono">k</kbd> navigate</span>
                 <span><kbd className="font-mono">Home</kbd>/<kbd className="font-mono">End</kbd> first and last</span>
                 <span><kbd className="font-mono">↵</kbd> open</span>
@@ -1019,7 +1019,7 @@ function VaultHeader({
       )}
     >
       <div className="flex items-center gap-3">
-        <div className="font-sans text-text-muted/60 text-3xs uppercase tracking-[0.4em]">
+        <div className="font-sans text-text-muted text-3xs uppercase tracking-[0.4em]">
           variables
         </div>
         <div className="font-mono text-3xs text-text-muted">
@@ -1052,7 +1052,7 @@ function VaultHeader({
           <>
             <button
               onClick={onOpenImport}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
             >
               <FileUp size={12} /> Import .env
             </button>
@@ -1133,7 +1133,7 @@ function VaultLeftRail({
           compact ? 'py-2' : 'py-3',
         )}
       >
-        <div className="text-3xs font-medium text-text-muted/60 uppercase tracking-[0.3em]">
+        <div className="text-3xs font-medium text-text-muted uppercase tracking-[0.3em]">
           sets
         </div>
       </div>
@@ -1154,7 +1154,7 @@ function VaultLeftRail({
           />
         )}
         {unassignedCount > 0 && (
-          <p className="px-3 pt-2 pb-1 text-3xs uppercase tracking-[0.24em] text-text-muted/50">
+          <p className="px-3 pt-2 pb-1 text-3xs uppercase tracking-[0.24em] text-text-muted">
             grouped
           </p>
         )}
@@ -1171,7 +1171,7 @@ function VaultLeftRail({
           />
         ))}
         {sets.length === 0 && (
-          <p className="px-3 py-2 text-3xs text-text-muted/60 leading-relaxed">
+          <p className="px-3 py-2 text-3xs text-text-muted leading-relaxed">
             No sets yet. Groups appear here as you assign variables.
           </p>
         )}
@@ -1312,7 +1312,7 @@ function VariableList({
   compact,
 }: VariableListProps) {
   const headerLabel =
-    'text-3xs uppercase tracking-[0.24em] text-text-muted/50';
+    'text-3xs uppercase tracking-[0.24em] text-text-muted';
   return (
     <div role="listbox" aria-label="Variables" className="pb-4" {...listNavProps}>
       <div
@@ -1365,11 +1365,11 @@ function ServerFilterBanner({
 }: ServerFilterBannerProps) {
   return (
     <div className="flex-shrink-0 px-6 py-2 border-b border-border-subtle bg-primary/[0.04] flex items-center gap-2">
-      <Filter size={12} className="text-primary/70 flex-shrink-0" />
+      <Filter size={12} className="text-primary flex-shrink-0" />
       <div className="flex-1 min-w-0 text-2xs text-text-secondary">
         Variables used by{' '}
         <span className="font-mono text-primary">{serverName}</span>
-        <span className="text-text-muted/70 ml-2">
+        <span className="text-text-muted ml-2">
           · {matchCount} {matchCount === 1 ? 'variable' : 'variables'}
         </span>
       </div>
@@ -1424,7 +1424,7 @@ function RefFilterChips({ active, counts, onSelect }: RefFilterChipsProps) {
               <span
                 className={cn(
                   'font-mono',
-                  isActive ? 'text-primary/80' : 'text-text-muted/60',
+                  isActive ? 'text-primary' : 'text-text-muted',
                 )}
               >
                 {counts[f.id]}
@@ -1434,7 +1434,7 @@ function RefFilterChips({ active, counts, onSelect }: RefFilterChipsProps) {
         );
       })}
       {disabled && (
-        <span className="text-3xs text-text-muted/60">
+        <span className="text-3xs text-text-muted">
           usage unavailable
         </span>
       )}
@@ -1466,7 +1466,7 @@ function MissingVariablesBanner({
         {keys.length === 1 ? 'a variable' : `${keys.length} variables`} with no
         value here: <span className="font-mono text-status-error">{preview}</span>
         {rest > 0 && (
-          <span className="text-text-muted/70"> and {rest} more</span>
+          <span className="text-text-muted"> and {rest} more</span>
         )}
         . Applying will fail until{' '}
         {keys.length === 1 ? 'it exists' : 'they exist'}.
@@ -1540,12 +1540,12 @@ function VaultEmptyState({ onImport, onAddOne }: VaultEmptyStateProps) {
           Bring a <code className="font-mono text-text-secondary">.env</code> file
           over, or add a key by hand. Secrets stay encrypted at rest when you
           set a passphrase.
-          <span className="block mt-2 text-3xs text-text-muted/70">
+          <span className="block mt-2 text-3xs text-text-muted">
             Tip: drop a <code className="font-mono text-text-secondary">.env</code> or{' '}
             <code className="font-mono text-text-secondary">.json</code> file
             anywhere on this page.
           </span>
-          <span className="block text-3xs text-text-muted/70">
+          <span className="block text-3xs text-text-muted">
             Or use the CLI:
             <code className="ml-1 font-mono text-text-secondary">
               gridctl var import .env
@@ -1626,7 +1626,7 @@ function NoMatchesState({
             {showImportHint && (
               <button
                 onClick={onImport}
-                className="text-2xs text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
+                className="text-2xs text-primary hover:text-primary-light underline underline-offset-2 transition-colors"
               >
                 Import .env
               </button>
@@ -1634,7 +1634,7 @@ function NoMatchesState({
             {searchQuery && (
               <button
                 onClick={onClear}
-                className="text-2xs text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
+                className="text-2xs text-primary hover:text-primary-light underline underline-offset-2 transition-colors"
               >
                 Clear search
               </button>
@@ -1642,7 +1642,7 @@ function NoMatchesState({
             {!searchQuery && refFilter !== 'all' && (
               <button
                 onClick={onClearRefFilter}
-                className="text-2xs text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
+                className="text-2xs text-primary hover:text-primary-light underline underline-offset-2 transition-colors"
               >
                 Show all variables
               </button>

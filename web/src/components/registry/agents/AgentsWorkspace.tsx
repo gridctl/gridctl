@@ -368,13 +368,13 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
           {/* Search bar, mirroring the Skills segment's treatment. */}
           <div className="px-4 pt-3 pb-2.5 bg-surface/60 backdrop-blur-sm border-b border-border/40 flex-shrink-0">
             <div className="relative">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted/50 pointer-events-none" />
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
               <input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search agents…"
                 aria-label="Filter agents"
-                className="w-full bg-background/60 border border-border/40 rounded-lg pl-9 pr-8 py-2 text-sm text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50 transition-colors"
+                className="w-full bg-background/60 border border-border/40 rounded-lg pl-9 pr-8 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
               />
               {searchQuery && (
                 <button
@@ -410,7 +410,7 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
             {!isLoading && !hasAgents && (
               <div className="h-full flex flex-col items-center justify-center text-text-muted gap-3 animate-fade-in-scale p-8 text-center">
                 <div className="p-4 rounded-xl bg-surface-elevated/50 border border-border/30">
-                  <Bot size={32} className="text-text-muted/50" />
+                  <Bot size={32} className="text-text-muted" />
                 </div>
                 <span className="text-sm text-text-secondary">No agents imported</span>
                 <span className="text-2xs text-text-muted max-w-sm">
@@ -419,7 +419,7 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
                 </span>
                 <button
                   onClick={handleImport}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
                 >
                   <Download size={12} /> Import from git
                 </button>
@@ -429,12 +429,12 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
             {!isLoading && hasAgents && visibleAgents.length === 0 && (
               <div className="h-full flex flex-col items-center justify-center text-text-muted gap-3 animate-fade-in-scale p-8">
                 <div className="p-4 rounded-xl bg-surface-elevated/50 border border-border/30">
-                  <Search size={28} className="text-text-muted/50" />
+                  <Search size={28} className="text-text-muted" />
                 </div>
                 <span className="text-sm text-text-secondary">No agents match "{searchQuery}"</span>
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="text-xs text-primary hover:text-primary/80 transition-colors underline underline-offset-2"
+                  className="text-xs text-primary hover:text-primary-light transition-colors underline underline-offset-2"
                 >
                   Clear search
                 </button>
@@ -449,7 +449,7 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
                       <span className="text-3xs uppercase tracking-wider font-medium text-text-muted">
                         {group.source}
                       </span>
-                      <span className="text-3xs text-text-muted/60 font-mono">{group.members.length}</span>
+                      <span className="text-3xs text-text-muted font-mono">{group.members.length}</span>
                     </div>
                     <div
                       style={{

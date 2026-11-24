@@ -51,7 +51,7 @@ export function ThemePicker() {
         aria-label="Appearance"
         className="absolute right-0 top-full mt-2 w-52 p-2"
       >
-        <div className="px-1 pb-1.5 text-3xs uppercase tracking-[0.18em] text-text-muted/70">
+        <div className="px-1 pb-1.5 text-3xs uppercase tracking-[0.18em] text-text-muted">
           Appearance
         </div>
         <ThemeModeRadioGroup />

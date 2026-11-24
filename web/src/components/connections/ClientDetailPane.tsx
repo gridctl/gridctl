@@ -94,7 +94,7 @@ export function ClientDetailPane({
   if (!client) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-2 text-text-muted p-6 text-center">
-        <Plug size={24} className="text-text-muted/40" />
+        <Plug size={24} className="text-text-muted" />
         <p className="text-sm">Select a client to inspect it</p>
       </div>
     );
@@ -263,12 +263,12 @@ export function ClientDetailPane({
                 )}
               </span>
             </div>
-            {row.detail && <span className="text-2xs text-text-muted/80 px-1">{row.detail}</span>}
+            {row.detail && <span className="text-2xs text-text-muted px-1">{row.detail}</span>}
             {/* The engine's remediation is the user's map when a state
                 needs a decision; hiding it until an action fails would
                 make the failure the discovery mechanism. */}
             {row.remediation && row.state !== 'in-sync' && (
-              <span className="text-2xs text-text-muted/60 px-1">{row.remediation}</span>
+              <span className="text-2xs text-text-muted px-1">{row.remediation}</span>
             )}
             {row.target && (
               <span className="text-2xs text-text-muted font-mono truncate px-1" title={row.target}>
@@ -401,7 +401,7 @@ export function ClientDetailPane({
             </button>
             {row.pack && <PackChip pack={row.pack} />}
             {row.detail && (
-              <span className="text-3xs text-text-muted/70 truncate" title={row.detail}>
+              <span className="text-3xs text-text-muted truncate" title={row.detail}>
                 {row.detail}
               </span>
             )}
@@ -481,7 +481,7 @@ export function ClientDetailPane({
             </span>
           </div>
         ))}
-        <p className="text-3xs text-text-muted/60 px-1 pt-1 flex items-center gap-1">
+        <p className="text-3xs text-text-muted px-1 pt-1 flex items-center gap-1">
           <Cable size={9} /> Transport state, not declared links.
         </p>
       </Section>
@@ -558,7 +558,7 @@ function AxisBadge({
 }) {
   return (
     <span className="flex items-center gap-1.5 min-w-0">
-      <span className="text-3xs uppercase tracking-[0.2em] text-text-muted/70 flex-shrink-0">
+      <span className="text-3xs uppercase tracking-[0.2em] text-text-muted flex-shrink-0">
         {label}
       </span>
       <span
@@ -613,11 +613,11 @@ function Section({
         ) : (
           <ChevronRight size={13} className="text-text-muted flex-shrink-0" />
         )}
-        <span className="text-text-muted/70 flex-shrink-0" aria-hidden="true">
+        <span className="text-text-muted flex-shrink-0" aria-hidden="true">
           {icon}
         </span>
         <span className="text-xs text-text-muted uppercase tracking-wider">{title}</span>
-        <span className="text-2xs text-text-muted/80 truncate flex-1">{summary}</span>
+        <span className="text-2xs text-text-muted truncate flex-1">{summary}</span>
         {attention && !expanded && (
           <span className="flex-shrink-0 text-3xs font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending">
             Needs attention

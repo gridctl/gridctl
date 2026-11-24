@@ -28,7 +28,7 @@ import { MCPServerForm } from './MCPServerForm';
 // --- Shared form primitives ---
 
 const inputClass =
-  'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors';
+  'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors';
 const labelClass = 'block text-xs text-text-secondary mb-1.5';
 
 function toKebabCase(value: string): string {
@@ -136,7 +136,7 @@ function KeyValueEditor({
         </button>
       </div>
       {entries.length === 0 && (
-        <p className="text-3xs text-text-muted/60 italic py-2">No entries</p>
+        <p className="text-3xs text-text-muted italic py-2">No entries</p>
       )}
       <div className="space-y-1.5">
         {entries.map(([key, val], i) => (
@@ -217,7 +217,7 @@ function StringArrayEditor({
         </button>
       </div>
       {value.length === 0 && (
-        <p className="text-3xs text-text-muted/60 italic py-2">{emptyText}</p>
+        <p className="text-3xs text-text-muted italic py-2">{emptyText}</p>
       )}
       <div className="space-y-1.5">
         {value.map((item, i) => (
@@ -1116,7 +1116,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         badge={serverCount > 0 ? `${serverCount}` : undefined}
       >
         {serverCount === 0 && (
-          <p className="text-3xs text-text-muted/60 italic py-2">No MCP servers configured</p>
+          <p className="text-3xs text-text-muted italic py-2">No MCP servers configured</p>
         )}
         <div className="space-y-2">
           {(data.mcpServers ?? []).map((server, i) => (
@@ -1159,7 +1159,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         badge={resourceCount > 0 ? `${resourceCount}` : undefined}
       >
         {resourceCount === 0 && !showResourcePresets && (
-          <p className="text-3xs text-text-muted/60 italic py-2">No resources configured</p>
+          <p className="text-3xs text-text-muted italic py-2">No resources configured</p>
         )}
         {showResourcePresets && (
           <ResourcePresetPicker onSelect={(preset) => addResource(preset)} />

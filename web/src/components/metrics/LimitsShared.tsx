@@ -11,13 +11,13 @@ import { PanelHeader } from './metricsShared';
 function LimitsPanelRow({ entry }: { entry: LimitEntry }) {
   return (
     <li className="flex items-center gap-2 px-3 py-1.5">
-      <span className="w-14 flex-shrink-0 text-3xs uppercase tracking-wider text-text-muted/70">rate</span>
+      <span className="w-14 flex-shrink-0 text-3xs uppercase tracking-wider text-text-muted">rate</span>
       <span className="w-40 flex-shrink-0 truncate font-mono text-3xs text-text-secondary" title={entry.key}>
-        <span className="text-text-muted/60">{entry.scope}:</span> {entry.key}
+        <span className="text-text-muted">{entry.scope}:</span> {entry.key}
       </span>
       <span className="flex-1 text-3xs tabular-nums text-text-muted">
         {entry.rate?.calls_per_minute} calls/min
-        <span className="text-text-muted/60"> · burst {entry.rate?.burst}</span>
+        <span className="text-text-muted"> · burst {entry.rate?.burst}</span>
       </span>
       <span
         className={cn(

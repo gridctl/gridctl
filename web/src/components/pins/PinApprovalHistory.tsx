@@ -12,7 +12,7 @@ export function PinApprovalHistory({ approvals }: { approvals?: PinApproval[] })
   const [latest, ...older] = approvals;
   return (
     <section className="space-y-2" aria-label="Approval history">
-      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">Last approval</h3>
+      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted">Last approval</h3>
       <PinApprovalEntry entry={latest} />
       {older.length > 0 && (
         <details className="text-2xs">
@@ -80,7 +80,7 @@ export function ApprovalFields({
         onChange={(e) => onReason(e.target.value)}
         placeholder={reasonRequired ? 'Reason (required: advisory findings present)' : 'Reason (optional)'}
         aria-label="Approval reason"
-        className="h-6 w-64 px-2 text-2xs rounded border border-border/40 bg-background/60 text-text-primary placeholder:text-text-muted/60"
+        className="h-6 w-64 px-2 text-2xs rounded border border-border/40 bg-background/60 text-text-primary placeholder:text-text-muted"
       />
       <label className="flex flex-col gap-1 text-3xs text-text-muted">
         Evidence references, one per line
@@ -90,7 +90,7 @@ export function ApprovalFields({
           placeholder="https://example.test/pull/1"
           aria-label="Evidence references, one per line"
           rows={2}
-          className="w-64 px-2 py-1 text-2xs rounded border border-border/40 bg-background/60 text-text-primary placeholder:text-text-muted/60"
+          className="w-64 px-2 py-1 text-2xs rounded border border-border/40 bg-background/60 text-text-primary placeholder:text-text-muted"
         />
       </label>
     </div>

@@ -75,7 +75,7 @@ export const VariableRow = memo(function VariableRow({
       </span>
       <span>
         {variable.type === 'string' ? (
-          <span className="text-3xs font-mono text-text-muted/50">
+          <span className="text-3xs font-mono text-text-muted">
             string
           </span>
         ) : (
@@ -88,7 +88,7 @@ export const VariableRow = memo(function VariableRow({
             {variable.set}
           </span>
         ) : (
-          <span className="text-3xs text-text-muted/40">—</span>
+          <span className="text-3xs text-text-muted">—</span>
         )}
       </span>
       <span className="text-3xs font-mono text-text-muted truncate">

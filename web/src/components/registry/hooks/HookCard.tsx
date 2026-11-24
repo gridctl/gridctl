@@ -35,7 +35,7 @@ export const HookCard = memo(({ hook, statuses, onSelect, isActive = false }: Ho
         <p className="text-2xs text-text-muted line-clamp-2">{hook.description}</p>
         <div className="flex items-center gap-1 flex-wrap" aria-label={`Projection chips for ${hook.name}`}>
           {statuses.length === 0 && (
-            <span className="text-3xs text-text-muted/70">Not projected</span>
+            <span className="text-3xs text-text-muted">Not projected</span>
           )}
           {statuses.map((row) => (
             <span key={row.client} className="inline-flex items-center gap-1" title={row.detail}>

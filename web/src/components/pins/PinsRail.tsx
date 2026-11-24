@@ -120,7 +120,7 @@ export function PinsRail({
               // a source header above its member rows.
               <div
                 key={`group:${item.repo}`}
-                className="flex items-center gap-1.5 px-3 pt-2 pb-0.5 text-3xs text-text-muted/70"
+                className="flex items-center gap-1.5 px-3 pt-2 pb-0.5 text-3xs text-text-muted"
                 title={`${item.count} drifted skills from this source`}
               >
                 <GitBranch size={9} />
@@ -245,7 +245,7 @@ function RailRow({
           {label}
         </span>
       </span>
-      <span className="pl-[19px] text-3xs text-text-muted/70 truncate">{secondary}</span>
+      <span className="pl-[19px] text-3xs text-text-muted truncate">{secondary}</span>
     </button>
   );
 }

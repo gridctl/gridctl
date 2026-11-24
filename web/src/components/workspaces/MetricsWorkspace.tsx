@@ -453,7 +453,7 @@ export function MetricsWorkspace() {
             )}
           >
             <div className="flex items-center gap-3 min-w-0">
-              <div className="font-sans text-text-muted/60 text-3xs uppercase tracking-[0.4em]">metrics</div>
+              <div className="font-sans text-text-muted text-3xs uppercase tracking-[0.4em]">metrics</div>
               <div className="font-mono text-3xs text-text-muted truncate">
                 {kpis.total > 0 || windowTotals.total > 0
                   ? `${windowLabel} · ${windowTotals.total.toLocaleString()} tokens`
@@ -538,7 +538,7 @@ export function MetricsWorkspace() {
                 ) : (
                   <TokenChart data={chartData} metricsData={metricsData} />
                 )}
-                {focusNote && <p className="text-2xs text-text-muted/70">{focusNote}</p>}
+                {focusNote && <p className="text-2xs text-text-muted">{focusNote}</p>}
                 <WindowEmptyNote windowTotals={windowTotals} sessionTotal={kpis.total} loaded={metricsData !== null} />
 
 
@@ -613,7 +613,7 @@ export function MetricsWorkspace() {
                         ) : (
                           // Filtered-empty is not "no usage" — the stack has
                           // tool rows, the filters just exclude them all.
-                          <div className="px-3 py-3 flex items-center gap-2 text-2xs text-text-muted/70">
+                          <div className="px-3 py-3 flex items-center gap-2 text-2xs text-text-muted">
                             No tools match the current filters.
                             <button type="button" onClick={clearToolFilters} className="text-primary hover:underline">
                               Clear filters
@@ -692,7 +692,7 @@ function ScopeRail({ compact, scope, onSelectScope, clientCount, serverCount, to
   return (
     <aside aria-label="Metrics rail" className="h-full flex flex-col bg-surface border-r border-border-subtle">
       <div className={cn('flex-shrink-0 px-3 border-b border-border-subtle/60', compact ? 'py-2' : 'py-3')}>
-        <div className="text-3xs font-medium text-text-muted/60 uppercase tracking-[0.3em]">breakdown</div>
+        <div className="text-3xs font-medium text-text-muted uppercase tracking-[0.3em]">breakdown</div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-2 py-2 space-y-0.5">
         <ScopePill label="Overview" icon={BarChart3} active={scope === 'overview'} onClick={() => onSelectScope('overview')} />
@@ -747,7 +747,7 @@ function ScopePill({
 // ---------------------------------------------------------------------------
 
 function EmptyScopeNote({ text }: { text: string }) {
-  return <p className="px-3 py-3 text-2xs text-text-muted/70 leading-relaxed">{text}</p>;
+  return <p className="px-3 py-3 text-2xs text-text-muted leading-relaxed">{text}</p>;
 }
 
 function LoadingState() {

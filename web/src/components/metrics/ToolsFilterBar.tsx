@@ -34,7 +34,7 @@ export function ToolsFilterBar({
     <div className="px-3 py-2 space-y-1.5 border-b border-border/30">
       <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-xs">
-          <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted/60" aria-hidden="true" />
+          <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted" aria-hidden="true" />
           <input
             ref={searchInputRef}
             type="text"
@@ -42,7 +42,7 @@ export function ToolsFilterBar({
             onChange={(e) => onQuery(e.target.value)}
             placeholder="Filter tools ( / )"
             aria-label="Filter tools by name or server"
-            className="w-full rounded-md border border-border/40 bg-background/60 pl-7 pr-6 py-1 text-2xs text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50"
+            className="w-full rounded-md border border-border/40 bg-background/60 pl-7 pr-6 py-1 text-2xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50"
           />
           {query && (
             <button

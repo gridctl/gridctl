@@ -24,7 +24,7 @@ const PROJECTION_STATE_STYLE: Record<ProjectionState, string> = {
   drifted: 'text-status-error border-status-error/25 bg-status-error/10',
   'target-missing': 'text-status-error border-status-error/25 bg-status-error/10',
   'never-synced': 'text-text-muted border-border/40 bg-background/40',
-  unsupported: 'text-text-muted/60 border-border/30 bg-background/30',
+  unsupported: 'text-text-muted border-border/30 bg-background/30',
   // Wiring extensions: foreign is an ownership conflict (red family);
   // missing is a quiet opportunity, not a fault.
   foreign: 'text-status-error border-status-error/25 bg-status-error/10',

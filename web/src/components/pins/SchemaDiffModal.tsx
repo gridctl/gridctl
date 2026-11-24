@@ -133,7 +133,7 @@ export function SchemaDiffModal({ title, oldSchema, newSchema, onClose }: Schema
                   <td
                     className={cn(
                       'px-3 py-0.5 text-right w-14 select-none align-top',
-                      line.kind === 'removed' ? 'text-status-error/60' : 'text-text-muted/40',
+                      line.kind === 'removed' ? 'text-status-error/60' : 'text-text-muted',
                     )}
                   >
                     {line.oldLine ?? ''}
@@ -142,7 +142,7 @@ export function SchemaDiffModal({ title, oldSchema, newSchema, onClose }: Schema
                 <td
                   className={cn(
                     'px-3 py-0.5 text-right w-14 select-none align-top',
-                    line.kind === 'added' ? 'text-status-running/60' : 'text-text-muted/40',
+                    line.kind === 'added' ? 'text-status-running/60' : 'text-text-muted',
                   )}
                 >
                   {line.newLine ?? ''}

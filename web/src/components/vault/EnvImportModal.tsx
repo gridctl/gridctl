@@ -390,7 +390,7 @@ export function EnvImportModal({
                 spellCheck={false}
                 className={cn(
                   'flex-1 min-h-0 w-full bg-transparent text-xs font-mono text-text-primary',
-                  'placeholder:text-text-muted/40 resize-none',
+                  'placeholder:text-text-muted resize-none',
                   'px-4 py-4 leading-relaxed',
                 )}
               />
@@ -424,7 +424,7 @@ export function EnvImportModal({
               <div className="flex-1 flex items-center justify-center px-8 py-12 text-center">
                 <div className="space-y-3">
                   <div className="mx-auto w-12 h-12 rounded-xl bg-primary/5 border border-primary/15 flex items-center justify-center">
-                    <FileUp size={18} className="text-primary/50" />
+                    <FileUp size={18} className="text-primary" />
                   </div>
                   <p className="text-xs text-text-muted leading-relaxed max-w-xs">
                     Paste a few <code className="font-mono text-text-secondary">KEY=value</code>{' '}
@@ -580,7 +580,7 @@ export function EnvImportModal({
                           {il.line}
                         </span>
                         <code className="flex-1 break-all">{il.raw || '«empty»'}</code>
-                        <span className="flex-shrink-0 text-text-muted/70 italic">
+                        <span className="flex-shrink-0 text-text-muted italic">
                           {il.reason}
                         </span>
                       </li>
@@ -608,14 +608,14 @@ export function EnvImportModal({
               <span className="text-status-running font-semibold">{counts.newCount}</span>{' '}
               new
             </span>
-            <span className="text-text-muted/40">·</span>
+            <span className="text-text-muted">·</span>
             <span>
               <span className="text-status-pending font-semibold">
                 {counts.conflicts}
               </span>{' '}
               overwrite{counts.conflicts === 1 ? '' : 's'}
             </span>
-            <span className="text-text-muted/40">·</span>
+            <span className="text-text-muted">·</span>
             <span>
               <span className="text-status-error font-semibold">{counts.skipped}</span>{' '}
               skipped
@@ -633,7 +633,7 @@ export function EnvImportModal({
             )}
             {invalidCount > 0 && (
               <>
-                <span className="text-text-muted/40">·</span>
+                <span className="text-text-muted">·</span>
                 <span className="text-status-error">
                   <span className="font-semibold">{invalidCount}</span> invalid
                 </span>

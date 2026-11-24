@@ -326,7 +326,7 @@ function SetupView() {
     <div className="flex flex-col gap-4 max-w-2xl">
       <div className="flex items-start gap-3">
         <div className="p-3 rounded-xl bg-surface-elevated/50 border border-border/30">
-          <FileText size={22} className="text-text-muted/60" />
+          <FileText size={22} className="text-text-muted" />
         </div>
         <div>
           <p className="text-sm text-text-primary font-medium">Set up your global context</p>
@@ -685,7 +685,7 @@ function EditorView({
             onScroll={handleEditorScroll}
             aria-label="Canonical global context"
             placeholder={'# Global Agent Context\n\nDurable cross-project preferences only...\n\n## Coding Style\n\n- Prefer clarity over cleverness.'}
-            className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted/30 resize-none leading-relaxed"
+            className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted resize-none leading-relaxed"
             spellCheck={false}
           />
         </div>
@@ -839,9 +839,9 @@ function ClientsStrip({
         ) : (
           <ChevronRight size={13} className="text-text-muted flex-shrink-0" />
         )}
-        <MonitorSmartphone size={13} className="text-text-muted/70 flex-shrink-0" aria-hidden="true" />
+        <MonitorSmartphone size={13} className="text-text-muted flex-shrink-0" aria-hidden="true" />
         <span className="text-xs text-text-muted uppercase tracking-wider">Clients</span>
-        <span className="text-2xs text-text-muted/80 truncate">{summary}</span>
+        <span className="text-2xs text-text-muted truncate">{summary}</span>
         {needsAttention && !expanded && (
           <span className="flex-shrink-0 text-3xs font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending">
             Needs attention
@@ -1407,7 +1407,7 @@ function CompiledCaptureActions({
             onChange={(e) => setNewName(e.target.value)}
             placeholder="captured-from-client"
             aria-label="New capture fragment name"
-            className="flex-1 min-w-32 bg-background/60 border border-border/40 rounded-lg px-2 py-1.5 text-2xs font-mono text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50"
+            className="flex-1 min-w-32 bg-background/60 border border-border/40 rounded-lg px-2 py-1.5 text-2xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50"
           />
         )}
       </div>
@@ -1497,7 +1497,7 @@ function SplitIntoFragmentsDialog({ dirty, onClose }: { dirty: boolean; onClose:
           onKeyDown={(e) => e.key === 'Enter' && void handleCreate()}
           placeholder="10-style"
           aria-label="New fragment name"
-          className="bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50"
+          className="bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50"
         />
         {name && !valid && (
           <p className="text-2xs text-status-error">
@@ -1913,7 +1913,7 @@ function FragmentsView({
                   onScroll={handleEditorScroll}
                   aria-label={`Fragment ${current.name}`}
                   placeholder={'---\ndescription: what this rule covers\npaths:\n  - "**/*.go"\n---\n\n# Rules\n'}
-                  className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted/30 resize-none leading-relaxed"
+                  className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted resize-none leading-relaxed"
                   spellCheck={false}
                 />
               </div>
@@ -2074,7 +2074,7 @@ function FragmentRail({
         <button
           onClick={() => setShowNew((s) => !s)}
           disabled={!canAdd}
-          className="text-3xs text-primary hover:text-primary/80 flex items-center gap-0.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="text-3xs text-primary hover:text-primary-light flex items-center gap-0.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Plus size={10} /> Add
         </button>
@@ -2087,7 +2087,7 @@ function FragmentRail({
             onKeyDown={(e) => e.key === 'Enter' && submitNew()}
             placeholder="10-style"
             aria-label="New fragment name"
-            className="flex-1 min-w-0 bg-background/60 border border-border/40 rounded px-2 py-1 text-3xs font-mono text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-primary/50"
+            className="flex-1 min-w-0 bg-background/60 border border-border/40 rounded px-2 py-1 text-3xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50"
           />
           <button
             onClick={submitNew}
@@ -2115,7 +2115,7 @@ function FragmentRail({
             >
               <File
                 size={10}
-                className={cn('flex-shrink-0', selected === f.name ? 'text-primary/70' : 'text-text-muted')}
+                className={cn('flex-shrink-0', selected === f.name ? 'text-primary' : 'text-text-muted')}
               />
               <button
                 onClick={() => onSelect(f.name)}

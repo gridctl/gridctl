@@ -28,9 +28,9 @@ export function GroupsPanel({ isOpen, onClose, report, toolCatalog }: GroupsPane
     <Modal isOpen={isOpen} onClose={onClose} title="Tool groups" size="wide">
       {groups.length === 0 ? (
         <div className="py-10 text-center space-y-2">
-          <Boxes size={24} className="mx-auto text-text-muted/30" aria-hidden="true" />
+          <Boxes size={24} className="mx-auto text-text-muted" aria-hidden="true" />
           <p className="text-xs text-text-muted">No tool groups configured.</p>
-          <p className="text-2xs text-text-muted/70">
+          <p className="text-2xs text-text-muted">
             Declare a <span className="font-mono text-text-secondary">groups:</span> block in
             stack.yaml to serve curated tool bundles at their own endpoints.
           </p>
@@ -90,7 +90,7 @@ function GroupDetail({ group, toolCatalog }: { group: GroupStatus; toolCatalog: 
         {group.description && (
           <p className="text-2xs text-text-muted mt-1">{group.description}</p>
         )}
-        <p className="text-3xs text-text-muted/70 mt-1">
+        <p className="text-3xs text-text-muted mt-1">
           Link a client:{' '}
           <span className="font-mono text-text-secondary">
             gridctl link &lt;client&gt; --group {group.name}
@@ -103,7 +103,7 @@ function GroupDetail({ group, toolCatalog }: { group: GroupStatus; toolCatalog: 
           <MemberRow key={m.canonical} member={m} toolCatalog={toolCatalog} />
         ))}
         {group.members.length === 0 && (
-          <li className="text-2xs text-text-muted/70 italic py-3">
+          <li className="text-2xs text-text-muted italic py-3">
             No live tools resolve into this group yet. Members appear once their servers
             connect.
           </li>
@@ -152,7 +152,7 @@ function MemberRow({ member, toolCatalog }: { member: GroupToolStatus; toolCatal
       {member.description && (
         <p className="text-2xs text-text-secondary mt-1.5 leading-relaxed">
           {member.rewritten && (
-            <span className="text-3xs uppercase tracking-wider text-primary/80 mr-1.5">
+            <span className="text-3xs uppercase tracking-wider text-primary mr-1.5">
               rewritten
             </span>
           )}
@@ -160,7 +160,7 @@ function MemberRow({ member, toolCatalog }: { member: GroupToolStatus; toolCatal
         </p>
       )}
       {original && original !== member.description && (
-        <p className="text-3xs text-text-muted/70 mt-1 leading-relaxed">
+        <p className="text-3xs text-text-muted mt-1 leading-relaxed">
           <span className="text-3xs uppercase tracking-wider mr-1.5">original</span>
           {original}
         </p>

@@ -146,7 +146,7 @@ export function LogFilterBar({
           aria-label="View options"
           className="absolute right-0 top-full mt-1 w-56 p-2"
         >
-            <div className="px-1 py-1 text-3xs uppercase tracking-[0.18em] text-text-muted/70">
+            <div className="px-1 py-1 text-3xs uppercase tracking-[0.18em] text-text-muted">
               View options
             </div>
             {onWindowSizeChange && (

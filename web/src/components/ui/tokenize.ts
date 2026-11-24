@@ -118,7 +118,7 @@ function highlightYAMLLine(line: string): HighlightedToken[] {
   const tokens: HighlightedToken[] = [];
 
   if (line.trimStart().startsWith('#')) {
-    return [{ text: line, className: 'text-text-muted/60 italic' }];
+    return [{ text: line, className: 'text-text-muted italic' }];
   }
 
   const kvMatch = line.match(/^(\s*)([\w.-]+)(:)(.*)/);

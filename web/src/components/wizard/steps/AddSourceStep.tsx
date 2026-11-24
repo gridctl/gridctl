@@ -184,7 +184,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
             Repository URL
           </label>
           <div className="relative">
-            <FolderGit2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted/50" />
+            <FolderGit2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
             <input
               ref={urlInputRef}
               id={`${fieldId}-url`}
@@ -200,7 +200,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
               placeholder="https://github.com/owner/repo"
               className={cn(
                 'w-full bg-background/60 border rounded-lg pl-9 pr-3 py-2.5 text-xs',
-                'text-text-primary placeholder:text-text-muted/50 transition-colors',
+                'text-text-primary placeholder:text-text-muted transition-colors',
                 error
                   ? 'border-status-error/40 focus:border-status-error/60'
                   : 'border-border/40 focus:border-primary/50',
@@ -220,8 +220,8 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
           {/* Repo info badge */}
           {repoInfo && !error && (
             <div className="flex items-center gap-1.5 text-text-muted text-3xs">
-              <GitBranch size={10} className="text-primary/60" />
-              <span className="text-primary/80 font-medium">{repoInfo.owner}/{repoInfo.repo}</span>
+              <GitBranch size={10} className="text-primary" />
+              <span className="text-primary font-medium">{repoInfo.owner}/{repoInfo.repo}</span>
             </div>
           )}
         </div>
@@ -238,7 +238,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
               value={ref}
               onChange={(e) => setRef(e.target.value)}
               placeholder="main, v1.0, ^1.2"
-              className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
+              className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors"
             />
           </div>
           <div className="space-y-1">
@@ -251,7 +251,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
               value={path}
               onChange={(e) => setPath(e.target.value)}
               placeholder="skills/"
-              className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
+              className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors"
             />
           </div>
         </div>
@@ -360,7 +360,7 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
                       )}
                     </div>
                   </div>
-                  <ExternalLink size={12} className="text-text-muted/40 group-hover:text-text-muted/80 transition-colors flex-shrink-0" />
+                  <ExternalLink size={12} className="text-text-muted group-hover:text-text-secondary transition-colors flex-shrink-0" />
                 </button>
               );
             })}

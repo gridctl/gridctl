@@ -32,7 +32,7 @@ export function SavingsCard({
   const actionable = findings.filter((f) => f.severity !== 'info');
   if (actionable.length === 0) {
     return (
-      <p className="text-2xs text-text-muted/70 line-clamp-1" title={findings[0].summary}>
+      <p className="text-2xs text-text-muted line-clamp-1" title={findings[0].summary}>
         Optimize: {findings[0].summary}
       </p>
     );
@@ -90,7 +90,7 @@ export function SavingsCard({
       </ul>
       {/* When the list is capped, say where the rest live. */}
       {hiddenCount > 0 && (
-        <p className="px-3.5 pb-2 text-3xs text-text-muted/70">
+        <p className="px-3.5 pb-2 text-3xs text-text-muted">
           +{hiddenCount} more in the gateway sidebar's Optimize section.
         </p>
       )}

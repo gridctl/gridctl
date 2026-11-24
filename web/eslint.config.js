@@ -19,6 +19,21 @@ const RAW_PALETTE_MESSAGE =
   'Raw Tailwind palette class. These do not re-key per theme and break the light theme. ' +
   'Use a semantic token instead (text-status-pending, bg-primary, border-status-error, …).'
 
+// A slash modifier on a text token blends the text into its surface and drops
+// it below WCAG AA. The only exemption is a decorative icon that carries
+// aria-hidden on the same element.
+const TEXT_OPACITY =
+  String.raw`/(?<![\w-])(?:[\w\[\]&>*.-]+:)*text-(?:text-(?:muted|secondary|primary)|primary)\/\d+/`
+
+const ARIA_HIDDEN_CLASSNAME =
+  'JSXOpeningElement:has(> JSXAttribute[name.name="aria-hidden"]' +
+  ':not([value.value="false"]):not([value.expression.value=false]))' +
+  ' > JSXAttribute[name.name="className"] *'
+
+const TEXT_OPACITY_MESSAGE =
+  'Opacity modifier on a text token. Use text-text-muted, text-text-secondary, or text-primary at full opacity. ' +
+  'The modifier is allowed only on a decorative icon with aria-hidden on the same element.'
+
 export default defineConfig([
   globalIgnores(['dist', 'coverage']),
   {
@@ -30,6 +45,8 @@ export default defineConfig([
         'error',
         { selector: `Literal[value=${RAW_PALETTE}]`, message: RAW_PALETTE_MESSAGE },
         { selector: `TemplateElement[value.raw=${RAW_PALETTE}]`, message: RAW_PALETTE_MESSAGE },
+        { selector: `Literal[value=${TEXT_OPACITY}]:not(${ARIA_HIDDEN_CLASSNAME})`, message: TEXT_OPACITY_MESSAGE },
+        { selector: `TemplateElement[value.raw=${TEXT_OPACITY}]:not(${ARIA_HIDDEN_CLASSNAME})`, message: TEXT_OPACITY_MESSAGE },
       ],
     },
   },

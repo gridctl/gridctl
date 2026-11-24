@@ -43,7 +43,7 @@ export function LibraryKindSwitch({
             'px-2 py-1 rounded-md text-3xs uppercase tracking-[0.25em] font-medium transition-colors border inline-flex items-center gap-1.5',
             kind === opt.key
               ? 'bg-primary/10 text-primary border-primary/25'
-              : 'text-text-muted/60 hover:text-text-secondary hover:bg-surface-highlight border-transparent',
+              : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight border-transparent',
           )}
         >
           {opt.label}

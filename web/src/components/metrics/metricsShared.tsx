@@ -43,14 +43,14 @@ export function SavingsKPICard({ savingsPercent, savedTokens }: { savingsPercent
   return (
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
       <span className="text-3xs text-text-muted uppercase tracking-wider flex items-center gap-1 mb-1">
-        <Recycle size={10} className="text-text-muted/70" />
-        Format Savings <span className="text-text-muted/50 normal-case tracking-normal">· session</span>
+        <Recycle size={10} className="text-text-muted" />
+        Format Savings <span className="text-text-muted normal-case tracking-normal">· session</span>
       </span>
       <span className={cn('text-lg font-bold tabular-nums', hasSavings ? 'text-status-running' : 'text-text-muted')}>
         {hasSavings ? `${Math.round(savingsPercent)}%` : '—'}
       </span>
       {hasSavings && (
-        <span className="block mt-1 text-3xs leading-snug text-text-muted/60">
+        <span className="block mt-1 text-3xs leading-snug text-text-muted">
           {formatCompactNumber(savedTokens)} tokens saved by output-format conversion
         </span>
       )}
@@ -79,7 +79,7 @@ export function MetricsKpiRow({
 }) {
   return (
     <div className="space-y-1.5">
-      <span className="block text-3xs uppercase tracking-[0.18em] text-text-muted/70">{windowLabel}</span>
+      <span className="block text-3xs uppercase tracking-[0.18em] text-text-muted">{windowLabel}</span>
       <div className="grid gap-3 grid-cols-4">
         <KPICard label="Input Tokens" value={windowTotals.input} colorClass="text-secondary" />
         <KPICard label="Output Tokens" value={windowTotals.output} colorClass="text-primary" />
@@ -108,7 +108,7 @@ export function WindowEmptyNote({
 }) {
   if (!loaded || !windowTotals.isEmpty || sessionTotal === 0) return null;
   return (
-    <p className="text-2xs text-text-muted/70">
+    <p className="text-2xs text-text-muted">
       No activity in this window. The session line above covers the full recorded history.
     </p>
   );
@@ -293,7 +293,7 @@ export function SortableHeader({
     >
       <span className="inline-flex items-center gap-1">
         {label}
-        <SortIcon size={10} className={isActive ? 'text-primary' : 'text-text-muted/40'} />
+        <SortIcon size={10} className={isActive ? 'text-primary' : 'text-text-muted'} />
       </span>
     </th>
   );
@@ -390,8 +390,8 @@ export function BreakdownTable({
               <td className="px-3 py-2 font-medium text-text-primary font-mono">
                 {row.server && row.tool ? (
                   <>
-                    <span className="text-text-muted/70">{row.server}</span>
-                    <span className="text-text-muted/50" aria-hidden="true">{' › '}</span>
+                    <span className="text-text-muted">{row.server}</span>
+                    <span className="text-text-muted" aria-hidden="true">{' › '}</span>
                     {row.tool}
                   </>
                 ) : (

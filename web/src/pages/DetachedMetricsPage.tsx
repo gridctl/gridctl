@@ -167,9 +167,9 @@ function DetachedMetricsPageContent() {
 
         {showContent && !hasData && (
           <div className="flex flex-col items-center justify-center h-full text-text-muted gap-2">
-            <BarChart3 size={32} className="text-text-muted/30" />
+            <BarChart3 size={32} className="text-text-muted" />
             <span className="text-sm">No token data yet</span>
-            <span className="text-xs text-text-muted/60">Metrics will appear after tool calls</span>
+            <span className="text-xs text-text-muted">Metrics will appear after tool calls</span>
           </div>
         )}
 

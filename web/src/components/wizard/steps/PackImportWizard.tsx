@@ -223,7 +223,7 @@ export function PackImportWizard() {
             onKeyDown={(e) => e.key === 'Enter' && void handlePreview()}
             placeholder="https://github.com/acme/team-pack"
             aria-label="Pack repository URL"
-            className="bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50"
+            className="bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50"
           />
         </label>
         <div className="flex gap-3">
@@ -234,7 +234,7 @@ export function PackImportWizard() {
               onChange={(e) => setRef(e.target.value)}
               placeholder="main"
               aria-label="Git ref"
-              className="bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50"
+              className="bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50"
             />
           </label>
           <label className="flex flex-col gap-1 text-xs text-text-muted flex-1">
@@ -244,7 +244,7 @@ export function PackImportWizard() {
               onChange={(e) => setPath(e.target.value)}
               placeholder="subdir"
               aria-label="Repository subdirectory"
-              className="bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-primary/50"
+              className="bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50"
             />
           </label>
         </div>

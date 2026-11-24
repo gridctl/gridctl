@@ -65,7 +65,7 @@ export const AgentCard = memo(({ agent, statuses, onSelect, onEdit, onDelete, is
       >
         <div className="flex items-start gap-2">
           <div className="p-1.5 rounded-md border bg-surface-highlight/60 border-border/40 flex-shrink-0 mt-0.5 transition-colors duration-200 group-hover:bg-primary/10 group-hover:border-primary/20 group-focus-within:bg-primary/10 group-focus-within:border-primary/20">
-            <Bot size={14} className="text-text-muted transition-colors duration-200 group-hover:text-primary/70 group-focus-within:text-primary/70" />
+            <Bot size={14} className="text-text-muted transition-colors duration-200 group-hover:text-primary group-focus-within:text-primary" />
           </div>
           <span className="font-semibold log-text text-text-primary truncate flex-1 min-w-0 leading-tight mt-0.5">
             {agent.name}
@@ -74,7 +74,7 @@ export const AgentCard = memo(({ agent, statuses, onSelect, onEdit, onDelete, is
             <span
               title={`Imported from source ${agent.source}`}
               aria-label={`Imported from source ${agent.source}`}
-              className="flex-shrink-0 inline-flex items-center text-text-muted/50 transition-colors group-hover:text-text-muted/80 mt-0.5"
+              className="flex-shrink-0 inline-flex items-center text-text-muted transition-colors group-hover:text-text-secondary mt-0.5"
             >
               <GitBranch size={12} />
             </span>
@@ -85,7 +85,7 @@ export const AgentCard = memo(({ agent, statuses, onSelect, onEdit, onDelete, is
 
         <p className={cn(
           'log-text leading-relaxed line-clamp-2',
-          agent.description ? 'text-text-secondary' : 'text-text-muted/40 italic',
+          agent.description ? 'text-text-secondary' : 'text-text-muted italic',
         )}>
           {agent.description || 'No description'}
         </p>
@@ -95,14 +95,14 @@ export const AgentCard = memo(({ agent, statuses, onSelect, onEdit, onDelete, is
             at narrow card widths. */}
         <div className="flex items-center gap-1 flex-wrap min-h-4" data-testid="agent-projection-summary">
           {statuses.length === 0 ? (
-            <span className="log-text-detail text-text-muted/60">Not projected yet</span>
+            <span className="log-text-detail text-text-muted">Not projected yet</span>
           ) : (
             statuses.map((s) => (
               <span key={s.client} className="inline-flex items-center gap-1" title={`${agentClientName(s.client)}: ${s.state} (${s.render} render)`}>
                 <StatePill state={s.state} className="px-1.5" />
                 <span className="log-text-detail text-text-muted">{agentClientName(s.client)}</span>
                 {s.render === 'lossy' && (
-                  <span className="log-text-detail text-text-muted/60 font-mono">lossy</span>
+                  <span className="log-text-detail text-text-muted font-mono">lossy</span>
                 )}
               </span>
             ))

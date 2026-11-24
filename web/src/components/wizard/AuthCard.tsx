@@ -59,7 +59,7 @@ export function AuthCard({ controller, ssh }: AuthCardProps) {
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-2 px-3 py-2 text-2xs text-text-secondary hover:text-text-primary transition-colors"
       >
-        <ShieldCheck size={12} className="text-primary/70" />
+        <ShieldCheck size={12} className="text-primary" />
         <span className="font-medium">Authentication</span>
         <span className="text-text-muted text-3xs">
           {ssh ? '— using ssh-agent' : open ? '' : '(optional)'}
@@ -160,7 +160,7 @@ export function AuthCard({ controller, ssh }: AuthCardProps) {
                       data-1p-ignore
                       data-lpignore="true"
                       data-bwignore
-                      className="w-full bg-background/60 border border-border/40 rounded-md pl-2 pr-8 py-1.5 text-2xs font-mono focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
+                      className="w-full bg-background/60 border border-border/40 rounded-md pl-2 pr-8 py-1.5 text-2xs font-mono focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors"
                     />
                     <button
                       type="button"

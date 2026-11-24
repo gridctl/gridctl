@@ -91,7 +91,7 @@ export function ToolDetailPanel({
             }
             subtitle={
               <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                <span className="text-3xs font-mono text-primary/80 truncate">{serverName}</span>
+                <span className="text-3xs font-mono text-primary truncate">{serverName}</span>
                 <span
                   className={cn(
                     'text-3xs font-mono px-1.5 py-0.5 rounded',
@@ -119,7 +119,7 @@ export function ToolDetailPanel({
                   {tool.description}
                 </p>
               ) : (
-                <p className="text-2xs text-text-muted/70 italic">No description available.</p>
+                <p className="text-2xs text-text-muted italic">No description available.</p>
               )}
             </Section>
 
@@ -133,7 +133,7 @@ export function ToolDetailPanel({
                   className="rounded-md border border-border/30 bg-background/80 max-h-[45vh]"
                 />
               ) : (
-                <p className="text-2xs text-text-muted/70 italic">No input schema available.</p>
+                <p className="text-2xs text-text-muted italic">No input schema available.</p>
               )}
             </Section>
 
@@ -159,7 +159,7 @@ export function ToolDetailPanel({
                       />
                       <span>{AUDIT_LABEL[auditState].label}</span>
                       {auditState !== 'disabled' && (
-                        <span className="text-text-muted/70">· {formatLastUsed(lastCalledAt)}</span>
+                        <span className="text-text-muted">· {formatLastUsed(lastCalledAt)}</span>
                       )}
                     </div>
                   )}
@@ -191,7 +191,7 @@ function HintsBlock({ annotations }: { annotations?: ToolRow['annotations'] }) {
   const chips = annotationChips(annotations);
   if (chips.length === 0) {
     return (
-      <p className="text-2xs text-text-muted/70 leading-relaxed">
+      <p className="text-2xs text-text-muted leading-relaxed">
         No annotations declared. Per the MCP spec, undeclared tools are treated as
         potentially destructive and open-world.
       </p>
@@ -214,7 +214,7 @@ function HintsBlock({ annotations }: { annotations?: ToolRow['annotations'] }) {
           </li>
         ))}
       </ul>
-      <p className="text-3xs text-text-muted/70 italic">
+      <p className="text-3xs text-text-muted italic">
         Reported by the server, not verified by gridctl.
       </p>
     </div>
@@ -246,7 +246,7 @@ function PolicyBlock({ policy }: { policy?: PolicyToolStatus }) {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-2">
-      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">{title}</h3>
+      <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted">{title}</h3>
       {children}
     </section>
   );
@@ -257,7 +257,7 @@ function ToolDetailEmpty() {
     <div className="h-full flex items-center justify-center px-6 text-center">
       <div className="space-y-3">
         <div className="mx-auto w-12 h-12 rounded-2xl bg-surface-highlight/40 border border-border/40 flex items-center justify-center">
-          <Wrench size={20} className="text-text-muted/60" aria-hidden="true" />
+          <Wrench size={20} className="text-text-muted" aria-hidden="true" />
         </div>
         <p className="text-xs text-text-muted leading-relaxed max-w-[220px]">
           Select a tool to view its description and input schema.

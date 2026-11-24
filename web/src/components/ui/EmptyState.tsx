@@ -7,7 +7,7 @@ import { Button } from './Button';
 type EmptyTone = 'muted' | 'primary' | 'secondary' | 'tertiary' | 'error';
 
 const ICON_BG: Record<EmptyTone, string> = {
-  muted: 'bg-surface-elevated/50 border-border/30 text-text-muted/50',
+  muted: 'bg-surface-elevated/50 border-border/30 text-text-muted',
   primary: 'bg-primary/10 border-primary/20 text-primary',
   secondary: 'bg-secondary/10 border-secondary/20 text-secondary',
   tertiary: 'bg-tertiary/10 border-tertiary/20 text-tertiary',

@@ -38,7 +38,7 @@ export function CodeViewer({
               const lineNum = idx + 1;
               return (
                 <tr key={lineNum} className="group">
-                  <td className="w-12 pr-3 text-right text-text-muted/40 select-none align-top py-px">
+                  <td className="w-12 pr-3 text-right text-text-muted select-none align-top py-px">
                     {lineNum}
                   </td>
                   <td

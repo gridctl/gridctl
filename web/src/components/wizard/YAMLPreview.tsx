@@ -21,7 +21,7 @@ function highlightYAML(yaml: string): Array<{ lineNum: number; html: string }> {
       // Quoted strings (must run before key regex to avoid matching HTML class names)
       .replace(/"([^"]*)"/, '<span class="text-status-running">"$1"</span>')
       // Comments
-      .replace(/(#.*)$/, '<span class="text-text-muted/50 italic">$1</span>')
+      .replace(/(#.*)$/, '<span class="text-text-muted italic">$1</span>')
       // Keys (word followed by colon)
       .replace(/^(\s*)([\w][\w.-]*)(:)/, '$1<span class="text-secondary">$2</span><span class="text-text-muted">$3</span>')
       // Array items
@@ -121,7 +121,7 @@ export function YAMLPreview({ yaml, resourceType, className }: YAMLPreviewProps)
           <div className="font-mono text-2xs leading-[1.7]">
             {lines.map(({ lineNum, html }) => (
               <div key={lineNum} className="flex group hover:bg-surface-overlay-1">
-                <span className="w-8 flex-shrink-0 text-right pr-3 text-text-muted/40 select-none text-3xs leading-[1.87]">
+                <span className="w-8 flex-shrink-0 text-right pr-3 text-text-muted select-none text-3xs leading-[1.87]">
                   {lineNum}
                 </span>
                 <span
@@ -132,7 +132,7 @@ export function YAMLPreview({ yaml, resourceType, className }: YAMLPreviewProps)
             ))}
           </div>
         ) : (
-          <div className="flex items-center justify-center h-full text-text-muted/50 text-xs">
+          <div className="flex items-center justify-center h-full text-text-muted text-xs">
             Fill out the form to see a live YAML preview
           </div>
         )}

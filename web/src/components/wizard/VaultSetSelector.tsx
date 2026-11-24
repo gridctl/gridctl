@@ -153,7 +153,7 @@ export function VaultSetSelector({ value, onChange }: VaultSetSelectorProps) {
             placeholder="Filter sets..."
             aria-label="Filter variable sets"
             autoFocus
-            className="w-full bg-background/60 border border-border/40 rounded-lg pl-7 pr-3 py-1.5 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted/50 transition-colors"
+            className="w-full bg-background/60 border border-border/40 rounded-lg pl-7 pr-3 py-1.5 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors"
           />
         </div>
       </div>
@@ -204,7 +204,7 @@ export function VaultSetSelector({ value, onChange }: VaultSetSelectorProps) {
         </button>
       </div>
       {value.length === 0 && (
-        <p className="text-3xs text-text-muted/60 italic py-2">
+        <p className="text-3xs text-text-muted italic py-2">
           No secret sets referenced
         </p>
       )}

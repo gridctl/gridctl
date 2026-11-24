@@ -881,7 +881,7 @@ function ExpertEditor({
           'w-full flex-1 min-h-0 font-mono text-2xs leading-[1.7] resize-none',
           'bg-background/40 border rounded-xl px-4 py-3',
           'focus:outline-none focus:border-primary/50 text-text-primary',
-          'placeholder:text-text-muted/50 scrollbar-dark transition-colors',
+          'placeholder:text-text-muted scrollbar-dark transition-colors',
           error ? 'border-status-error/30' : 'border-border/40',
         )}
         placeholder="# Enter your YAML here..."

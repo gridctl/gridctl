@@ -103,12 +103,12 @@ export function StatusBar() {
             <Server size={11} className="text-primary" />
             <span>
               <span className="text-status-running font-semibold">{runningServers}</span>
-              <span className="text-text-muted/60">/{(mcpServers ?? []).length}</span>
+              <span className="text-text-muted">/{(mcpServers ?? []).length}</span>
               <span className="ml-1">MCP servers</span>
             </span>
             {unhealthyServers > 0 && (
               <>
-                <span className="text-text-muted/60 mx-0.5">&middot;</span>
+                <span className="text-text-muted mx-0.5">&middot;</span>
                 <span className="text-status-error font-semibold">{unhealthyServers}</span>
                 <span className="ml-0.5">err</span>
               </>
@@ -122,7 +122,7 @@ export function StatusBar() {
             <Box size={11} className="text-secondary" />
             <span>
               <span className="text-secondary font-semibold">{runningResources}</span>
-              <span className="text-text-muted/60">/{(resources ?? []).length}</span>
+              <span className="text-text-muted">/{(resources ?? []).length}</span>
               <span className="ml-1">Resources</span>
             </span>
           </div>
@@ -196,7 +196,7 @@ export function StatusBar() {
         {/* Tokenizer mode indicator */}
         {tokenizerName && (
           <div className="flex items-center gap-2 h-full text-text-muted max-[800px]:hidden">
-            <span className="text-text-muted/60 font-medium">{tokenizerName}</span>
+            <span className="text-text-muted font-medium">{tokenizerName}</span>
           </div>
         )}
 
@@ -229,7 +229,7 @@ function StatusFreshness() {
 
   return (
     <div className="flex items-center gap-2 h-full ml-auto text-text-muted">
-      <Clock size={11} aria-hidden="true" className={stale ? 'text-status-pending' : 'text-text-muted/60'} />
+      <Clock size={11} aria-hidden="true" className={stale ? 'text-status-pending' : 'text-text-muted'} />
       <span className={cn(stale && 'text-status-pending')}>
         {stale ? 'Last updated' : 'Updated'} {formatRelativeTime(lastUpdated)}
       </span>

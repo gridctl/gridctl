@@ -73,7 +73,7 @@ export function ConsumerList({
             e.stopPropagation();
             onToggleShowAll?.();
           }}
-          className="px-2 py-0.5 text-3xs text-primary hover:text-primary/80 transition-colors"
+          className="px-2 py-0.5 text-3xs text-primary hover:text-primary-light transition-colors"
         >
           {showAll ? 'Show less' : `See all ${entries.length}`}
         </button>

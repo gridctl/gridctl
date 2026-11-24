@@ -256,7 +256,7 @@ export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
             {!isLoading && !hasPacks && (
               <div className="h-full flex flex-col items-center justify-center text-text-muted gap-3 animate-fade-in-scale p-8 text-center">
                 <div className="p-4 rounded-xl bg-surface-elevated/50 border border-border/30">
-                  <Package size={32} className="text-text-muted/50" />
+                  <Package size={32} className="text-text-muted" />
                 </div>
                 <span className="text-sm text-text-secondary">No packs imported</span>
                 <span className="text-2xs text-text-muted max-w-md">
@@ -270,7 +270,7 @@ export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleImport}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
                   >
                     <Download size={12} /> Import from git
                   </button>
@@ -337,7 +337,7 @@ function PackCard({
         )}
       >
         <div className="flex items-center gap-2">
-          <Package size={14} className={attention ? 'text-status-pending' : 'text-text-muted/70'} aria-hidden="true" />
+          <Package size={14} className={attention ? 'text-status-pending' : 'text-text-muted'} aria-hidden="true" />
           <span className="text-sm font-medium text-text-primary">{p.name}</span>
           {p.version && <span className="text-3xs font-mono text-text-muted">v{p.version}</span>}
           <span className="flex-1" />
@@ -360,7 +360,7 @@ function PackCard({
         {p.description && (
           <p className="text-2xs text-text-muted mt-1 line-clamp-2">{p.description}</p>
         )}
-        <div className="flex items-center gap-2 mt-1.5 text-3xs text-text-muted/80 font-mono">
+        <div className="flex items-center gap-2 mt-1.5 text-3xs text-text-muted font-mono">
           <span>{counts.length ? counts.join(' · ') : 'empty selection'}</span>
           {(p.unresolved ?? []).length > 0 && (
             <span className="text-status-pending">{(p.unresolved ?? []).length} unresolved</span>

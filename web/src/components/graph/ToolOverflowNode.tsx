@@ -137,7 +137,7 @@ const ToolOverflowNode = memo(({ data }: ToolOverflowNodeProps) => {
                         {on && <Check size={8} className="text-background" aria-hidden="true" />}
                       </span>
                     ) : (
-                      <Wrench size={10} className="text-text-secondary/80 flex-shrink-0" aria-hidden="true" />
+                      <Wrench size={10} className="text-text-secondary flex-shrink-0" aria-hidden="true" />
                     )}
                     <span className="tool-label min-w-0 flex-1 font-mono text-2xs text-text-secondary truncate" title={tool}>
                       {tool}

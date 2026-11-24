@@ -131,7 +131,7 @@ const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }
       )}
     >
       <div className="flex items-start gap-2 px-3 py-2 border-b border-border/40">
-        <Wrench size={12} className="text-primary/80 flex-shrink-0 mt-0.5" aria-hidden="true" />
+        <Wrench size={12} className="text-primary flex-shrink-0 mt-0.5" aria-hidden="true" />
         <span
           className="flex-1 min-w-0 font-mono text-2xs text-text-primary break-all"
           title={prefixedName}
@@ -153,13 +153,13 @@ const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }
 
       <div className="px-3 py-2.5 space-y-3 max-h-80 overflow-y-auto scrollbar-dark node-scroll nowheel">
         <section className="space-y-1">
-          <h4 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">Description</h4>
+          <h4 className="text-3xs uppercase tracking-[0.18em] text-text-muted">Description</h4>
           {entry?.description ? (
             <p className="text-2xs text-text-secondary leading-relaxed break-words whitespace-pre-wrap">
               {entry.description}
             </p>
           ) : (
-            <p className="text-3xs text-text-muted/70 italic">No description available.</p>
+            <p className="text-3xs text-text-muted italic">No description available.</p>
           )}
         </section>
 

@@ -33,7 +33,7 @@ export function SkillsRow({ activeSkills, totalSkills }: { activeSkills: number;
     >
       <div className="flex items-center gap-2.5">
         <div className="p-1.5 rounded-lg bg-surface-overlay-2 border border-border-subtle group-hover:bg-primary/15 group-hover:border-primary/20 transition-colors">
-          <Library size={12} className="text-text-secondary group-hover:text-primary/70 transition-colors" />
+          <Library size={12} className="text-text-secondary group-hover:text-primary transition-colors" />
         </div>
         <span className="text-xs text-text-secondary font-medium">Skills</span>
       </div>

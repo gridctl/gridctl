@@ -118,7 +118,7 @@ export function TracesWorkspace() {
             onSelect={selectTraces}
             className={cn(
               'font-sans text-3xs uppercase tracking-[0.4em] px-2 py-1 rounded border-b-0 border-transparent mb-0',
-              view === 'traces' ? 'text-primary' : 'text-text-muted/60',
+              view === 'traces' ? 'text-primary' : 'text-text-muted',
             )}
           >
             traces
@@ -130,7 +130,7 @@ export function TracesWorkspace() {
             onSelect={selectRuns}
             className={cn(
               'font-sans text-3xs uppercase tracking-[0.4em] px-2 py-1 rounded border-b-0 border-transparent mb-0',
-              view === 'runs' ? 'text-primary' : 'text-text-muted/60',
+              view === 'runs' ? 'text-primary' : 'text-text-muted',
             )}
           >
             runs

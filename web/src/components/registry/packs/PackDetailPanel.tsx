@@ -154,7 +154,7 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
   if (!name) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-text-muted gap-2 p-6 text-center">
-        <Package size={24} className="text-text-muted/40" />
+        <Package size={24} className="text-text-muted" />
         <span className="text-xs">Select a pack to inspect its resources.</span>
       </div>
     );
@@ -353,7 +353,7 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
 function PanelHeader({ name, onClose }: { name: string; onClose: () => void }) {
   return (
     <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/30 flex-shrink-0">
-      <Package size={14} className="text-text-muted/70" aria-hidden="true" />
+      <Package size={14} className="text-text-muted" aria-hidden="true" />
       <span className="text-sm font-medium text-text-primary truncate flex-1">{name}</span>
       <IconButton icon={X} onClick={onClose} tooltip="Close" size="sm" variant="ghost" />
     </div>
