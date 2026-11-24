@@ -84,6 +84,24 @@ const fragments: ContextFragment[] = [
   },
 ];
 
+// The backend scaffolds a new fragment as a heading with its name.
+const newFragment: ContextFragment = {
+  name: '20-testing',
+  content: '# 20-testing\n',
+  bytes: 13,
+  position: 3,
+};
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (err: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -180,11 +198,326 @@ describe('GlobalContextDialog fragments mode', () => {
     fireEvent.change(screen.getByLabelText('New fragment name'), {
       target: { value: '20-testing' },
     });
+    vi.mocked(fetchContextFragments).mockResolvedValueOnce({
+      active: true,
+      fragments: [...fragments, newFragment],
+    });
     fireEvent.click(screen.getByText('Create'));
 
     await waitFor(() => {
       expect(saveContextFragment).toHaveBeenCalledWith('20-testing', '');
     });
+    expect(await screen.findByLabelText('Fragment 20-testing')).toHaveValue('# 20-testing\n');
+    expect(screen.queryByLabelText('New fragment name')).not.toBeInTheDocument();
+  });
+
+  it('refuses to add a fragment while the current one has unsaved edits', async () => {
+    const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
+    vi.mocked(saveContextFragment).mockResolvedValue({ name: '00-default' });
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    const editor = await screen.findByLabelText('Fragment 00-default');
+
+    fireEvent.change(editor, { target: { value: '# Dirty\n' } });
+    fireEvent.click(screen.getByText('Add'));
+    fireEvent.change(screen.getByLabelText('New fragment name'), {
+      target: { value: '20-testing' },
+    });
+    fireEvent.click(screen.getByText('Create'));
+
+    await waitFor(() => {
+      expect(spy).toHaveBeenCalledWith(
+        'warning',
+        'Save or revert your changes before adding a fragment',
+      );
+    });
+    expect(saveContextFragment).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Dirty\n');
+    expect(screen.getByLabelText('New fragment name')).toHaveValue('20-testing');
+
+    fireEvent.click(screen.getByText('Save'));
+    await waitFor(() => {
+      expect(saveContextFragment).toHaveBeenCalledTimes(1);
+    });
+    expect(saveContextFragment).toHaveBeenCalledWith('00-default', '# Dirty\n');
+  });
+
+  it('never re-targets a draft when its fragment disappears on reload', async () => {
+    const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    const editor = await screen.findByLabelText('Fragment 00-default');
+
+    fireEvent.change(editor, { target: { value: '# Dirty\n' } });
+    vi.mocked(fetchContextFragments).mockResolvedValueOnce({
+      active: true,
+      fragments: [fragments[1]],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh status' }));
+
+    const other = await screen.findByLabelText('Fragment 10-style');
+    expect(other).toHaveValue(fragments[1].content);
+    expect(screen.queryByDisplayValue('# Dirty\n')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(saveContextFragment).not.toHaveBeenCalled();
+    expect(spy).toHaveBeenCalledWith(
+      'warning',
+      expect.stringContaining('removed outside the dialog'),
+    );
+  });
+
+  it('shows the saved text as clean before the reload returns', async () => {
+    vi.mocked(saveContextFragment).mockResolvedValue({ name: '00-default' });
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    const editor = await screen.findByLabelText('Fragment 00-default');
+
+    const reload = deferred<{ active: boolean; fragments: ContextFragment[] }>();
+    vi.mocked(fetchContextFragments).mockReturnValueOnce(reload.promise);
+    fireEvent.change(editor, { target: { value: '# Saved\n' } });
+    fireEvent.click(screen.getByText('Save'));
+
+    await waitFor(() => {
+      expect(saveContextFragment).toHaveBeenCalledWith('00-default', '# Saved\n');
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument();
+    });
+    expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Saved\n');
+    expect(screen.getByRole('button', { name: 'Revert' })).toBeDisabled();
+
+    reload.resolve({
+      active: true,
+      fragments: [{ ...fragments[0], content: '# Saved\n', bytes: 8 }, fragments[1]],
+    });
+    await waitFor(() => {
+      expect(fetchContextFragments).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Saved\n');
+    expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument();
+  });
+
+  it('keeps the saved text in the editor when the reload after a save fails', async () => {
+    vi.mocked(saveContextFragment).mockResolvedValue({ name: '00-default' });
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    const editor = await screen.findByLabelText('Fragment 00-default');
+
+    const reload = deferred<{ active: boolean; fragments: ContextFragment[] }>();
+    vi.mocked(fetchContextFragments).mockReturnValueOnce(reload.promise);
+    fireEvent.change(editor, { target: { value: '# Saved\n' } });
+    fireEvent.click(screen.getByText('Save'));
+    await waitFor(() => {
+      expect(saveContextFragment).toHaveBeenCalled();
+    });
+
+    reload.reject(new Error('offline'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Load fragments failed: offline.');
+    expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Saved\n');
+    expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument();
+  });
+
+  it('reverts a dirty fragment only after confirmation', async () => {
+    const onClose = vi.fn();
+    render(<GlobalContextDialog isOpen onClose={onClose} />);
+    const editor = await screen.findByLabelText('Fragment 00-default');
+
+    fireEvent.change(editor, { target: { value: '# Dirty\n' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Revert' }));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('00-default');
+    expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Dirty\n');
+
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Dirty\n');
+
+    // Escape closes only the Revert confirm, never the parent discard confirm.
+    fireEvent.click(screen.getByRole('button', { name: 'Revert' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Dirty\n');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Revert' }));
+    fireEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Revert "00-default"' }),
+    );
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Default rules\n');
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+
+    fireEvent.click(screen.getByText('10-style'));
+    expect(await screen.findByLabelText('Fragment 10-style')).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('disables Revert while the editor is clean', async () => {
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    await screen.findByLabelText('Fragment 00-default');
+    expect(screen.getByRole('button', { name: 'Revert' })).toBeDisabled();
+  });
+
+  it('names Revert in the switch-blocking toast', async () => {
+    const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    const editor = await screen.findByLabelText('Fragment 00-default');
+
+    fireEvent.change(editor, { target: { value: '# Dirty\n' } });
+    fireEvent.click(screen.getByText('10-style'));
+    expect(spy).toHaveBeenCalledWith(
+      'warning',
+      'Save or revert your changes before switching fragments',
+    );
+  });
+
+  it('does not steal the selection when typing starts during a create', async () => {
+    const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
+    const create = deferred<{ name: string }>();
+    vi.mocked(saveContextFragment).mockReturnValueOnce(create.promise);
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    const editor = await screen.findByLabelText('Fragment 00-default');
+
+    fireEvent.click(screen.getByText('Add'));
+    fireEvent.change(screen.getByLabelText('New fragment name'), {
+      target: { value: '20-testing' },
+    });
+    fireEvent.click(screen.getByText('Create'));
+    await waitFor(() => {
+      expect(saveContextFragment).toHaveBeenCalledWith('20-testing', '');
+    });
+
+    fireEvent.change(editor, { target: { value: '# Dirty\n' } });
+    vi.mocked(fetchContextFragments).mockResolvedValueOnce({
+      active: true,
+      fragments: [...fragments, newFragment],
+    });
+    create.resolve({ name: '20-testing' });
+
+    expect(await screen.findByText('20-testing')).toBeInTheDocument();
+    expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Dirty\n');
+    expect(screen.queryByLabelText('Fragment 20-testing')).not.toBeInTheDocument();
+    expect(spy).toHaveBeenCalledWith(
+      'success',
+      'Fragment "20-testing" created. Staying on "00-default" because it has unsaved changes.',
+    );
+  });
+
+  it('does not steal the selection when typing starts during the reload after a create', async () => {
+    const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
+    vi.mocked(saveContextFragment).mockResolvedValue({ name: '20-testing' });
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    const editor = await screen.findByLabelText('Fragment 00-default');
+
+    const reload = deferred<{ active: boolean; fragments: ContextFragment[] }>();
+    vi.mocked(fetchContextFragments).mockReturnValueOnce(reload.promise);
+    fireEvent.click(screen.getByText('Add'));
+    fireEvent.change(screen.getByLabelText('New fragment name'), {
+      target: { value: '20-testing' },
+    });
+    fireEvent.click(screen.getByText('Create'));
+    await waitFor(() => {
+      expect(fetchContextFragments).toHaveBeenCalledTimes(2);
+    });
+
+    fireEvent.change(editor, { target: { value: '# Dirty\n' } });
+    reload.resolve({ active: true, fragments: [...fragments, newFragment] });
+
+    expect(await screen.findByText('20-testing')).toBeInTheDocument();
+    expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Dirty\n');
+    expect(screen.queryByLabelText('Fragment 20-testing')).not.toBeInTheDocument();
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(spy).toHaveBeenCalledWith(
+        'success',
+        'Fragment "20-testing" created. Staying on "00-default" because it has unsaved changes.',
+      );
+    });
+  });
+
+  it('keeps a fragment switched to and edited during the reload after a save', async () => {
+    vi.mocked(saveContextFragment).mockResolvedValue({ name: '00-default' });
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    const editor = await screen.findByLabelText('Fragment 00-default');
+
+    const reload = deferred<{ active: boolean; fragments: ContextFragment[] }>();
+    vi.mocked(fetchContextFragments).mockReturnValueOnce(reload.promise);
+    fireEvent.change(editor, { target: { value: '# Saved\n' } });
+    fireEvent.click(screen.getByText('Save'));
+    await waitFor(() => {
+      expect(fetchContextFragments).toHaveBeenCalledTimes(2);
+    });
+
+    fireEvent.click(screen.getByText('10-style'));
+    const other = await screen.findByLabelText('Fragment 10-style');
+    fireEvent.change(other, { target: { value: 'Go style, edited.\n' } });
+    reload.resolve({
+      active: true,
+      fragments: [{ ...fragments[0], content: '# Saved\n', bytes: 8 }, fragments[1]],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText('Fragment 10-style')).toHaveValue('Go style, edited.\n');
+    expect(screen.queryByLabelText('Fragment 00-default')).not.toBeInTheDocument();
+  });
+
+  it('keeps text typed while a save is in flight as a draft of the same fragment', async () => {
+    const save = deferred<{ name: string }>();
+    vi.mocked(saveContextFragment)
+      .mockReturnValueOnce(save.promise)
+      .mockResolvedValue({ name: '00-default' });
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    const editor = await screen.findByLabelText('Fragment 00-default');
+
+    fireEvent.change(editor, { target: { value: '# First\n' } });
+    fireEvent.click(screen.getByText('Save'));
+    await waitFor(() => {
+      expect(saveContextFragment).toHaveBeenCalledWith('00-default', '# First\n');
+    });
+    fireEvent.change(editor, { target: { value: '# Second\n' } });
+    vi.mocked(fetchContextFragments).mockResolvedValueOnce({
+      active: true,
+      fragments: [{ ...fragments[0], content: '# First\n', bytes: 8 }, fragments[1]],
+    });
+    save.resolve({ name: '00-default' });
+
+    await waitFor(() => {
+      expect(fetchContextFragments).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled();
+    });
+    expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Second\n');
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Save'));
+    await waitFor(() => {
+      expect(saveContextFragment).toHaveBeenCalledTimes(2);
+    });
+    expect(saveContextFragment).toHaveBeenLastCalledWith('00-default', '# Second\n');
+  });
+
+  it('does not report an outside removal when the dirty fragment is deleted here', async () => {
+    const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
+    vi.mocked(deleteContextFragment).mockResolvedValue({ name: '00-default', backup: '/b' });
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    const editor = await screen.findByLabelText('Fragment 00-default');
+
+    fireEvent.change(editor, { target: { value: '# Dirty\n' } });
+    vi.mocked(fetchContextFragments).mockResolvedValueOnce({
+      active: true,
+      fragments: [fragments[1]],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove fragment 00-default' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove "00-default"' }));
+
+    await waitFor(() => {
+      expect(deleteContextFragment).toHaveBeenCalledWith('00-default');
+    });
+    expect(await screen.findByLabelText('Fragment 10-style')).toHaveValue(fragments[1].content);
+    await waitFor(() => {
+      expect(fetchContextFragments).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    const messages = spy.mock.calls.map((c) => String(c[1]));
+    expect(messages.some((m) => m.includes('outside the dialog'))).toBe(false);
   });
 
   it('deletes a fragment from the rail', async () => {

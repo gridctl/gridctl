@@ -1525,6 +1525,11 @@ function SplitIntoFragmentsDialog({ dirty, onClose }: { dirty: boolean; onClose:
   );
 }
 
+interface FragmentDraft {
+  name: string;
+  value: string;
+}
+
 /**
  * Fragments-mode surface: a left rail of rule fragments in composition
  * order (adapting SkillFileTree's grammar) feeding the same editor and
@@ -1547,7 +1552,13 @@ function FragmentsView({
   const [fragments, setFragments] = useState<ContextFragment[] | null>(null);
   const [fragmentsError, setFragmentsError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [draft, setDraft] = useState<string | null>(null);
+  // The draft carries the name of the fragment it was typed in, so a change
+  // of selection can never re-target unsaved text at another fragment. The
+  // refs mirror the latest values for decisions made after an await.
+  const [draft, setDraft] = useState<FragmentDraft | null>(null);
+  const draftRef = useRef<FragmentDraft | null>(null);
+  const fragmentsRef = useRef<ContextFragment[] | null>(null);
+  const [revertOpen, setRevertOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [driftTarget, setDriftTarget] = useState<{ slug: string; fragment: string | null } | null>(
@@ -1578,18 +1589,50 @@ function FragmentsView({
   const previewRef = useRef<HTMLDivElement>(null);
   const { ratio, containerRef, handlePointerDown, isDragging } = useSplitPane(0.5);
 
-  const loadFragments = useCallback(async (selectName?: string) => {
+  const commitDraft = useCallback((next: FragmentDraft | null) => {
+    draftRef.current = next;
+    setDraft(next);
+  }, []);
+
+  useEffect(() => {
+    fragmentsRef.current = fragments;
+  }, [fragments]);
+
+  // Resolves to the name of a fragment whose unsaved draft kept the
+  // selection in place of selectName, or null.
+  const loadFragments = useCallback(async (selectName?: string): Promise<string | null> => {
     try {
       const res = await fetchContextFragments();
       setFragments(res.fragments);
       setFragmentsError(null);
+      // A draft whose fragment is gone is dropped rather than applied to
+      // whichever fragment the fallback below selects.
+      const d = draftRef.current;
+      if (d && !res.fragments.some((f) => f.name === d.name)) {
+        const wasDirty = d.value !== fragmentsRef.current?.find((f) => f.name === d.name)?.content;
+        draftRef.current = null;
+        setDraft(null);
+        if (wasDirty) {
+          showToast(
+            'warning',
+            `Fragment "${d.name}" was removed outside the dialog. Its unsaved edits were discarded.`,
+          );
+        }
+      }
+      // Edits typed while this fetch was pending own the selection, so a
+      // requested switch cannot hide them from the dirty guards.
+      const live = draftRef.current;
+      const liveFragment = live ? res.fragments.find((f) => f.name === live.name) : undefined;
+      const held = live && liveFragment && live.value !== liveFragment.content ? live.name : null;
       setSelected((prev) => {
-        const want = selectName ?? prev;
+        const want = held ?? selectName ?? prev;
         if (want && res.fragments.some((f) => f.name === want)) return want;
         return res.fragments[0]?.name ?? null;
       });
+      return held !== null && selectName !== undefined && held !== selectName ? held : null;
     } catch (err) {
       if (!isCancellation(err)) setFragmentsError(describeError(err, 'Load fragments').text);
+      return null;
     }
   }, []);
 
@@ -1618,10 +1661,11 @@ function FragmentsView({
   }, []);
 
   const current = fragments?.find((f) => f.name === selected) ?? null;
-  const content = draft ?? current?.content ?? '';
+  const ownDraft = current !== null && draft !== null && draft.name === current.name ? draft : null;
+  const content = ownDraft?.value ?? current?.content ?? '';
   // Own deferred value: this editor is a separate component from the canonical view.
   const deferredContent = useDeferredValue(content);
-  const dirty = current !== null && draft !== null && draft !== current.content;
+  const dirty = current !== null && ownDraft !== null && ownDraft.value !== current.content;
   const markerIssue = RESERVED_MARKERS.find((m) => content.includes(m)) ?? null;
 
   useEffect(() => {
@@ -1630,9 +1674,9 @@ function FragmentsView({
   }, [dirty, onDirtyChange]);
 
   useEffect(() => {
-    onDeleteConfirmChange?.(pendingDelete !== null);
+    onDeleteConfirmChange?.(pendingDelete !== null || revertOpen);
     return () => onDeleteConfirmChange?.(false);
-  }, [pendingDelete, onDeleteConfirmChange]);
+  }, [pendingDelete, revertOpen, onDeleteConfirmChange]);
 
   const lineCount = content.split('\n').length;
   const charCount = content.length;
@@ -1644,24 +1688,24 @@ function FragmentsView({
     (name: string) => {
       if (name === selected) return;
       if (dirty) {
-        showToast('warning', 'Save or discard your changes before switching fragments');
+        showToast('warning', 'Save or revert your changes before switching fragments');
         return;
       }
       setSelected(name);
-      setDraft(null);
+      commitDraft(null);
     },
-    [selected, dirty],
+    [selected, dirty, commitDraft],
   );
 
   const handleSave = useCallback(async () => {
-    if (!dirty || draft === null || markerIssue || !current) return;
-    const toSave = draft;
+    if (!dirty || ownDraft === null || markerIssue) return;
+    const savedName = ownDraft.name;
+    const toSave = ownDraft.value;
     setSaving(true);
     try {
-      const saved = await saveContextFragment(current.name, toSave);
+      const saved = await saveContextFragment(savedName, toSave);
       // Patch the local list first so a failed reload below cannot show
       // the pre-save text as clean content.
-      const savedName = current.name;
       setFragments((prev) =>
         prev?.map((f) =>
           f.name === savedName
@@ -1669,14 +1713,17 @@ function FragmentsView({
             : f,
         ) ?? prev,
       );
-      setDraft((d) => (d === toSave ? null : d));
+      // Text typed while the PUT was in flight stays as the draft.
+      const latest = draftRef.current;
+      if (latest && latest.name === savedName && latest.value === toSave) commitDraft(null);
       showToast(
         'success',
         saved.pin_status === 'drift'
           ? 'Fragment saved. Run a sync to propagate. Pin drift: review and approve in Pins'
           : 'Fragment saved. Run a sync to propagate.',
       );
-      await loadFragments(current.name);
+      // No name: the user may have switched to another fragment meanwhile.
+      await loadFragments();
       await refresh();
     } catch (err) {
       if (!isCancellation(err)) {
@@ -1686,7 +1733,7 @@ function FragmentsView({
     } finally {
       setSaving(false);
     }
-  }, [dirty, draft, markerIssue, current, loadFragments, refresh]);
+  }, [dirty, ownDraft, markerIssue, commitDraft, loadFragments, refresh]);
 
   const handleSyncAll = useCallback(async () => {
     setSyncing(true);
@@ -1715,20 +1762,34 @@ function FragmentsView({
   }, [refresh]);
 
   const handleAdd = useCallback(
-    async (name: string) => {
+    async (name: string): Promise<boolean> => {
+      if (dirty) {
+        showToast('warning', 'Save or revert your changes before adding a fragment');
+        return false;
+      }
+      let created = false;
       try {
         await saveContextFragment(name, '');
-        showToast('success', `Fragment "${name}" created`);
-        await loadFragments(name);
+        created = true;
+        // Typing that started during the create or the reload keeps the
+        // selection on its fragment rather than switching to the new one.
+        const held = await loadFragments(name);
+        showToast(
+          'success',
+          held !== null
+            ? `Fragment "${name}" created. Staying on "${held}" because it has unsaved changes.`
+            : `Fragment "${name}" created`,
+        );
         await refresh();
       } catch (err) {
         if (!isCancellation(err)) {
-          const described = describeError(err, 'Create fragment');
+          const described = describeError(err, created ? 'Refresh' : 'Create fragment');
           showToast('error', described.text, { detail: described.fullDetail });
         }
       }
+      return created;
     },
-    [loadFragments, refresh],
+    [dirty, loadFragments, refresh],
   );
 
   const handleDelete = useCallback(
@@ -1736,7 +1797,9 @@ function FragmentsView({
       try {
         await deleteContextFragment(name);
         showToast('success', `Fragment "${name}" removed (backup saved). Run a sync to drop its projections.`);
-        if (name === selected) setDraft(null);
+        // Drop the draft before the reload so it is not reported as removed
+        // outside the dialog.
+        if (draftRef.current?.name === name) commitDraft(null);
         // Drop the entry locally so a failed reload below cannot leave the
         // removed fragment listed and editable.
         const remaining = fragments?.filter((f) => f.name !== name) ?? null;
@@ -1751,7 +1814,20 @@ function FragmentsView({
         }
       }
     },
-    [selected, fragments, loadFragments, refresh],
+    [selected, fragments, commitDraft, loadFragments, refresh],
+  );
+
+  const handleDriftResolved = useCallback(() => {
+    setDriftTarget(null);
+    void loadFragments();
+    void refresh();
+  }, [loadFragments, refresh]);
+
+  const editDraft = useCallback(
+    (value: string) => {
+      if (current) commitDraft({ name: current.name, value });
+    },
+    [current, commitDraft],
   );
 
   const handleKeyDown = useCallback(
@@ -1769,13 +1845,13 @@ function FragmentsView({
       const ta = bodyRef.current;
       if (!ta) return;
       const next = applyMarkdownAction(content, ta.selectionStart, ta.selectionEnd, action);
-      setDraft(next.value);
+      editDraft(next.value);
       requestAnimationFrame(() => {
         ta.focus();
         ta.setSelectionRange(next.selStart, next.selEnd);
       });
     },
-    [content],
+    [content, editDraft],
   );
 
   const handleEditorScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
@@ -1828,6 +1904,15 @@ function FragmentsView({
           >
             <CloudUpload size={12} aria-hidden="true" className={syncing ? 'animate-pulse' : undefined} />
             {syncing ? 'Syncing…' : 'Sync all'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setRevertOpen(true)}
+            disabled={!dirty || saving}
+            title="Discard unsaved changes to this fragment"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-text-secondary border border-border/40 hover:bg-surface-highlight/50 rounded-lg transition-colors disabled:opacity-50"
+          >
+            Revert
           </button>
           <button
             onClick={() => void handleSave()}
@@ -1908,7 +1993,7 @@ function FragmentsView({
                 <textarea
                   ref={bodyRef}
                   value={content}
-                  onChange={(e) => setDraft(e.target.value)}
+                  onChange={(e) => editDraft(e.target.value)}
                   onKeyDown={handleKeyDown}
                   onScroll={handleEditorScroll}
                   aria-label={`Fragment ${current.name}`}
@@ -1986,6 +2071,24 @@ function FragmentsView({
         variant="danger"
       />
 
+      <ConfirmDialog
+        isOpen={revertOpen}
+        onClose={() => setRevertOpen(false)}
+        onConfirm={() => {
+          setRevertOpen(false);
+          commitDraft(null);
+        }}
+        title="Revert fragment"
+        message={
+          <p>
+            Discard the unsaved changes to <span className="font-mono text-primary">{current?.name}</span> and
+            restore its saved content?
+          </p>
+        }
+        confirmLabel={`Revert "${current?.name ?? ''}"`}
+        variant="danger"
+      />
+
       {driftTarget &&
         (() => {
           const client = doc.clients.find((c) => c.slug === driftTarget.slug);
@@ -1996,11 +2099,7 @@ function FragmentsView({
               fragmentNames={(fragments ?? []).map((f) => f.name)}
               initialFragment={driftTarget.fragment}
               onClose={() => setDriftTarget(null)}
-              onResolved={() => {
-                setDriftTarget(null);
-                void loadFragments();
-                void refresh();
-              }}
+              onResolved={handleDriftResolved}
             />
           );
         })()}
@@ -2046,7 +2145,8 @@ function FragmentRail({
   onRetry: () => void;
   selected: string | null;
   onSelect: (name: string) => void;
-  onAdd: (name: string) => void;
+  /** Resolves true when the fragment was created. */
+  onAdd: (name: string) => Promise<boolean>;
   onDelete: (name: string) => void;
   /** Fragment name to client names holding a non-synced copy (drift dots). */
   outOfSync?: Map<string, string[]>;
@@ -2060,11 +2160,20 @@ function FragmentRail({
   // cannot show, so Add waits for a successful load.
   const canAdd = fragments !== null;
 
-  const submitNew = () => {
-    if (!valid || !canAdd) return;
-    onAdd(newName);
-    setNewName('');
-    setShowNew(false);
+  const [creating, setCreating] = useState(false);
+
+  // A refused or failed create keeps the typed name so it can be retried.
+  const submitNew = async () => {
+    if (!valid || !canAdd || creating) return;
+    setCreating(true);
+    try {
+      if (await onAdd(newName)) {
+        setNewName('');
+        setShowNew(false);
+      }
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
@@ -2084,14 +2193,16 @@ function FragmentRail({
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && submitNew()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void submitNew();
+            }}
             placeholder="10-style"
             aria-label="New fragment name"
             className="flex-1 min-w-0 bg-background/60 border border-border/40 rounded px-2 py-1 text-3xs font-mono text-text-primary placeholder:text-text-muted"
           />
           <button
-            onClick={submitNew}
-            disabled={!valid || !canAdd}
+            onClick={() => void submitNew()}
+            disabled={!valid || !canAdd || creating}
             className="px-2 py-1 text-3xs text-primary bg-primary/10 rounded hover:bg-primary/20 transition-colors disabled:opacity-50"
           >
             Create
