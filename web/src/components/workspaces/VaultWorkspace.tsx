@@ -750,7 +750,7 @@ export function VaultWorkspace() {
                             : `Search ${activeSet}…`
                       }
                       aria-label="Filter variables"
-                      className="w-full bg-background/60 border border-border/40 rounded-lg pl-9 pr-8 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+                      className="w-full bg-background/60 border border-border/40 rounded-lg pl-9 pr-8 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors"
                     />
                     {searchQuery && (
                       <button

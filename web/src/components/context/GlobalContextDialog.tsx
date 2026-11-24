@@ -1392,7 +1392,7 @@ function CompiledCaptureActions({
           id="capture-fragment"
           value={choice}
           onChange={(e) => setChoice(e.target.value)}
-          className="bg-background/60 border border-border/40 rounded-lg px-2 py-1.5 text-2xs font-mono text-text-primary focus:outline-none focus:border-primary/50"
+          className="bg-background/60 border border-border/40 rounded-lg px-2 py-1.5 text-2xs font-mono text-text-primary"
         >
           {fragmentNames.map((n) => (
             <option key={n} value={n}>
@@ -1407,7 +1407,7 @@ function CompiledCaptureActions({
             onChange={(e) => setNewName(e.target.value)}
             placeholder="captured-from-client"
             aria-label="New capture fragment name"
-            className="flex-1 min-w-32 bg-background/60 border border-border/40 rounded-lg px-2 py-1.5 text-2xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50"
+            className="flex-1 min-w-32 bg-background/60 border border-border/40 rounded-lg px-2 py-1.5 text-2xs font-mono text-text-primary placeholder:text-text-muted"
           />
         )}
       </div>
@@ -1497,7 +1497,7 @@ function SplitIntoFragmentsDialog({ dirty, onClose }: { dirty: boolean; onClose:
           onKeyDown={(e) => e.key === 'Enter' && void handleCreate()}
           placeholder="10-style"
           aria-label="New fragment name"
-          className="bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50"
+          className="bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted"
         />
         {name && !valid && (
           <p className="text-2xs text-status-error">
@@ -2087,7 +2087,7 @@ function FragmentRail({
             onKeyDown={(e) => e.key === 'Enter' && submitNew()}
             placeholder="10-style"
             aria-label="New fragment name"
-            className="flex-1 min-w-0 bg-background/60 border border-border/40 rounded px-2 py-1 text-3xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50"
+            className="flex-1 min-w-0 bg-background/60 border border-border/40 rounded px-2 py-1 text-3xs font-mono text-text-primary placeholder:text-text-muted"
           />
           <button
             onClick={submitNew}
@@ -2155,7 +2155,7 @@ function FragmentRail({
                 onClick={() => onDelete(f.name)}
                 title={`Remove fragment ${f.name}`}
                 aria-label={`Remove fragment ${f.name}`}
-                className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 p-1 rounded text-text-muted hover:text-status-error hover:bg-status-error/10 focus:outline-none focus:ring-2 focus:ring-status-error/30 focus:opacity-100 transition-all"
+                className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 hover-none:opacity-100 p-1 rounded text-text-muted hover:text-status-error hover:bg-status-error/10 focus:opacity-100 transition-all"
               >
                 <Trash2 size={10} />
               </button>

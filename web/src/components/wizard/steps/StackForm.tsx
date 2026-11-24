@@ -28,7 +28,7 @@ import { MCPServerForm } from './MCPServerForm';
 // --- Shared form primitives ---
 
 const inputClass =
-  'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors';
+  'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-colors';
 const labelClass = 'block text-xs text-text-secondary mb-1.5';
 
 function toKebabCase(value: string): string {

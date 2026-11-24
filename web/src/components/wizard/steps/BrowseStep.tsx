@@ -125,7 +125,7 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
                     e.stopPropagation();
                     setActivePreview(preview.name);
                   }}
-                  className="flex-1 min-w-0 text-left rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+                  className="flex-1 min-w-0 text-left rounded"
                 >
                   <span className="flex items-center gap-1.5">
                     <span className="text-xs font-medium text-text-primary truncate">

@@ -110,7 +110,7 @@ export const LogLine = memo(function LogLine({
               aria-label={`Filter to ${source}`}
               className={cn(
                 'inline-flex items-center gap-1 min-w-0 font-mono log-text text-left rounded self-start',
-                'hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50',
+                'hover:underline focus-visible:-outline-offset-2',
                 source === GATEWAY_LOG_SOURCE ? 'text-primary' : 'text-tertiary-light/90'
               )}
             >

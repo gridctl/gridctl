@@ -74,11 +74,11 @@ function PaletteItem({ command, onSelect, showBadge }: PaletteItemProps) {
       keywords={command.keywords}
       onSelect={() => onSelect(command)}
       className={cn(
-        'flex items-center gap-3 px-4 py-2.5 cursor-pointer select-none outline-none',
+        'flex items-center gap-3 px-4 py-2.5 cursor-pointer select-none',
         'text-text-secondary transition-colors duration-75',
         'hover:bg-surface-highlight/70',
         '[&[data-selected=true]]:bg-primary/10 [&[data-selected=true]]:text-text-primary',
-        'focus-visible:bg-primary/10 focus-visible:text-text-primary',
+        'group-focus-within/cmd:data-[selected=true]:outline-2 group-focus-within/cmd:data-[selected=true]:-outline-offset-2 group-focus-within/cmd:data-[selected=true]:outline-primary',
         command.unavailable && 'opacity-40',
       )}
     >
@@ -231,7 +231,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
           if (e.key === 'Tab') e.preventDefault(); // focus trap
         }}
       >
-        <Command shouldFilter={false} className="flex flex-col overflow-hidden flex-1 min-h-0">
+        <Command shouldFilter={false} className="group/cmd flex flex-col overflow-hidden flex-1 min-h-0">
           {/* Input row */}
           <div className="flex items-center gap-2.5 px-4 py-3 border-b border-border/30 shrink-0">
             <Search size={14} className="text-text-muted shrink-0" />
@@ -266,7 +266,6 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
               autoFocus
               className={cn(
                 'flex-1 min-w-0 bg-transparent text-sm text-text-primary rounded',
-                'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
                 'placeholder:text-text-muted caret-primary',
               )}
             />

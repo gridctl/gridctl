@@ -177,7 +177,7 @@ function MetadataEditor({
               onChange={(e) => onUpdate(entry.id, 'key', e.target.value)}
               placeholder="key"
               aria-label="Metadata key"
-              className="w-36 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+              className="w-36 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted transition-colors"
             />
             <span className="text-text-muted text-xs">=</span>
             <input
@@ -185,7 +185,7 @@ function MetadataEditor({
               onChange={(e) => onUpdate(entry.id, 'value', e.target.value)}
               placeholder="value"
               aria-label="Metadata value"
-              className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+              className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-muted transition-colors"
             />
             <button
               type="button"
@@ -244,7 +244,7 @@ function AcceptanceCriteriaEditor({
                 onChange={(e) => onUpdate(entry.id, 'text', e.target.value)}
                 aria-label={`Criterion ${i + 1}`}
                 rows={Math.min(Math.max(entry.text.split('\n').length, 2), 8)}
-                className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 resize-y transition-colors"
+                className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted resize-y transition-colors"
               />
               <button
                 type="button"
@@ -267,7 +267,7 @@ function AcceptanceCriteriaEditor({
                 onChange={(e) => onUpdate(entry.id, 'given', e.target.value)}
                 placeholder="a valid input is provided"
                 aria-label="Given"
-                className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+                className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-colors"
               />
               <button
                 type="button"
@@ -287,7 +287,7 @@ function AcceptanceCriteriaEditor({
                 onChange={(e) => onUpdate(entry.id, 'when', e.target.value)}
                 placeholder="the skill is called"
                 aria-label="When"
-                className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+                className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-colors"
               />
               <div className="w-6 flex-shrink-0" />
             </div>
@@ -300,7 +300,7 @@ function AcceptanceCriteriaEditor({
                 onChange={(e) => onUpdate(entry.id, 'then', e.target.value)}
                 placeholder="contains expected_output"
                 aria-label="Then"
-                className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+                className="flex-1 bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-colors"
               />
               <div className="w-6 flex-shrink-0" />
             </div>
@@ -961,7 +961,7 @@ export function SkillEditor({
               value={state}
               onChange={(e) => setState(e.target.value as ItemState)}
               aria-label="Skill state"
-              className="bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:border-primary/50 transition-colors cursor-pointer"
+              className="bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 text-xs text-text-primary transition-colors cursor-pointer"
             >
               <option value="draft">Draft</option>
               <option value="active">Active</option>
@@ -1038,7 +1038,7 @@ export function SkillEditor({
               aria-label="New skill name"
               onKeyDown={(e) => { if (e.key === 'Enter') handleFork(); if (e.key === 'Escape') setForking(false); }}
               placeholder="new-skill-name"
-              className="flex-1 max-w-xs bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+              className="flex-1 max-w-xs bg-background/60 border border-border/40 rounded-lg px-3 py-1.5 text-xs font-mono text-text-primary placeholder:text-text-muted transition-colors"
             />
             <button
               onClick={handleFork}
@@ -1065,7 +1065,7 @@ export function SkillEditor({
         <div className="border-b border-border/30 flex-shrink-0">
           <button
             onClick={toggleFrontmatter}
-            className="w-full flex items-center justify-between gap-3 px-5 py-2.5 text-xs text-text-muted hover:text-text-secondary transition-colors"
+            className="w-full flex items-center justify-between gap-3 px-5 py-2.5 text-xs text-text-muted hover:text-text-secondary transition-colors focus-visible:-outline-offset-2"
           >
             <span className="flex items-center gap-2 min-w-0">
               <Settings size={14} className="flex-shrink-0" />
@@ -1096,7 +1096,7 @@ export function SkillEditor({
                     placeholder="my-skill-name"
                     className={cn(
                       'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-sm font-mono text-text-primary',
-                      'placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors',
+                      'placeholder:text-text-muted transition-colors',
                       !isNew && 'opacity-50 cursor-not-allowed',
                     )}
                   />
@@ -1118,7 +1118,7 @@ export function SkillEditor({
                     placeholder="Brief description of what this skill does"
                     rows={4}
                     maxLength={1024}
-                    className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 resize-y transition-colors leading-relaxed"
+                    className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted resize-y transition-colors leading-relaxed"
                   />
                 </div>
 
@@ -1131,7 +1131,7 @@ export function SkillEditor({
                       value={license}
                       onChange={(e) => setLicense(e.target.value)}
                       placeholder="Apache-2.0"
-                      className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-primary/50 transition-colors"
+                      className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-muted transition-colors"
                     />
                   </div>
                   <div>
@@ -1141,7 +1141,7 @@ export function SkillEditor({
                       value={compatibility}
                       onChange={(e) => setCompatibility(e.target.value)}
                       placeholder="Requires git"
-                      className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+                      className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors"
                     />
                   </div>
                 </div>
@@ -1154,7 +1154,7 @@ export function SkillEditor({
                     value={allowedTools}
                     onChange={(e) => setAllowedTools(e.target.value)}
                     placeholder="Bash(git:*) Read Write"
-                    className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50 transition-colors"
+                    className="w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-sm font-mono text-text-primary placeholder:text-text-muted transition-colors"
                   />
                 </div>
 
@@ -1245,7 +1245,7 @@ export function SkillEditor({
               placeholder={bodyLoading
                 ? 'Loading instructions…'
                 : '# Skill Instructions\n\nWrite markdown instructions that the agent will follow...\n\n## Steps\n\n1. First step\n2. Second step'}
-              className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted resize-none focus:outline-none leading-relaxed"
+              className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted resize-none leading-relaxed focus-visible:-outline-offset-2"
               spellCheck={false}
             />
           </div>

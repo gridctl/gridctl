@@ -134,7 +134,7 @@ export function ConnectionsRail({
               aria-label={`Inspect ${c.name}`}
               aria-current={c.slug === activeSlug}
               className={cn(
-                'w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-left transition-colors cursor-pointer',
+                'w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-left transition-colors cursor-pointer focus-visible:-outline-offset-2',
                 c.slug === activeSlug
                   ? 'bg-primary/10'
                   : 'hover:bg-surface-highlight/50',

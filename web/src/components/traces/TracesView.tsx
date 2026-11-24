@@ -314,7 +314,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                 onClick={() => setSegment(seg.value)}
                 aria-pressed={filters.segment === seg.value}
                 className={cn(
-                  'px-2 py-1 text-3xs font-medium transition-colors',
+                  'px-2 py-1 text-3xs font-medium transition-colors focus-visible:-outline-offset-2',
                   filters.segment === seg.value
                     ? 'bg-primary/15 text-primary'
                     : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight/40'
@@ -329,7 +329,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
           <select
             value={filters.server}
             onChange={(e) => setServer(e.target.value)}
-            className="h-6 px-1.5 text-3xs bg-background/60 border border-border/40 rounded text-text-secondary focus:outline-none focus:border-primary/50 max-w-[120px]"
+            className="h-6 px-1.5 text-3xs bg-background/60 border border-border/40 rounded text-text-secondary max-w-[120px]"
           >
             <option value="">All servers</option>
             {servers.map((s) => (
@@ -358,7 +358,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
             placeholder="Search traces…"
             value={filters.search}
             onChange={(e) => setFilters({ search: e.target.value })}
-            className="h-6 px-2 text-3xs bg-background/60 border border-border/40 rounded text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-primary/50 w-36"
+            className="h-6 px-2 text-3xs bg-background/60 border border-border/40 rounded text-text-secondary placeholder:text-text-muted w-36"
           />
 
           {/* Clear filters */}
@@ -440,7 +440,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                       onChange={(e) =>
                         setFilters({ minDuration: e.target.value ? Number(e.target.value) : null })
                       }
-                      className="h-6 px-2 text-3xs bg-background/60 border border-border/40 rounded text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-primary/50 w-16 text-right"
+                      className="h-6 px-2 text-3xs bg-background/60 border border-border/40 rounded text-text-secondary placeholder:text-text-muted w-16 text-right"
                       min={0}
                     />
                     <span className="text-text-muted">ms</span>
@@ -607,7 +607,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                     tabIndex={0}
                     {...listNavProps}
                     aria-activedescendant={activeNavId ? `trace-row-${activeNavId}` : undefined}
-                    className="w-full focus-visible:outline-2 focus-visible:outline-primary/60"
+                    className="group/grid w-full focus-visible:-outline-offset-2"
                   >
                     <thead className="sticky top-0 z-sticky bg-surface-elevated/95 backdrop-blur-sm">
                       <tr className="border-b border-border/30">
@@ -660,7 +660,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
         {/* Waterfall panel */}
         {selectedTraceId && (
           <>
-            <Separator id="sep-trace-list" className="group/separator relative w-1.5 select-none">
+            <Separator id="sep-trace-list" className="group/separator relative w-1.5 select-none focus-visible:-outline-offset-2">
               <SeparatorBody orientation="vertical" />
             </Separator>
             <Panel id="trace-waterfall" defaultSize="66" minSize={280}>

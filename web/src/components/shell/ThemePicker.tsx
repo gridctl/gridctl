@@ -35,7 +35,6 @@ export function ThemePicker() {
         className={cn(
           'rounded-lg p-2 transition-all duration-200 ease-out backdrop-blur-sm',
           'bg-surface-elevated/60 border border-border/50',
-          'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-offset-1 focus:ring-offset-background',
           open
             ? 'text-primary border-primary/30'
             : 'text-text-muted hover:bg-surface-highlight hover:text-primary hover:border-primary/30',

@@ -158,7 +158,7 @@ export function ServerToolScopeGroup({
                 placeholder={`Filter ${total} tools…`}
                 aria-label={`Filter ${serverName} tools`}
                 disabled={disabled}
-                className="w-full rounded-md border border-border/50 bg-background/70 pl-6 pr-2 py-1 text-2xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50"
+                className="w-full rounded-md border border-border/50 bg-background/70 pl-6 pr-2 py-1 text-2xs text-text-primary placeholder:text-text-muted"
               />
             </div>
           )}

@@ -12,7 +12,7 @@ export function buildEditorTheme(resolved: ResolvedTheme): Extension {
   return EditorView.theme(
     {
       '&': { backgroundColor: 'transparent', fontSize: '12px' },
-      '&.cm-focused': { outline: 'none' },
+      '&.cm-focused': { outline: '2px solid var(--color-primary)', outlineOffset: '-2px' },
       '.cm-content': {
         fontFamily:
           'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',

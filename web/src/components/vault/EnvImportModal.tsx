@@ -527,7 +527,7 @@ export function EnvImportModal({
                                 updateRow(r.key, { set: e.target.value })
                               }
                               aria-label="Variable set"
-                              className="bg-surface border border-border rounded-md px-1.5 py-0.5 text-3xs text-text-secondary focus:border-primary/50 outline-none transition-colors"
+                              className="bg-surface border border-border rounded-md px-1.5 py-0.5 text-3xs text-text-secondary transition-colors"
                             >
                               <option value="">No set</option>
                               {setNames.map((name) => (

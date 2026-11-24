@@ -75,7 +75,6 @@ export function VaultLockPrompt({ onUnlock }: VaultLockPromptProps) {
                 'w-full bg-surface border rounded-lg px-3 py-2.5 pr-10',
                 'text-sm font-mono text-text-primary',
                 'placeholder:text-text-muted',
-                'focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none',
                 'transition-colors',
                 error ? 'border-status-error/50' : 'border-border'
               )}

@@ -460,7 +460,7 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
         {/* Span detail bottom drawer */}
         {selectedSpan && (
           <>
-            <Separator id="sep-span-drawer" className="group/separator relative h-1.5 select-none">
+            <Separator id="sep-span-drawer" className="group/separator relative h-1.5 select-none focus-visible:-outline-offset-2">
               <SeparatorBody orientation="horizontal" />
             </Separator>
             <Panel id="span-drawer" defaultSize="35" minSize={160} maxSize="60">

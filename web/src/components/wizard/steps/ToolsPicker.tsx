@@ -14,7 +14,7 @@ import { escapeNonPrintable } from '../../../lib/nonPrintable';
 import { ShieldAlert, ChevronDown, ChevronRight } from 'lucide-react';
 
 const inputClass =
-  'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors';
+  'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-colors';
 const labelClass = 'block text-xs text-text-secondary mb-1.5';
 
 interface ToolsPickerProps {
@@ -267,7 +267,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
           </div>
         </div>
 
-        <Command shouldFilter={false} label="Tools Picker" className="flex flex-col">
+        <Command shouldFilter={false} label="Tools Picker" className="group/cmd flex flex-col">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30">
             <Search size={12} className="text-text-muted flex-shrink-0" aria-hidden="true" />
             <Command.Input
@@ -275,7 +275,7 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
               onValueChange={setQuery}
               placeholder="Search tools..."
               aria-label="Search tools"
-              className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60"
+              className="flex-1 bg-transparent rounded text-xs text-text-primary placeholder:text-text-muted"
             />
           </div>
 
@@ -298,10 +298,10 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
                   aria-checked={isSelected}
                   aria-label={opt.name}
                   className={cn(
-                    'flex items-start gap-2.5 px-3 py-2 cursor-pointer select-none outline-none transition-colors',
+                    'flex items-start gap-2.5 px-3 py-2 cursor-pointer select-none transition-colors',
                     'hover:bg-surface-highlight/50',
                     '[&[data-selected=true]]:bg-primary/[0.06]',
-                    'focus-visible:bg-primary/[0.06]',
+                    'group-focus-within/cmd:data-[selected=true]:outline-2 group-focus-within/cmd:data-[selected=true]:-outline-offset-2 group-focus-within/cmd:data-[selected=true]:outline-primary',
                     isSelected && 'bg-primary/[0.03]',
                   )}
                 >

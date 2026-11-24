@@ -51,7 +51,7 @@ export function ThemeModeRadioGroup() {
               onKeyDown={(e) => onRadioKeyDown(e, i)}
               className={cn(
                 'flex-1 flex flex-col items-center gap-1 py-1.5 rounded text-3xs font-medium',
-                'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
+                'transition-colors focus-visible:-outline-offset-2',
                 active
                   ? 'bg-surface-highlight text-text-primary shadow-bevel'
                   : 'text-text-muted hover:text-text-secondary hover:bg-surface-highlight/50',

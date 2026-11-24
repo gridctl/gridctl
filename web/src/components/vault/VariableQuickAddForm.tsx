@@ -184,7 +184,7 @@ export function VariableQuickAddForm({
           placeholder="KEY_NAME"
           className={cn(
             'w-full bg-surface border rounded-lg px-3 py-2 text-xs font-mono text-text-primary',
-            'placeholder:text-text-muted focus:border-primary/50 focus:ring-1 focus:ring-primary/30 outline-none transition-colors',
+            'placeholder:text-text-muted transition-colors',
             error ? 'border-status-error/50' : keyExists ? 'border-status-pending/50' : 'border-border',
             enableZoom && 'log-text',
           )}
@@ -238,7 +238,7 @@ export function VariableQuickAddForm({
               setReplaceArmed(false);
             }}
             aria-label="Variable set"
-            className="flex-1 bg-surface border border-border rounded-lg px-3 py-2 text-xs text-text-secondary focus:border-primary/50 outline-none transition-colors"
+            className="flex-1 bg-surface border border-border rounded-lg px-3 py-2 text-xs text-text-secondary transition-colors"
           >
             <option value="">No set</option>
             {setNames.map((name) => (

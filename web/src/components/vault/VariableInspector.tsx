@@ -590,7 +590,7 @@ export function VariableInspector({
                 onAssignSet(variable.key, next);
               }}
               aria-label="Move to set"
-              className="mt-2 w-full bg-surface border border-border rounded-lg px-2 py-1 text-3xs text-text-muted focus:outline-none focus:border-primary/40 transition-colors"
+              className="mt-2 w-full bg-surface border border-border rounded-lg px-2 py-1 text-3xs text-text-muted transition-colors"
             >
               <option value="">Move to set…</option>
               {setNames

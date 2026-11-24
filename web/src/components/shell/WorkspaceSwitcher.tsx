@@ -53,7 +53,7 @@ function WorkspacePill({ workspace }: WorkspacePillProps) {
         // cluster collide on narrower windows, so labels collapse to icons
         // (title + aria-label keep the pills identifiable).
         'inline-flex items-center gap-1.5 px-2 min-[1360px]:px-3 py-1 rounded-full text-xs font-medium transition-colors shrink-0',
-        'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/60',
+        'focus-visible:-outline-offset-2',
         isActive
           ? 'bg-primary/15 text-primary border border-primary/30'
           : 'text-text-secondary hover:text-text-primary hover:bg-surface-highlight/60 border border-transparent',

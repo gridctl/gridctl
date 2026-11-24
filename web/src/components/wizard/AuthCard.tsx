@@ -76,7 +76,7 @@ export function AuthCard({ controller, ssh }: AuthCardProps) {
               ref={bannerRef}
               role="alert"
               tabIndex={-1}
-              className="flex items-start gap-1.5 text-3xs text-status-pending bg-status-pending/5 border border-status-pending/20 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-status-pending/40"
+              className="flex items-start gap-1.5 text-3xs text-status-pending bg-status-pending/5 border border-status-pending/20 rounded-md px-2 py-1.5"
             >
               <AlertCircle size={10} className="mt-0.5 flex-shrink-0" />
               <span>{banner}</span>
@@ -160,7 +160,7 @@ export function AuthCard({ controller, ssh }: AuthCardProps) {
                       data-1p-ignore
                       data-lpignore="true"
                       data-bwignore
-                      className="w-full bg-background/60 border border-border/40 rounded-md pl-2 pr-8 py-1.5 text-2xs font-mono focus:outline-none focus:border-primary/50 text-text-primary placeholder:text-text-muted transition-colors"
+                      className="w-full bg-background/60 border border-border/40 rounded-md pl-2 pr-8 py-1.5 text-2xs font-mono text-text-primary placeholder:text-text-muted transition-colors"
                     />
                     <button
                       type="button"

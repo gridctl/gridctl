@@ -66,8 +66,8 @@ export function NumberValueInput({
         }}
         className={cn(
           'w-full bg-surface border rounded-lg px-3 py-2 pr-14 text-xs font-mono text-text-primary',
-          'placeholder:text-text-muted focus:ring-1 focus:ring-primary/30 outline-none transition-colors',
-          invalid ? 'border-status-error/50' : 'border-border focus:border-primary/50',
+          'placeholder:text-text-muted transition-colors',
+          invalid ? 'border-status-error/50' : 'border-border',
           compact && 'py-1.5',
           enableZoom && 'log-text',
         )}

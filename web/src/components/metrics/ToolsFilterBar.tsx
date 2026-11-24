@@ -42,7 +42,7 @@ export function ToolsFilterBar({
             onChange={(e) => onQuery(e.target.value)}
             placeholder="Filter tools ( / )"
             aria-label="Filter tools by name or server"
-            className="w-full rounded-md border border-border/40 bg-background/60 pl-7 pr-6 py-1 text-2xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary/50"
+            className="w-full rounded-md border border-border/40 bg-background/60 pl-7 pr-6 py-1 text-2xs text-text-primary placeholder:text-text-muted"
           />
           {query && (
             <button
