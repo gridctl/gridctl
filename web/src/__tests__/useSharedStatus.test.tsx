@@ -162,3 +162,81 @@ describe('useSharedStatus', () => {
     main.close();
   });
 });
+
+describe('useSharedStatus error and refresh', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('reports a failed self-poll and clears it after a successful poll', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchStatus).mockRejectedValueOnce(new Error('down')).mockResolvedValue(status);
+    const view = renderHook(() => useSharedStatus({ enabled: true }), { wrapper });
+    expect(view.result.current.error).toBeNull();
+    await act(async () => {
+      vi.advanceTimersByTime(STATUS_STALE_MS);
+    });
+    await flushMessages();
+    expect(view.result.current.error).toEqual(expect.stringContaining('down'));
+    await act(async () => {
+      vi.advanceTimersByTime(POLLING.STATUS);
+      await Promise.resolve();
+    });
+    await flushMessages();
+    expect(fetchStatus).toHaveBeenCalledTimes(2);
+    expect(view.result.current.error).toBeNull();
+    expect(view.result.current.status).toEqual(status);
+    view.unmount();
+  });
+
+  it('clears a failed self-poll when a snapshot arrives', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchStatus).mockRejectedValue(new Error('down'));
+    const main = new BroadcastChannel('gridctl-sync');
+    const view = renderHook(() => useSharedStatus({ enabled: true }), { wrapper });
+    await act(async () => {
+      vi.advanceTimersByTime(STATUS_STALE_MS);
+    });
+    await flushMessages();
+    expect(view.result.current.error).toBeTruthy();
+    postSnapshot(main);
+    await flushMessages();
+    expect(view.result.current.error).toBeNull();
+    expect(view.result.current.source).toBe('broadcast');
+    view.unmount();
+    main.close();
+  });
+
+  it('refresh fetches once without starting the self-poll', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchStatus).mockResolvedValue(status);
+    const view = renderHook(() => useSharedStatus({ enabled: true }), { wrapper });
+    const first = view.result.current.refresh;
+    await act(async () => {
+      await view.result.current.refresh();
+    });
+    expect(fetchStatus).toHaveBeenCalledTimes(1);
+    expect(view.result.current.status).toEqual(status);
+    expect(view.result.current.settled).toBe(true);
+    expect(view.result.current.refresh).toBe(first);
+    await act(async () => {
+      vi.advanceTimersByTime(STATUS_STALE_MS - 1);
+    });
+    expect(fetchStatus).toHaveBeenCalledTimes(1);
+    view.unmount();
+  });
+
+  it('refresh stays settled and reports the error when it fails', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchStatus).mockRejectedValue(new Error('down'));
+    const view = renderHook(() => useSharedStatus({ enabled: true }), { wrapper });
+    await act(async () => {
+      await view.result.current.refresh();
+    });
+    expect(view.result.current.settled).toBe(true);
+    expect(view.result.current.status).toBeNull();
+    expect(view.result.current.error).toEqual(expect.stringContaining('down'));
+    view.unmount();
+  });
+});
