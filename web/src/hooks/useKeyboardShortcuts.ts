@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { isTextInputTarget } from '../lib/dom';
+import { isModalDialogOpen, isTextInputTarget } from '../lib/dom';
 import { WORKSPACE_CONFIG, type Workspace } from '../types/workspace';
 
 interface ShortcutOptions {
@@ -31,6 +31,9 @@ export function useKeyboardShortcuts(options: ShortcutOptions) {
       // Inputs, textareas, selects, and contenteditable (the JSON editor)
       // keep their native keys. Cmd/Ctrl+F must also reach the browser.
       if (isTextInputTarget(e.target)) return;
+      // A modal dialog owns the keyboard. Return before any preventDefault so
+      // browser chords (find, zoom) still work inside it.
+      if (isModalDialogOpen()) return;
 
       const isMod = e.metaKey || e.ctrlKey;
 
@@ -98,7 +101,7 @@ export function useKeyboardShortcuts(options: ShortcutOptions) {
       // expected. Dialogs own their keys; fields are already excluded above.
       if (e.key === '?' && !e.altKey && !e.metaKey && !e.ctrlKey && options.onOpenShortcuts) {
         const target = e.target instanceof Element ? e.target : null;
-        if (target?.closest('[role="dialog"]')) return;
+        if (target?.closest('[role="dialog"], [role="alertdialog"]')) return;
         e.preventDefault();
         options.onOpenShortcuts();
       }

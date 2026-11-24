@@ -80,6 +80,30 @@ function makeSkill(overrides: Partial<AgentSkill> = {}): AgentSkill {
 }
 
 describe('RegistrySidebar', () => {
+  it('focuses search on / and opens the editor on n with no dialog open', () => {
+    render(<RegistrySidebar />);
+    fireEvent.keyDown(document.body, { key: '/' });
+    expect(screen.getByPlaceholderText('Search skills...')).toHaveFocus();
+    (document.activeElement as HTMLElement).blur();
+    fireEvent.keyDown(document.body, { key: 'n' });
+    expect(screen.getByTestId('skill-editor')).toBeInTheDocument();
+  });
+
+  it('ignores / and n from <body> while a modal dialog is open', () => {
+    render(<RegistrySidebar />);
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    document.body.appendChild(dialog);
+    (document.activeElement as HTMLElement | null)?.blur();
+
+    expect(fireEvent.keyDown(document.body, { key: '/' })).toBe(true);
+    expect(fireEvent.keyDown(document.body, { key: 'n' })).toBe(true);
+    expect(screen.getByPlaceholderText('Search skills...')).not.toHaveFocus();
+    expect(screen.queryByTestId('skill-editor')).not.toBeInTheDocument();
+    dialog.remove();
+  });
+
   it('shows empty state when no skills registered', () => {
     render(<RegistrySidebar />);
     expect(screen.getByText('No skills registered')).toBeInTheDocument();

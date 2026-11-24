@@ -393,3 +393,34 @@ describe('useListNav', () => {
     });
   });
 });
+
+describe('useListNav — modal dialogs', () => {
+  it('ignores Escape and j from <body> while a modal dialog is open', () => {
+    const onEscape = vi.fn();
+    render(<Harness onEscape={onEscape} />);
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    document.body.appendChild(dialog);
+    (document.activeElement as HTMLElement | null)?.blur();
+
+    expect(fireEvent.keyDown(document.body, { key: 'Escape' })).toBe(true);
+    expect(fireEvent.keyDown(document.body, { key: 'j' })).toBe(true);
+    expect(onEscape).not.toHaveBeenCalled();
+    expect(screen.getByTestId('index')).toHaveTextContent('0');
+
+    dialog.remove();
+    fireEvent.keyDown(document.body, { key: 'j' });
+    expect(screen.getByTestId('index')).toHaveTextContent('1');
+  });
+
+  it('keeps working beside a non-modal dialog', () => {
+    render(<Harness />);
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    document.body.appendChild(dialog);
+    fireEvent.keyDown(document.body, { key: 'j' });
+    expect(screen.getByTestId('index')).toHaveTextContent('1');
+    dialog.remove();
+  });
+});

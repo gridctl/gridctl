@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { isTextInputTarget } from '../lib/dom';
+import { isModalDialogOpen, isTextInputTarget } from '../lib/dom';
 
 interface UseListNavOptions {
   itemCount: number;
@@ -48,6 +48,8 @@ const CONTROL_SELECTOR = [
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (isTextInputTarget(target)) return true;
+  // A modal dialog owns the keyboard even when focus has fallen to <body>.
+  if (isModalDialogOpen()) return true;
   // Inside any open dialog/alertdialog — defer to the dialog's own handling.
   return (
     target instanceof HTMLElement &&
@@ -74,7 +76,8 @@ function isSelectedRow(el: Element): boolean {
  * Keyboard navigation for a list of items. Binds at the document level so
  * users don't need to tab onto the list first. Ignores keypresses when the
  * user is typing in an input/textarea/contenteditable, when focus is inside
- * an open dialog, or when a component handler already cancelled the key.
+ * an open dialog, while any modal dialog is open (wherever focus is), or when
+ * a component handler already cancelled the key.
  *
  * Arrows, Home, End, 'e', and 'd' act only when focus is on the page itself
  * or inside the element marked with listNavProps, so other controls and

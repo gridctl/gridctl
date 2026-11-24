@@ -19,6 +19,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { isModalDialogOpen } from '../../lib/dom';
 import { WORKSPACE_LABELS } from '../../types/workspace';
 import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
@@ -512,6 +513,7 @@ export function LibraryWorkspace() {
     if (!selectedName && selectedNames.size === 0) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || showEditor) return;
+      if (isModalDialogOpen()) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (selectedNames.size > 0) {

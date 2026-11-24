@@ -93,4 +93,26 @@ describe('AppShell Escape', () => {
     wrapper.remove();
     other.remove();
   });
+
+  it('closes Preferences alone and leaves the selection for the next Escape', () => {
+    useUIStore.setState({ preferencesOpen: true, sidebarOpen: true });
+    render(
+      <MemoryRouter initialEntries={['/stack']}>
+        <Routes>
+          <Route path="*" element={<AppShell />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const dialog = document.querySelector('[role="dialog"][aria-modal="true"]');
+    const button = dialog?.querySelector('button');
+    expect(button).toBeTruthy();
+    fireEvent.keyDown(button as HTMLElement, { key: 'Escape' });
+    expect(useUIStore.getState().preferencesOpen).toBe(false);
+    expect(useStackStore.getState().selectedNodeId).toBe('mcp-github');
+    expect(useUIStore.getState().sidebarOpen).toBe(true);
+
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(useStackStore.getState().selectedNodeId).toBeNull();
+    expect(useUIStore.getState().sidebarOpen).toBe(false);
+  });
 });
