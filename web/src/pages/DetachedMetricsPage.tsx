@@ -1,11 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
-import { BarChart3, Maximize2, Minimize2, Users, Server, Wrench } from 'lucide-react';
-import { IconButton } from '../components/ui/IconButton';
+import { useMemo, useState } from 'react';
+import { BarChart3, Users, Server, Wrench } from 'lucide-react';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { FailedState, FailureBanner } from '../components/ui/EmptyState';
-import { ToastContainer } from '../components/ui/Toast';
+import { DetachedWindowFrame } from '../components/detached/DetachedWindowFrame';
 import { refreshPhase } from '../lib/refreshPhase';
-import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { useSharedStatus } from '../hooks/useSharedStatus';
 import { formatCompactNumber } from '../lib/format';
 import { useMetricsSeries, windowLabelFor, type MetricsTimeRange } from '../hooks/useMetricsSeries';
@@ -36,7 +34,7 @@ function DetachedMetricsPageContent() {
   // Real-time status snapshot — the detached window lives outside the app
   // shell, so it owns its own status poll (the in-shell surfaces read the app
   // store instead). The time-series come from the shared useMetricsSeries hook.
-  const { status } = useSharedStatus({ enabled: !authRequired });
+  const { status, settled, error: statusError, refresh: refreshStatus } = useSharedStatus({ enabled: !authRequired });
   const tokenUsage = useMemo<TokenUsage | null>(() => {
     if (!status || useAuthStore.getState().generation !== generation) return null;
     return status.token_usage ?? null;
@@ -53,9 +51,6 @@ function DetachedMetricsPageContent() {
   const [clientSortDirection, setClientSortDirection] = useState<SortDirection>('desc');
   const [toolSortColumn, setToolSortColumn] = useState<BreakdownSortColumn>('total');
   const [toolSortDirection, setToolSortDirection] = useState<SortDirection>('desc');
-  const [isFullscreen, setIsFullscreen] = useState(false);
-
-  useDetachedWindowSync('metrics');
 
   // Per-tool usage for the Per-Tool panel — the same GET /api/tools/usage
   // pipeline the Tools workspace and Metrics Tools scope consume.
@@ -109,66 +104,42 @@ function DetachedMetricsPageContent() {
   const windowTotals = deriveWindowTotals(metricsData);
   const windowLabel = windowLabelFor(timeRange);
 
-  const toggleFullscreen = async () => {
-    if (!document.fullscreenElement) {
-      await document.documentElement.requestFullscreen();
-      setIsFullscreen(true);
-    } else {
-      await document.exitFullscreen();
-      setIsFullscreen(false);
-    }
-  };
-
-  useEffect(() => {
-    const handler = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener('fullscreenchange', handler);
-    return () => document.removeEventListener('fullscreenchange', handler);
-  }, []);
+  // The metrics error block already reports an outage; the banner would repeat it.
+  const lost = (statusError != null || (settled && status == null)) && error == null;
 
   return (
-    <div className="h-screen w-screen bg-background flex flex-col overflow-hidden">
-      {/* Background grain */}
-      <div
-        className="fixed inset-0 pointer-events-none z-0 opacity-[0.015]"
-        style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
-        }}
-      />
-
-      {/* Header */}
-      <header className="h-12 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-4 z-raised relative">
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
-
-        <div className="flex items-center gap-3">
+    <DetachedWindowFrame
+      windowType="metrics"
+      fullscreen
+      header={{
+        icon: (
           <div className="p-1.5 rounded-lg border bg-primary/10 border-primary/20">
             <BarChart3 size={14} className="text-primary" />
           </div>
-          <span className="text-sm font-semibold text-text-primary">Token Metrics</span>
-        </div>
-
-        <MetricsControls
-          timeRange={timeRange}
-          onTimeRange={(r) => {
-            setTimeRange(r);
-            if (r === 'live') setIsPaused(false);
-          }}
-          isPaused={isPaused}
-          onTogglePause={() => setIsPaused((p) => !p)}
-          onRefresh={reload}
-          onClear={() => void clear()}
-          right={
-            <IconButton
-              icon={isFullscreen ? Minimize2 : Maximize2}
-              onClick={toggleFullscreen}
-              tooltip={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-              size="sm"
-              variant="ghost"
-            />
-          }
-        />
-      </header>
-
-      {/* Content */}
+        ),
+        start: <span className="text-sm font-semibold text-text-primary">Metrics</span>,
+        actions: (
+          <MetricsControls
+            timeRange={timeRange}
+            onTimeRange={(r) => {
+              setTimeRange(r);
+              if (r === 'live') setIsPaused(false);
+            }}
+            isPaused={isPaused}
+            onTogglePause={() => setIsPaused((p) => !p)}
+            onRefresh={reload}
+            onClear={() => void clear()}
+          />
+        ),
+      }}
+      connection={{ lost, message: statusError ?? undefined, onRetry: () => void refreshStatus() }}
+      footerStart={
+        <>
+          {kpis.total > 0 ? `Session total: ${formatCompactNumber(kpis.total)} tokens` : 'No data'}
+          {isPaused ? ' (paused)' : ''}
+        </>
+      }
+    >
       <main className="flex-1 overflow-auto bg-background scrollbar-dark min-h-0 p-4">
         {phase === 'loading' && (
           <div className="space-y-4 animate-pulse">
@@ -274,21 +245,7 @@ function DetachedMetricsPageContent() {
           </div>
         )}
       </main>
-
-      {/* Footer */}
-      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-3xs text-text-muted">
-        <span className="flex items-center gap-2">
-          {kpis.total > 0 ? `Session total: ${formatCompactNumber(kpis.total)} tokens` : 'No data'}
-          {isPaused ? ' (paused)' : ''}
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-text-muted animate-pulse motion-reduce:animate-none" />
-          Detached Window
-        </span>
-      </footer>
-
-      <ToastContainer />
-    </div>
+    </DetachedWindowFrame>
   );
 }
 

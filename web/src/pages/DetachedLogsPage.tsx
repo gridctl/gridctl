@@ -1,19 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Terminal,
-  ChevronDown,
-  Maximize2,
-  Minimize2,
-  Radio,
-  Layers,
-} from 'lucide-react';
+import { useCallback, useMemo } from 'react';
+import { Terminal, Radio, Layers } from 'lucide-react';
 import { cn } from '../lib/cn';
-import { IconButton } from '../components/ui/IconButton';
 import { GATEWAY_LOG_SOURCE, LogsView, useLogsView } from '../components/log';
-import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
+import { DetachedWindowFrame } from '../components/detached/DetachedWindowFrame';
+import { SelectMenu, type SelectMenuItem } from '../components/detached/SelectMenu';
 import { useSharedStatus } from '../hooks/useSharedStatus';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
-import { ToastContainer } from '../components/ui/Toast';
 import { useAuthStore } from '../stores/useAuthStore';
 
 interface NodeOption {
@@ -24,9 +16,9 @@ interface NodeOption {
 // Frameless logs popout. The log surface itself is the shared LogsView (same
 // URL-synced ?source=/?q=/?level=/?trace= semantics as the workspace, in this
 // window's own URL) including the full control bar, so every stream action
-// stays in lockstep with the workspace; this page adds only the window
-// chrome: source dropdown, fullscreen, and the footer. Trace pivots open the
-// Traces workspace in a full app tab since the popout has no other workspaces.
+// stays in lockstep with the workspace; this page adds only the source menu
+// to the frame header. Trace pivots open the Traces workspace in a full app
+// tab since the popout has no other workspaces.
 function DetachedLogsPageContent() {
   const generation = useAuthStore(s => s.generation);
   const authRequired = useAuthStore(s => s.authRequired);
@@ -36,7 +28,7 @@ function DetachedLogsPageContent() {
     window.open(`/traces?trace=${encodeURIComponent(traceId)}`, '_blank', 'noopener');
   }, []);
 
-  const { status } = useSharedStatus({ enabled: !authRequired });
+  const { status, settled, error, refresh } = useSharedStatus({ enabled: !authRequired });
   const nodes = useMemo<NodeOption[]>(() => {
     if (!status || useAuthStore.getState().generation !== generation) return [];
     return [
@@ -44,70 +36,46 @@ function DetachedLogsPageContent() {
       ...(status.resources ?? []).map((r) => ({ name: r.name, type: 'resource' as const })),
     ];
   }, [status, generation]);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  // Register with main window
-  useDetachedWindowSync('logs');
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   const isGateway = source === GATEWAY_LOG_SOURCE;
   const sourceLabel = source == null ? 'All sources' : isGateway ? 'Gateway' : source;
 
-  const handleSelectSource = (next: string | null) => {
-    view.setSource(next);
-    setDropdownOpen(false);
-  };
+  const items: SelectMenuItem[] = [
+    {
+      key: '__all__',
+      label: 'All sources',
+      dotClass: 'bg-text-muted',
+      tag: 'all',
+      selected: source == null,
+      onSelect: () => view.setSource(null),
+    },
+    {
+      key: '__gateway__',
+      label: 'Gateway',
+      dotClass: 'bg-primary',
+      tag: 'gateway',
+      selected: isGateway,
+      onSelect: () => view.setSource(GATEWAY_LOG_SOURCE),
+    },
+    ...nodes.map((node) => ({
+      key: `${node.type}:${node.name}`,
+      label: node.name,
+      dotClass: node.type === 'mcp-server' ? 'bg-tertiary-light' : 'bg-secondary',
+      tag: node.type === 'mcp-server' ? 'MCP server' : 'resource',
+      selected: source === node.name,
+      onSelect: () => view.setSource(node.name),
+    })),
+  ];
 
-  const toggleFullscreen = async () => {
-    if (!document.fullscreenElement) {
-      await document.documentElement.requestFullscreen();
-      setIsFullscreen(true);
-    } else {
-      await document.exitFullscreen();
-      setIsFullscreen(false);
-    }
-  };
-
-  // Listen for fullscreen changes
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
+  // The stream's own failed state already reports an outage.
+  const lost = (error != null || (settled && status == null)) && view.error == null;
 
   return (
-    <div className="h-screen w-screen bg-background flex flex-col overflow-hidden">
-      {/* Background grain */}
-      <div
-        className="fixed inset-0 pointer-events-none z-0 opacity-[0.015]"
-        style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
-        }}
-      />
-
-      {/* Header — identity chrome only; stream actions live in the shared bar */}
-      <header className="h-12 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-4 z-raised relative">
-        {/* Top accent line */}
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
-
-        <div className="flex items-center gap-3">
+    <DetachedWindowFrame
+      windowType="logs"
+      fullscreen
+      header={{
+        icon: (
           <div className={cn(
             'p-1.5 rounded-lg border',
             source == null
@@ -124,122 +92,29 @@ function DetachedLogsPageContent() {
               <Terminal size={14} className="text-tertiary" />
             )}
           </div>
-
-          {/* Source selector dropdown */}
-          <div className="relative" ref={dropdownRef}>
-            <button
-              onClick={() => setDropdownOpen(!dropdownOpen)}
-              className={cn(
-                'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
-                'bg-surface-elevated/60 border border-border/50',
-                'hover:bg-surface-highlight hover:border-text-muted/30',
-                dropdownOpen && 'bg-surface-highlight border-text-muted/30'
-              )}
-            >
-              <span className="text-text-primary">{sourceLabel}</span>
-              <ChevronDown
-                size={14}
-                className={cn(
-                  'text-text-muted transition-transform duration-200',
-                  dropdownOpen && 'rotate-180'
-                )}
-              />
-            </button>
-
-            {dropdownOpen && (
-              <div className="absolute top-full left-0 mt-1 w-64 py-1 bg-surface-elevated/95 backdrop-blur-xl border border-border/50 rounded-lg shadow-lg z-popover animate-fade-in-scale">
-                <SourceOption
-                  label="All sources"
-                  dotClass="bg-text-muted"
-                  tag="all"
-                  selected={source == null}
-                  onSelect={() => handleSelectSource(null)}
-                />
-                <SourceOption
-                  label="Gateway"
-                  dotClass="bg-primary"
-                  tag="gateway"
-                  selected={isGateway}
-                  onSelect={() => handleSelectSource(GATEWAY_LOG_SOURCE)}
-                />
-                {(nodes ?? []).map((node) => (
-                  <SourceOption
-                    key={node.name}
-                    label={node.name}
-                    dotClass={node.type === 'mcp-server' ? 'bg-tertiary-light' : 'bg-secondary'}
-                    tag={node.type === 'mcp-server' ? 'server' : node.type}
-                    selected={source === node.name}
-                    onSelect={() => handleSelectSource(node.name)}
-                  />
-                ))}
-              </div>
+        ),
+        start: (
+          <>
+            <SelectMenu
+              label="Log source"
+              value={<span className="text-text-primary">{sourceLabel}</span>}
+              items={items}
+            />
+            {isGateway && (
+              <span className="text-3xs px-1.5 py-0.5 bg-primary/10 text-primary rounded font-medium border border-primary/20">
+                Structured
+              </span>
             )}
-          </div>
-
-          {isGateway && (
-            <span className="text-3xs px-1.5 py-0.5 bg-primary/10 text-primary rounded font-medium border border-primary/20">
-              Structured
-            </span>
-          )}
-        </div>
-      </header>
-
-      {/* Log surface — shared with the workspace, incl. the full control bar */}
-      <LogsView
-        view={view}
-        onTraceClick={onTraceClick}
-        emptyText="No logs available"
-        toolbarExtra={
-          <IconButton
-            icon={isFullscreen ? Minimize2 : Maximize2}
-            onClick={toggleFullscreen}
-            tooltip={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-            size="sm"
-            variant="ghost"
-          />
-        }
-      />
-
-      {/* Footer status bar. Entry counts live in the shared filter bar now —
-          repeating them here showed the same numbers twice. */}
-      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-end px-4 text-3xs text-text-muted">
-        <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-text-muted animate-pulse motion-reduce:animate-none" />
-          Detached Window
-        </span>
-      </footer>
-
-      <ToastContainer />
-    </div>
-  );
-}
-
-function SourceOption({
-  label,
-  dotClass,
-  tag,
-  selected,
-  onSelect,
-}: {
-  label: string;
-  dotClass: string;
-  tag: string;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      onClick={onSelect}
-      className={cn(
-        'w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors',
-        'hover:bg-surface-highlight',
-        selected && 'bg-primary/10 text-primary'
-      )}
+          </>
+        ),
+      }}
+      connection={{ lost, message: error ?? undefined, onRetry: () => void refresh() }}
     >
-      <span className={cn('w-1.5 h-1.5 rounded-full', dotClass)} />
-      <span className="truncate">{label}</span>
-      <span className="ml-auto text-3xs text-text-muted uppercase">{tag}</span>
-    </button>
+      {/* Log surface: shared with the workspace, including the full control bar */}
+      <main className="flex-1 min-h-0 flex flex-col">
+        <LogsView view={view} onTraceClick={onTraceClick} emptyText="No logs available" />
+      </main>
+    </DetachedWindowFrame>
   );
 }
 

@@ -177,4 +177,63 @@ describe('DetachedSidebarPage', () => {
     expect(fetchTools).toHaveBeenCalled();
     expect(fetchToolCatalog).toHaveBeenCalled();
   });
+
+  it('titles the window with the selected node and renders one notifications region', () => {
+    document.title = '';
+    renderAt('/sidebar?node=db');
+    expect(document.title).toBe('Gridctl - Details: db');
+    expect(screen.getAllByRole('region', { name: 'Notifications' })).toHaveLength(1);
+    expect(screen.getByRole('main')).toBeInTheDocument();
+  });
+
+  it('opens the node menu, labels MCP servers, and closes on Escape with focus returned', () => {
+    renderAt('/sidebar');
+    const trigger = screen.getByRole('button', { name: 'Select node...' });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(trigger);
+    const menu = screen.getByRole('menu', { name: 'Node' });
+    expect(within(menu).getByRole('menuitemradio', { name: /db/ })).toHaveTextContent('MCP server');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it('closes the node menu on an outside click and selects a node', () => {
+    renderAt('/sidebar');
+    const trigger = screen.getByRole('button', { name: 'Select node...' });
+    fireEvent.click(trigger);
+    fireEvent.mouseDown(screen.getByRole('main'));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /db/ }));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(document.title).toBe('Gridctl - Details: db');
+  });
+
+  it('zooms through the inspector preference, not the log font size', () => {
+    localStorage.clear();
+    renderAt('/sidebar');
+    fireEvent.click(screen.getByRole('button', { name: 'Increase font size' }));
+    expect(localStorage.getItem('gridctl-pref-inspector-zoom')).toBe('12');
+    expect(localStorage.getItem('gridctl-pref-log-font-size')).toBeNull();
+    localStorage.clear();
+  });
+
+  it('shows the disconnected banner when status fails with a node list still present', () => {
+    setShared({ error: 'Status failed: down.' });
+    renderAt('/sidebar?node=db');
+    const alerts = screen.getAllByRole('alert');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveTextContent('Status failed: down.');
+    expect(screen.getAllByText('db').length).toBeGreaterThan(0);
+    fireEvent.click(within(alerts[0]).getByRole('button', { name: 'Retry' }));
+    expect(shared.current.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows one alert when the gateway is unavailable', () => {
+    setShared({ status: null, settled: true, error: 'Status failed: down.' });
+    renderAt('/sidebar?node=db');
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+  });
 });

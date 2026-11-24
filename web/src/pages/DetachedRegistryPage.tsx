@@ -15,10 +15,11 @@ import { SkillCardSkeleton } from '../components/registry/SkillCardSkeleton';
 import { LibraryGrid } from '../components/registry/LibraryGrid';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { FailedState, FailureBanner } from '../components/ui/EmptyState';
-import { ToastContainer, showToast } from '../components/ui/Toast';
-import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
+import { showToast } from '../components/ui/Toast';
+import { DetachedWindowFrame } from '../components/detached/DetachedWindowFrame';
 import { useInterval } from '../hooks/useInterval';
-import { useLogFontSize } from '../hooks/useLogFontSize';
+import { useTextZoom } from '../hooks/useTextZoom';
+import { useSharedStatus } from '../hooks/useSharedStatus';
 import { useFuzzySearch } from '../hooks/useFuzzySearch';
 import {
   fetchRegistryStatus,
@@ -26,9 +27,11 @@ import {
   deleteRegistrySkill,
   activateRegistrySkill,
   disableRegistrySkill,
+  fetchSkillSources,
 } from '../lib/api';
 import { POLLING } from '../lib/constants';
-import type { AgentSkill, RegistryStatus, ItemState } from '../types';
+import { LIBRARY_TEXT_ZOOM } from '../lib/textZoomDefaults';
+import type { AgentSkill, RegistryStatus, ItemState, SkillSourceStatus } from '../types';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { useAuthStore } from '../stores/useAuthStore';
 import { describeError, isCancellation } from '../lib/describeError';
@@ -49,6 +52,7 @@ function DetachedRegistryContent() {
   const [status, setStatus] = useState<RegistryStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [sources, setSources] = useState<SkillSourceStatus[] | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
 
@@ -61,15 +65,26 @@ function DetachedRegistryContent() {
 
   // Text zoom
   const contentRef = useRef<HTMLElement>(null);
-  const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } =
-    useLogFontSize(contentRef);
+  const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } = useTextZoom({
+    storageKey: LIBRARY_TEXT_ZOOM.name,
+    defaultSize: LIBRARY_TEXT_ZOOM.defaultSize,
+    minSize: LIBRARY_TEXT_ZOOM.minSize,
+    maxSize: LIBRARY_TEXT_ZOOM.maxSize,
+    step: LIBRARY_TEXT_ZOOM.step,
+    containerRef: contentRef,
+  });
 
-  // Register with main window
-  useDetachedWindowSync('registry');
+  const { status: gatewayStatus, settled, error: statusError, refresh: refreshStatus } =
+    useSharedStatus({ enabled: !authRequired });
 
   const fetchData = useCallback(async () => {
     const current = () => useAuthStore.getState().generation === generation && !useAuthStore.getState().authRequired;
     if (!current()) return;
+    // Sources only add provenance; a failure keeps the last list and never
+    // fails the registry load.
+    void fetchSkillSources()
+      .then((next) => { if (current()) setSources(next); })
+      .catch(() => {});
     try {
       const [regStatus, regSkills] = await Promise.all([
         fetchRegistryStatus(),
@@ -150,52 +165,68 @@ function DetachedRegistryContent() {
     }
   }, [confirmDelete, fetchData]);
 
+  // Join skills to sources by name, as the Library workspace does.
+  const sourceMap = useMemo(() => {
+    const map = new Map<string, SkillSourceStatus>();
+    for (const src of sources ?? []) {
+      for (const entry of src.skills ?? []) {
+        if (!map.has(entry.name)) map.set(entry.name, src);
+      }
+    }
+    return map;
+  }, [sources]);
+
   const hasSkills = (skills ?? []).length > 0;
 
+  // The page's own failure row already reports the outage.
+  const lost = (statusError != null || (settled && gatewayStatus == null)) && loadError == null;
+
   return (
-    <div className="h-screen w-screen bg-background flex flex-col overflow-hidden relative">
-      {/* Background grain */}
-      <div
-        className="fixed inset-0 pointer-events-none z-0 opacity-[0.015]"
-        style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
-        }}
-      />
-
-      {/* Header */}
-      <header className="h-12 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-4 z-raised relative">
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
-
-        <div className="flex items-center gap-3">
+    <DetachedWindowFrame
+      windowType="registry"
+      header={{
+        icon: (
           <div className="p-1.5 rounded-lg bg-primary/10 border border-primary/20">
             <Library size={14} className="text-primary" />
           </div>
+        ),
+        start: (
           <div>
             <span className="text-sm font-semibold text-text-primary tracking-tight">Library</span>
             <span className="text-3xs text-text-muted uppercase tracking-wider ml-2">Skills & agents</span>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <ZoomControls
-            fontSize={fontSize}
-            onZoomIn={zoomIn}
-            onZoomOut={zoomOut}
-            onReset={resetZoom}
-            isMin={isMin}
-            isMax={isMax}
-            isDefault={isDefault}
-          />
-          <button
-            onClick={() => { setEditingSkill(undefined); setShowEditor(true); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
-          >
-            <Plus size={12} /> New Skill
-          </button>
-          <IconButton icon={RefreshCw} onClick={fetchData} tooltip="Refresh" size="sm" variant="ghost" />
-        </div>
-      </header>
-
+        ),
+        actions: (
+          <>
+            <ZoomControls
+              fontSize={fontSize}
+              onZoomIn={zoomIn}
+              onZoomOut={zoomOut}
+              onReset={resetZoom}
+              isMin={isMin}
+              isMax={isMax}
+              isDefault={isDefault}
+            />
+            <button
+              type="button"
+              onClick={() => { setEditingSkill(undefined); setShowEditor(true); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary hover:text-primary/80 bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
+            >
+              <Plus size={12} /> New Skill
+            </button>
+            <IconButton icon={RefreshCw} onClick={fetchData} tooltip="Refresh" size="sm" variant="ghost" />
+          </>
+        ),
+      }}
+      connection={{ lost, message: statusError ?? undefined, onRetry: () => void refreshStatus() }}
+      footerStart={
+        <span>
+          {status ? `${status.totalSkills} total` : ''}
+          {status ? ` · ` : ''}
+          <span className="text-status-running">{status?.activeSkills ?? 0} active</span>
+        </span>
+      }
+    >
       {/* Search + Filter bar */}
       <div className="px-4 pt-3 pb-2.5 bg-surface/60 backdrop-blur-sm border-b border-border/40 flex flex-col gap-2 z-raised flex-shrink-0">
         {/* Search input */}
@@ -314,6 +345,7 @@ function DetachedRegistryContent() {
           <LibraryGrid
             skills={displayedSkills}
             hasSearch={searchQuery.length > 0}
+            sourceMap={sourceMap}
             onEnable={handleEnable}
             onDisable={handleDisable}
             onEdit={(s) => { setEditingSkill(s); setShowEditor(true); }}
@@ -321,19 +353,6 @@ function DetachedRegistryContent() {
           />
         )}
       </main>
-
-      {/* Status footer */}
-      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-3xs text-text-muted z-raised">
-        <span>
-          {status ? `${status.totalSkills} total` : ''}
-          {status ? ` · ` : ''}
-          <span className="text-status-running">{status?.activeSkills ?? 0} active</span>
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-text-muted animate-pulse" />
-          Detached Window
-        </span>
-      </footer>
 
       {/* Delete confirmation */}
       <ConfirmDialog
@@ -363,10 +382,9 @@ function DetachedRegistryContent() {
         onClose={() => { setShowEditor(false); setEditingSkill(undefined); }}
         onSaved={fetchData}
         skill={editingSkill}
+        source={editingSkill ? sourceMap.get(editingSkill.name) : undefined}
       />
-
-      <ToastContainer />
-    </div>
+    </DetachedWindowFrame>
   );
 }
 

@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router';
 import {
   Terminal,
   Box,
-  ChevronDown,
   Wrench,
   Sparkles,
   Globe,
@@ -17,10 +16,10 @@ import { cn } from '../lib/cn';
 import { Badge } from '../components/ui/Badge';
 import { IconButton } from '../components/ui/IconButton';
 import { ZoomControls } from '../components/ui/ZoomControls';
-import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { useSharedStatus } from '../hooks/useSharedStatus';
 import { useInterval } from '../hooks/useInterval';
-import { useLogFontSize } from '../hooks/useLogFontSize';
+import { useTextZoom } from '../hooks/useTextZoom';
+import { INSPECTOR_TEXT_ZOOM } from '../lib/textZoomDefaults';
 import { fetchTools, fetchToolCatalog } from '../lib/api';
 import { getTransportIcon, getTransportColorClasses } from '../lib/transport';
 import { POLLING } from '../lib/constants';
@@ -33,7 +32,8 @@ import type {
 import { InspectorSection } from '../components/inspector';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { EmptyState, FailedState } from '../components/ui/EmptyState';
-import { ToastContainer } from '../components/ui/Toast';
+import { DetachedWindowFrame } from '../components/detached/DetachedWindowFrame';
+import { SelectMenu } from '../components/detached/SelectMenu';
 import { SourceProvenance } from '../components/sidebar/SourceProvenance';
 import { ExecutionDetails } from '../components/sidebar/ExecutionDetails';
 import { SecurityEvidence } from '../components/sidebar/SecurityEvidence';
@@ -53,7 +53,6 @@ function DetachedSidebarPageContent() {
   const initialNode = searchParams.get('node');
 
   const [selectedNode, setSelectedNode] = useState<string | null>(initialNode);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const { status, settled, error, refresh } = useSharedStatus({ enabled: !authRequired });
   const nodes = useMemo<NodeOption[]>(() => {
     if (!status || useAuthStore.getState().generation !== generation || useAuthStore.getState().authRequired) {
@@ -76,11 +75,14 @@ function DetachedSidebarPageContent() {
 
   // Text zoom
   const contentRef = useRef<HTMLElement>(null);
-  const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } =
-    useLogFontSize(contentRef);
-
-  // Register with main window
-  useDetachedWindowSync('sidebar');
+  const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } = useTextZoom({
+    storageKey: INSPECTOR_TEXT_ZOOM.name,
+    defaultSize: INSPECTOR_TEXT_ZOOM.defaultSize,
+    minSize: INSPECTOR_TEXT_ZOOM.minSize,
+    maxSize: INSPECTOR_TEXT_ZOOM.maxSize,
+    step: INSPECTOR_TEXT_ZOOM.step,
+    containerRef: contentRef,
+  });
 
   useEffect(() => {
     if (!status) return;
@@ -131,102 +133,59 @@ function DetachedSidebarPageContent() {
         ? 'not-found'
         : 'select';
 
-  const handleSelectNode = (name: string) => {
-    setSelectedNode(name);
-    setDropdownOpen(false);
-  };
+  // The unavailable state already reports the outage in the content area.
+  const lost = (error != null || (settled && status == null)) && contentState !== 'unavailable';
 
   return (
-    <div className="h-screen w-screen bg-background flex flex-col overflow-hidden">
-      {/* Background grain */}
-      <div
-        className="fixed inset-0 pointer-events-none z-0 opacity-[0.015]"
-        style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
-        }}
-      />
-
-      {/* Header */}
-      <header className="h-12 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-b border-border/50 flex items-center justify-between px-4 z-raised relative">
-        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-tertiary/30 to-transparent" />
-
-        <div className="flex items-center gap-3">
+    <DetachedWindowFrame
+      windowType="sidebar"
+      titleDetail={selectedNode}
+      header={{
+        accent: 'tertiary',
+        icon: (
           <div className="p-1.5 rounded-lg bg-tertiary/10 border border-tertiary/20">
             <Server size={14} className="text-tertiary" />
           </div>
-
-          {/* Node selector dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setDropdownOpen(!dropdownOpen)}
-              className={cn(
-                'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
-                'bg-surface-elevated/60 border border-border/50',
-                'hover:bg-surface-highlight hover:border-text-muted/30',
-                dropdownOpen && 'bg-surface-highlight border-text-muted/30'
-              )}
-            >
+        ),
+        start: (
+          <SelectMenu
+            label="Node"
+            accent="tertiary"
+            value={
               <span className={cn(selectedNode ? 'text-text-primary' : 'text-text-muted')}>
                 {selectedNode ?? 'Select node...'}
               </span>
-              <ChevronDown
-                size={14}
-                className={cn(
-                  'text-text-muted transition-transform duration-200',
-                  dropdownOpen && 'rotate-180'
-                )}
-              />
-            </button>
-
-            {dropdownOpen && (
-              <div className="absolute top-full left-0 mt-1 w-64 py-1 bg-surface-elevated/95 backdrop-blur-xl border border-border/50 rounded-lg shadow-lg z-popover max-h-80 overflow-y-auto scrollbar-dark animate-fade-in-scale">
-                {(nodes ?? []).length === 0 ? (
-                  <div className="px-3 py-2 text-xs text-text-muted">No nodes available</div>
-                ) : (
-                  (nodes ?? []).map((node) => (
-                    <button
-                      key={node.name}
-                      onClick={() => handleSelectNode(node.name)}
-                      className={cn(
-                        'w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors',
-                        'hover:bg-surface-highlight',
-                        selectedNode === node.name && 'bg-tertiary/10 text-tertiary'
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          'w-1.5 h-1.5 rounded-full',
-                          node.type === 'mcp-server' && 'bg-tertiary-light',
-                          node.type === 'resource' && 'bg-secondary'
-                        )}
-                      />
-                      <span className="truncate">{node.name}</span>
-                      <span className="ml-auto text-3xs text-text-muted uppercase">
-                        {node.type === 'mcp-server' ? 'server' : node.type}
-                      </span>
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <ZoomControls
-            fontSize={fontSize}
-            onZoomIn={zoomIn}
-            onZoomOut={zoomOut}
-            onReset={resetZoom}
-            isMin={isMin}
-            isMax={isMax}
-            isDefault={isDefault}
+            }
+            emptyText="No nodes available"
+            panelClassName="max-h-80 overflow-y-auto scrollbar-dark"
+            items={nodes.map((node) => ({
+              key: `${node.type}:${node.name}`,
+              label: node.name,
+              dotClass: node.type === 'mcp-server' ? 'bg-tertiary-light' : 'bg-secondary',
+              tag: node.type === 'mcp-server' ? 'MCP server' : 'resource',
+              selected: selectedNode === node.name,
+              onSelect: () => setSelectedNode(node.name),
+            }))}
           />
-          <IconButton icon={RefreshCw} onClick={() => void refreshAll()} tooltip="Refresh" size="sm" variant="ghost" />
-        </div>
-      </header>
-
-      {/* Content */}
+        ),
+        actions: (
+          <>
+            <ZoomControls
+              fontSize={fontSize}
+              onZoomIn={zoomIn}
+              onZoomOut={zoomOut}
+              onReset={resetZoom}
+              isMin={isMin}
+              isMax={isMax}
+              isDefault={isDefault}
+            />
+            <IconButton icon={RefreshCw} onClick={() => void refreshAll()} tooltip="Refresh" size="sm" variant="ghost" />
+          </>
+        ),
+      }}
+      connection={{ lost, message: error ?? undefined, onRetry: () => void refresh() }}
+      footerStart={selectedData?.type === 'mcp-server' ? 'MCP Server' : selectedData?.type === 'resource' ? 'Resource' : ''}
+    >
       <main
         ref={contentRef}
         className="flex-1 overflow-y-auto scrollbar-dark"
@@ -263,20 +222,7 @@ function DetachedSidebarPageContent() {
           </div>
         )}
       </main>
-
-      {/* Footer */}
-      <footer className="h-6 flex-shrink-0 bg-surface/90 backdrop-blur-xl border-t border-border/50 flex items-center justify-between px-4 text-3xs text-text-muted">
-        <span>
-          {selectedData?.type === 'mcp-server' ? 'MCP Server' : selectedData?.type === 'resource' ? 'Resource' : ''}
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-text-muted animate-pulse" />
-          Detached Window
-        </span>
-      </footer>
-
-      <ToastContainer />
-    </div>
+    </DetachedWindowFrame>
   );
 }
 

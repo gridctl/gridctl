@@ -1,14 +1,25 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { DetachedLogsPage } from '../pages/DetachedLogsPage';
 import { useUIStore } from '../stores/useUIStore';
+import { useAuthStore } from '../stores/useAuthStore';
 import type { LogEntry } from '../lib/api';
+import type { SharedStatus } from '../hooks/useSharedStatus';
+import type { GatewayStatus } from '../types';
 
 vi.mock('../hooks/useBroadcastChannel', () => ({
   useDetachedWindowSync: vi.fn(),
   useBroadcastChannel: () => ({ postMessage: vi.fn() }),
+}));
+
+const shared: { current: SharedStatus } = {
+  current: { status: null, source: null, settled: false, error: null, refresh: vi.fn() },
+};
+
+vi.mock('../hooks/useSharedStatus', () => ({
+  useSharedStatus: () => shared.current,
 }));
 
 vi.mock('../lib/api', async (importActual) => {
@@ -58,6 +69,16 @@ beforeEach(() => {
     'mcp-servers': [],
     resources: [],
   } as unknown as Awaited<ReturnType<typeof fetchStatus>>);
+  shared.current = {
+    status: {
+      'mcp-servers': [{ name: 'github' }],
+      resources: [{ name: 'postgres' }],
+    } as unknown as GatewayStatus,
+    source: 'self',
+    settled: true,
+    error: null,
+    refresh: vi.fn().mockResolvedValue(undefined),
+  };
   useUIStore.setState({
     logsPrefs: { levelParam: '', source: '', wrap: false, relativeTime: false, windowSize: 500 },
   });
@@ -107,5 +128,70 @@ describe('DetachedLogsPage', () => {
     });
     expect(screen.queryByText('gateway listening')).not.toBeInTheDocument();
     expect(screen.queryByText('tool call failed')).not.toBeInTheDocument();
+  });
+
+  it('renders inside the frame with a main landmark, its title, and one notifications region', async () => {
+    document.title = '';
+    renderAt('/logs-window');
+    expect(screen.getByRole('main')).toBeInTheDocument();
+    expect(screen.getAllByRole('region', { name: 'Notifications' })).toHaveLength(1);
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('Detached Window');
+    expect(document.title).toBe('Gridctl - Logs');
+    await waitFor(() => expect(screen.getByText('gateway listening')).toBeInTheDocument());
+  });
+
+  it('opens the source menu, labels MCP servers, and closes on Escape with focus returned', async () => {
+    renderAt('/logs-window');
+    const trigger = screen.getByRole('button', { name: 'All sources' });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const menu = screen.getByRole('menu', { name: 'Log source' });
+    expect(within(menu).getByRole('menuitemradio', { name: /github/ })).toHaveTextContent('MCP server');
+    expect(within(menu).getByRole('menuitemradio', { name: /All sources/ })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    await waitFor(() => expect(screen.getByText('gateway listening')).toBeInTheDocument());
+  });
+
+  it('closes the source menu on an outside click', async () => {
+    renderAt('/logs-window');
+    fireEvent.click(screen.getByRole('button', { name: 'All sources' }));
+    fireEvent.mouseDown(screen.getByRole('main'));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('gateway listening')).toBeInTheDocument());
+  });
+
+  it('shows the disconnected banner over the loaded stream when status fails', async () => {
+    shared.current = { ...shared.current, error: 'Status failed: down.' };
+    renderAt('/logs-window');
+    await waitFor(() => expect(screen.getByText('gateway listening')).toBeInTheDocument());
+    const alerts = screen.getAllByRole('alert');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveTextContent('Status failed: down.');
+    fireEvent.click(within(alerts[0]).getByRole('button', { name: 'Retry' }));
+    expect(shared.current.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds the banner back while the stream shows its own failure', async () => {
+    shared.current = { ...shared.current, status: null, error: 'Status failed: down.' };
+    vi.mocked(fetchGatewayLogs).mockRejectedValue(new Error('Gateway connection unavailable'));
+    renderAt('/logs-window');
+    await waitFor(() => expect(screen.getByText('Logs unavailable')).toBeInTheDocument());
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.queryByText('Status failed: down.')).not.toBeInTheDocument();
+  });
+
+  it('does not show the banner while the credential prompt is up', async () => {
+    useAuthStore.setState({ authRequired: true });
+    shared.current = { ...shared.current, status: null, error: 'Status failed: down.' };
+    try {
+      renderAt('/logs-window');
+      expect(screen.queryByText('Status failed: down.')).not.toBeInTheDocument();
+    } finally {
+      useAuthStore.setState({ authRequired: false });
+    }
   });
 });

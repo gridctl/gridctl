@@ -1,4 +1,4 @@
-// Shared clamps for the four text-size preferences. The inline zoom hooks and
+// Shared clamps for the five text-size preferences. The inline zoom hooks and
 // the Preferences dialog both read these so a row cannot drift from its pane.
 
 export interface TextZoomSpec {
@@ -46,9 +46,19 @@ export const LOG_TEXT_ZOOM: TextZoomSpec = {
   step: 1,
 };
 
+export const INSPECTOR_TEXT_ZOOM: TextZoomSpec = {
+  name: 'inspector-zoom',
+  label: 'Inspector',
+  defaultSize: 11,
+  minSize: 8,
+  maxSize: 22,
+  step: 1,
+};
+
 export const TEXT_ZOOM_ROWS: readonly TextZoomSpec[] = [
   LIBRARY_TEXT_ZOOM,
   TOOLS_TEXT_ZOOM,
   TRACES_TEXT_ZOOM,
   LOG_TEXT_ZOOM,
+  INSPECTOR_TEXT_ZOOM,
 ];

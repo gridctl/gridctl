@@ -72,8 +72,9 @@ describe('PreferencesDialog', () => {
     expect(screen.getByText('14px')).toBeInTheDocument();
   });
 
-  it('lists a text-size row for Library, Tools, Traces, and Logs', () => {
+  it('lists a text-size row for Library, Tools, Traces, Logs, and Inspector', () => {
     render(<PreferencesDialog />);
+    expect(screen.getByRole('button', { name: 'Increase Inspector text size' })).toBeInTheDocument();
     expect(screen.getAllByText('Library').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Tools').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Traces').length).toBeGreaterThan(0);

@@ -157,9 +157,10 @@ workspaces. Reach for them before duplicating UI:
 | `Tabs` / `Tab` / `TabPanel` | `components/ui/` | Keyboard-operable tab lists. Arrow keys move and select. `InspectorTabList` / `InspectorTabButton` are wrappers that keep inspector chrome |
 | `EmptyState` | `components/ui/` | Anywhere a "no items / no selection" affordance is needed |
 | `FailedState` | `components/ui/` | Failed fetch with nothing loaded. Title is `<feature> unavailable`, with Retry when `onRetry` is set. Not a spinner or an empty collection |
-| `FailureBanner` | `components/ui/` | Failed refresh when data is already on screen: one alert row and Retry. `lastUpdated` adds a static "Last updated HH:MM:SS"; `className` overrides the default margins |
+| `FailureBanner` | `components/ui/` | Failed refresh when data is already on screen: one alert row, with Retry when `onRetry` is set. `lastUpdated` adds a static "Last updated HH:MM:SS"; `className` overrides the default margins |
 | `refreshPhase` | `lib/refreshPhase.ts` | The single definition of the rule above. Maps `{ error, hasLoaded }` to `loading` (skeleton), `failed` (`FailedState`), `stale` (data plus `FailureBanner`), or `ready`. `hasLoaded` means a load completed for what is selected now |
-| `Popover` | `components/ui/` | Theme picker, telemetry pill, overlays menu, log level filter, log view options. Escape and a programmatic close return focus to the trigger; an outside click does not |
+| `Popover` | `components/ui/` | Theme picker, telemetry pill, overlays menu, log level filter, log view options, and `SelectMenu` (the detached inspector's node menu and the detached Logs source menu). Escape and a programmatic close return focus to the trigger; an outside click does not |
+| `DetachedWindowFrame` | `components/detached/` | Every detached page renders through it. Owns the grain, header, footer, `document.title`, the window's single `ToastContainer`, the fullscreen toggle (warns when the browser refuses), and the disconnected banner. It fetches nothing: the page passes `connection` from its one `useSharedStatus` call and holds `lost` false while its own failure notice is showing. The editor popout omits the header, footer, and banner because the flush editor covers them |
 | `Field` | `components/ui/` | Label, control, error, then help. Owns the required marker and wires `htmlFor`, `aria-invalid`, and `aria-describedby`. Pass plain label text. A different sibling order keeps its wrapper and uses `useId` |
 | `IconButton` | `components/ui/` | Requires `tooltip` or `ariaLabel`, and renders `type="button"`. `title` alone is not an accessible name. `size="lg"` is a 44 px square, border included; the default size stays `md` |
 | `Switch` | `components/ui/` | The only `role="switch"` control. `BoolToggle` and the Connections link toggle render it. `label` is the accessible name |
@@ -168,7 +169,7 @@ workspaces. Reach for them before duplicating UI:
 | `PreferencesDialog` | `components/shell/` | Header and palette. Theme, compact mode for the seven workspaces that read it, and text size |
 | `ShortcutsPanel` | `components/shell/` | Opens on `?`, from the palette, and from Preferences. One static binding table, grouped by scope |
 
-Every detached page (`pages/Detached*Page.tsx`) mounts `ToastContainer` itself as the last child of its root element, because it renders outside `AppShell`. Do not add one to `AuthBoundary` or `routes.tsx`: a second container in the same document shows every toast twice.
+Every detached page (`pages/Detached*Page.tsx`) renders outside `AppShell`, so `DetachedWindowFrame` mounts its `ToastContainer`. No page mounts one itself. Do not add one to a page, `AuthBoundary`, or `routes.tsx`: a second container in the same document shows every toast twice.
 
 ## Layering
 

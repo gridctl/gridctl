@@ -124,7 +124,8 @@ export function FailureBanner({
   className,
 }: {
   message: string;
-  onRetry: () => void;
+  /** Omit to render the row without a Retry button. */
+  onRetry?: () => void;
   /** Time of the last successful load; shown as absolute local time. */
   lastUpdated?: Date | number | null;
   className?: string;
@@ -149,9 +150,11 @@ export function FailureBanner({
           <span className="ml-2 text-text-muted">Last updated {updatedLabel}</span>
         )}
       </span>
-      <Button variant="secondary" size="sm" onClick={onRetry}>
-        Retry
-      </Button>
+      {onRetry && (
+        <Button variant="secondary" size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      )}
     </div>
   );
 }
