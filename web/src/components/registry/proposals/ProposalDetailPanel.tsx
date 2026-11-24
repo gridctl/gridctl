@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import { FileDiff } from 'lucide-react';
 import { InspectorHeader } from '../../inspector';
 import { Button } from '../../ui/Button';
+import { FailureBanner } from '../../ui/EmptyState';
 import { showToast } from '../../ui/Toast';
 import { approveProposal, fetchProposal, HTTPError, rejectProposal } from '../../../lib/api';
 import { cn } from '../../../lib/cn';
@@ -23,6 +24,7 @@ export function ProposalDetailPanel({ proposal, onClose, onChanged }: ProposalDe
   const id = proposal?.id ?? null;
   const [detail, setDetail] = useState<Proposal | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   // The list rows carry the stored base_current and no pin_status; the
   // single GET refreshes both against the live stores, so gating waits for it.
@@ -31,13 +33,12 @@ export function ProposalDetailPanel({ proposal, onClose, onChanged }: ProposalDe
     let cancelled = false;
     fetchProposal(id)
       .then((full) => {
-        if (!cancelled) setDetail(full);
+        if (cancelled) return;
+        setDetail(full);
+        setDetailError(null);
       })
       .catch((err) => {
-        if (!cancelled && !isCancellation(err)) {
-          const described = describeError(err, 'Load proposal');
-          showToast('error', described.text, { detail: described.fullDetail });
-        }
+        if (!cancelled && !isCancellation(err)) setDetailError(describeError(err, 'Load proposal').text);
       });
     return () => {
       cancelled = true;
@@ -45,6 +46,10 @@ export function ProposalDetailPanel({ proposal, onClose, onChanged }: ProposalDe
   }, [id, attempt]);
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
+  const retry = useCallback(() => {
+    setDetailError(null);
+    reload();
+  }, [reload]);
 
   if (!proposal) {
     return (
@@ -65,7 +70,8 @@ export function ProposalDetailPanel({ proposal, onClose, onChanged }: ProposalDe
         onClose={onClose}
       />
       <div className="flex-1 overflow-auto p-4 flex flex-col gap-4">
-        <ProposalSummary proposal={shown} refreshed={detail !== null} />
+        {detailError && <FailureBanner message={detailError} onRetry={retry} className="mx-0 mt-0" />}
+        <ProposalSummary proposal={shown} refreshed={detail !== null} failed={detailError !== null} />
         <section aria-label="Diff" className="space-y-1">
           <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted/70">
             Diff{shown.files && shown.files.length > 0 ? ` (${shown.files.map(escapeNonPrintable).join(', ')})` : ''}
@@ -88,6 +94,7 @@ export function ProposalDetailPanel({ proposal, onClose, onChanged }: ProposalDe
           key={shown.id}
           proposal={shown}
           ready={detail !== null}
+          failed={detailError !== null}
           onReload={reload}
           onChanged={onChanged}
         />
@@ -96,8 +103,8 @@ export function ProposalDetailPanel({ proposal, onClose, onChanged }: ProposalDe
   );
 }
 
-function ProposalSummary({ proposal, refreshed }: { proposal: Proposal; refreshed: boolean }) {
-  const pinStatus = refreshed ? proposal.pin_status ?? 'unknown' : 'loading';
+function ProposalSummary({ proposal, refreshed, failed }: { proposal: Proposal; refreshed: boolean; failed: boolean }) {
+  const pinStatus = refreshed ? proposal.pin_status ?? 'unknown' : failed ? 'unavailable' : 'loading';
   return (
     <section aria-label="Summary" className="flex flex-col gap-2 text-xs">
       <p className="text-text-secondary">{escapeNonPrintable(pathExplanation(proposal))}</p>
@@ -234,11 +241,13 @@ function VerdictSection({ proposal }: { proposal: Proposal }) {
 function ProposalActions({
   proposal,
   ready,
+  failed,
   onReload,
   onChanged,
 }: {
   proposal: Proposal;
   ready: boolean;
+  failed: boolean;
   onReload: () => void;
   onChanged: () => Promise<void> | void;
 }) {
@@ -254,7 +263,12 @@ function ProposalActions({
   const [rejectReason, setRejectReason] = useState('');
 
   const findingsExist = (proposal.findings?.length ?? 0) > 0;
-  const block = ready ? approveBlock(proposal, reason) : 'Loading the current base and pin status.';
+  const block = ready
+    ? approveBlock(proposal, reason)
+    : failed
+      ? 'The current base and pin status could not be loaded. Retry to enable Approve.'
+      : 'Loading the current base and pin status.';
+  const showBlock = block !== null && (ready || failed);
   const approveDisabled = busy || block !== null;
 
   const approve = async () => {
@@ -347,7 +361,7 @@ function ProposalActions({
       {inlineError && (
         <p role="alert" className="text-2xs text-status-error break-words">{escapeNonPrintable(inlineError)}</p>
       )}
-      {block && ready && (
+      {showBlock && (
         <p id={blockId} className="text-2xs text-text-muted">{block}</p>
       )}
       <div className="flex items-center gap-2">
@@ -355,7 +369,7 @@ function ProposalActions({
           size="sm"
           disabled={approveDisabled}
           aria-busy={busy}
-          aria-describedby={block && ready ? blockId : undefined}
+          aria-describedby={showBlock ? blockId : undefined}
           title={block ?? 'Approve this proposal'}
           onClick={() => void approve()}
         >

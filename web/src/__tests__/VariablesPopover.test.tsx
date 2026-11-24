@@ -381,4 +381,71 @@ describe('VariablesPopover', () => {
       expect(screen.getByRole('button', { name: 'Replace value…' })).toBeInTheDocument();
     });
   });
+
+  describe('load failures', () => {
+    it('shows locked guidance with Retry on a 423 and never the server text', async () => {
+      vi.mocked(api.fetchVariables).mockRejectedValue(new api.HTTPError(423, 'vault is locked'));
+      render(<VariablesPopover onSelect={onSelect} />);
+      fireEvent.click(screen.getByTitle('Insert variable'));
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('Variables locked. Unlock them in the Variables workspace, then retry.');
+      expect(alert).not.toHaveTextContent(/vault/i);
+      expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+      expect(within(alert).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    });
+
+    it('shows the failure message with Retry on another error and recovers', async () => {
+      vi.mocked(api.fetchVariables).mockRejectedValueOnce(new Error('offline'));
+      render(<VariablesPopover onSelect={onSelect} />);
+      fireEvent.click(screen.getByTitle('Insert variable'));
+
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('Load variables failed: offline.');
+      expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+      expect(screen.queryByText('No variables found')).not.toBeInTheDocument();
+
+      fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+      expect(await screen.findByText('API_TOKEN')).toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('keeps cached variables listed under the notice', async () => {
+      useVaultStore.setState({ variables: seeded });
+      vi.mocked(api.fetchVariables).mockRejectedValue(new Error('offline'));
+      render(<VariablesPopover onSelect={onSelect} />);
+      fireEvent.click(screen.getByTitle('Insert variable'));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Load variables failed: offline.');
+      expect(screen.getByText('DB_PASSWORD')).toBeInTheDocument();
+    });
+
+    it('keeps the notice over cached variables while a Retry is in flight', async () => {
+      useVaultStore.setState({ variables: seeded });
+      vi.mocked(api.fetchVariables).mockRejectedValueOnce(new Error('offline'));
+      render(<VariablesPopover onSelect={onSelect} />);
+      fireEvent.click(screen.getByTitle('Insert variable'));
+      const alert = await screen.findByRole('alert');
+
+      vi.mocked(api.fetchVariables).mockReturnValueOnce(new Promise(() => {}));
+      fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+      expect(screen.getByRole('alert')).toHaveTextContent('Load variables failed: offline.');
+      expect(screen.getByText('DB_PASSWORD')).toBeInTheDocument();
+    });
+
+    it('shows the empty copy only for a loaded empty list', async () => {
+      vi.mocked(api.fetchVariables).mockResolvedValue([]);
+      render(<VariablesPopover onSelect={onSelect} />);
+      fireEvent.click(screen.getByTitle('Insert variable'));
+      expect(await screen.findByText('No variables found')).toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+
+    it('shows Loading... while the request is pending with no error', () => {
+      vi.mocked(api.fetchVariables).mockReturnValue(new Promise(() => {}));
+      render(<VariablesPopover onSelect={onSelect} />);
+      fireEvent.click(screen.getByTitle('Insert variable'));
+      expect(screen.getByText('Loading...')).toBeInTheDocument();
+    });
+  });
 });

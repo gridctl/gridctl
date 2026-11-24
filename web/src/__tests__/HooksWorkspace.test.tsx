@@ -229,3 +229,39 @@ describe('HooksWorkspace', () => {
     expect(document.body.textContent).not.toContain(' ·  confidence');
   });
 });
+
+describe('HooksWorkspace load failures', () => {
+  it('shows a failed state with Retry instead of loading forever, then recovers', async () => {
+    vi.mocked(fetchRegistryHooks).mockRejectedValueOnce(new Error('offline'));
+    renderWorkspace();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Hooks unavailable');
+    expect(alert).toHaveTextContent('Load hooks failed: offline.');
+    expect(screen.queryByText('Loading hooks…')).not.toBeInTheDocument();
+    expect(screen.queryByText(/No hooks imported/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('block-force-push')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('keeps loaded hooks under a banner when a refresh fails', async () => {
+    renderWorkspace();
+    expect(await screen.findByText('block-force-push')).toBeInTheDocument();
+
+    vi.mocked(fetchRegistryHooks).mockRejectedValueOnce(new Error('offline'));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Load hooks failed: offline.');
+    expect(screen.getByText('block-force-push')).toBeInTheDocument();
+    expect(screen.queryByText('Hooks unavailable')).not.toBeInTheDocument();
+  });
+
+  it('shows nothing for a cancelled load', async () => {
+    vi.mocked(fetchRegistryHooks).mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
+    renderWorkspace();
+    await waitFor(() => expect(fetchRegistryHooks).toHaveBeenCalled());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText('Loading hooks…')).toBeInTheDocument();
+  });
+});

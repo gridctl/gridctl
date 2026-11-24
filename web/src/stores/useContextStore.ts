@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { fetchGlobalContext, type ContextDoc } from '../lib/api';
+import { describeError, isCancellation } from '../lib/describeError';
 
 interface ContextStoreState {
   /** null means "not loaded yet"; the dialog shows a loading state. */
@@ -29,7 +30,8 @@ export const useContextStore = create<ContextStoreState>()((set) => ({
       const doc = await fetchGlobalContext();
       set({ doc, loading: false, error: null });
     } catch (err) {
-      set({ loading: false, error: err instanceof Error ? err.message : 'Failed to load context' });
+      if (isCancellation(err)) set({ loading: false });
+      else set({ loading: false, error: describeError(err, 'Load global context').text });
     }
   },
 }));

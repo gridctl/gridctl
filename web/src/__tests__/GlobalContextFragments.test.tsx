@@ -436,3 +436,56 @@ describe('fragment-level drift review', () => {
     expect(screen.getAllByLabelText('Out of sync in Claude Code')).toHaveLength(2);
   });
 });
+
+describe('fragment load failures', () => {
+  it('shows a failure notice with Retry in the rail and disables Add until loaded', async () => {
+    vi.mocked(fetchContextFragments).mockRejectedValueOnce(new Error('offline'));
+    const toast = vi.spyOn(toastMod, 'showToast');
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Load fragments failed: offline.');
+    expect(screen.queryByText('No fragments yet')).not.toBeInTheDocument();
+    expect(screen.queryByText('Add a fragment to start.')).not.toBeInTheDocument();
+    expect(screen.getByText('Fragments unavailable')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled();
+    expect(toast).not.toHaveBeenCalledWith('error', expect.anything(), expect.anything());
+
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('00-default')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled();
+  });
+
+  it('keeps the list and the open editor when a later reload fails', async () => {
+    vi.mocked(saveContextFragment).mockResolvedValue({ name: '00-default' });
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    const editor = await screen.findByLabelText('Fragment 00-default');
+
+    vi.mocked(fetchContextFragments).mockRejectedValueOnce(new Error('offline'));
+    fireEvent.change(editor, { target: { value: '# Edited rules\n' } });
+    fireEvent.click(screen.getByText('Save'));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Load fragments failed: offline.');
+    expect(screen.getByText('00-default')).toBeInTheDocument();
+    expect(screen.getByText('10-style')).toBeInTheDocument();
+    expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Edited rules\n');
+    expect(screen.queryByText('Add a fragment to start.')).not.toBeInTheDocument();
+  });
+
+  it('drops a removed fragment from the rail when the reload fails', async () => {
+    vi.mocked(deleteContextFragment).mockResolvedValue({ name: '10-style', backup: '/b' });
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    await screen.findByText('10-style');
+
+    vi.mocked(fetchContextFragments).mockRejectedValueOnce(new Error('offline'));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove fragment 10-style' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove "10-style"' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Load fragments failed: offline.');
+    expect(screen.queryByText('10-style')).not.toBeInTheDocument();
+    expect(screen.getByText('00-default')).toBeInTheDocument();
+  });
+});

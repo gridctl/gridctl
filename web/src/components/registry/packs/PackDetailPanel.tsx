@@ -6,6 +6,7 @@ import { Button } from '../../ui/Button';
 import { IconButton } from '../../ui/IconButton';
 import { StatePill } from '../../ui/StatePill';
 import { showToast } from '../../ui/Toast';
+import { FailedState, FailureBanner } from '../../ui/EmptyState';
 import {
   applyPack,
   fetchPackDetail,
@@ -37,6 +38,7 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
   // A 409 collision is a page-level banner naming both repos, never a
   // generic toast.
   const [collisionMessage, setCollisionMessage] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [lastApply, setLastApply] = useState<{ applied: number; total: number } | null>(null);
   const [forceDialog, setForceDialog] = useState<{ drifted: PackRow[] } | null>(null);
@@ -56,17 +58,16 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
       if (nameRef.current !== name) return;
       setDetail(d);
       setCollisionMessage(null);
+      setLoadError(null);
     } catch (err) {
       if (nameRef.current !== name) return;
       if (err instanceof HTTPError && err.status === 409) {
         setDetail(null);
         setCollisionMessage(err.message);
+        setLoadError(null);
         return;
       }
-      if (!isCancellation(err)) {
-        const described = describeError(err, 'Load pack');
-        showToast('error', described.text, { detail: described.fullDetail });
-      }
+      if (!isCancellation(err)) setLoadError(describeError(err, 'Load pack').text);
     }
   }, [name]);
 
@@ -78,6 +79,7 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
     setLoadedFor(name);
     setDetail(null);
     setCollisionMessage(null);
+    setLoadError(null);
     setLastApply(null);
   }
   useEffect(() => {
@@ -88,18 +90,17 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
         if (cancelled) return;
         setDetail(d);
         setCollisionMessage(null);
+        setLoadError(null);
       })
       .catch((err) => {
         if (cancelled) return;
         if (err instanceof HTTPError && err.status === 409) {
           setDetail(null);
           setCollisionMessage(err.message);
+          setLoadError(null);
           return;
         }
-        if (!isCancellation(err)) {
-          const described = describeError(err, 'Load pack');
-          showToast('error', described.text, { detail: described.fullDetail });
-        }
+        if (!isCancellation(err)) setLoadError(describeError(err, 'Load pack').text);
       });
     return () => {
       cancelled = true;
@@ -185,12 +186,25 @@ export function PackDetailPanel({ name, onClose, onChanged }: PackDetailPanelPro
     <div className="h-full flex flex-col overflow-hidden">
       <PanelHeader name={name} onClose={onClose} />
 
-      {detail === null ? (
+      {detail === null && loadError ? (
+        <FailedState
+          feature="Pack"
+          message={loadError}
+          onRetry={() => {
+            setLoadError(null);
+            void load();
+          }}
+          inline
+        />
+      ) : detail === null ? (
         <div className="flex-1 flex items-center justify-center text-xs text-text-muted">
           Loading pack…
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto scrollbar-dark">
+          {loadError && (
+            <FailureBanner message={loadError} onRetry={() => void load()} className="mx-4 mt-3" />
+          )}
           {/* Manifest summary. */}
           <div className="px-4 pt-3 pb-2 border-b border-border/30">
             {detail.info.description && (

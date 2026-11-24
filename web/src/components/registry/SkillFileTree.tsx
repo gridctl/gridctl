@@ -13,6 +13,7 @@ import { fetchSkillFiles, writeSkillFile, deleteSkillFile } from '../../lib/api'
 import { FILE_SORTS, groupFilesByDir, type FileSort } from '../../lib/skillFiles';
 import { showToast } from '../ui/Toast';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { FailureBanner } from '../ui/EmptyState';
 import type { SkillFile } from '../../types';
 import { describeError, isCancellation } from '../../lib/describeError';
 
@@ -32,6 +33,8 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
   const [showNewFile, setShowNewFile] = useState(false);
   const [newFilePath, setNewFilePath] = useState('');
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   // Flag loading when the skill changes (state adjustment during render, so
   // the spinner commits together with the switch).
@@ -39,16 +42,38 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
   if (prevSkillName !== skillName) {
     setPrevSkillName(skillName);
     setLoading(!!skillName);
+    setLoadError(null);
+    setFiles([]);
   }
 
   // Fetch files on mount and when skill changes
   useEffect(() => {
     if (!skillName) return;
+    let cancelled = false;
     fetchSkillFiles(skillName)
-      .then(setFiles)
-      .catch(() => setFiles([]))
-      .finally(() => setLoading(false));
-  }, [skillName]);
+      .then((list) => {
+        if (cancelled) return;
+        setFiles(list);
+        setLoadError(null);
+        setLoading(false);
+      })
+      .catch((err) => {
+        // A cancelled fetch stays on the loading line rather than claiming
+        // the skill has no files.
+        if (cancelled || isCancellation(err)) return;
+        setLoadError(describeError(err, 'Load files').text);
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [skillName, attempt]);
+
+  const retry = () => {
+    setLoadError(null);
+    setLoading(true);
+    setAttempt((n) => n + 1);
+  };
 
   const toggleDir = (dir: string) => {
     setExpandedDirs((prev) => {
@@ -68,6 +93,7 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
       setShowNewFile(false);
       const updated = await fetchSkillFiles(skillName);
       setFiles(updated);
+      setLoadError(null);
     } catch (err) {
       if (!isCancellation(err)) {
         const described = describeError(err, 'Create file');
@@ -82,6 +108,7 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
       showToast('success', `File deleted: ${path}`);
       const updated = await fetchSkillFiles(skillName);
       setFiles(updated);
+      setLoadError(null);
     } catch (err) {
       if (!isCancellation(err)) {
         const described = describeError(err, 'Delete file');
@@ -134,7 +161,9 @@ export function SkillFileTree({ skillName, onSelectFile, readOnly = false }: Ski
       )}
 
       {/* File list */}
-      {(files ?? []).length === 0 ? (
+      {loadError ? (
+        <FailureBanner message={loadError} onRetry={retry} className="mx-2 mt-0 mb-2" />
+      ) : files.length === 0 ? (
         <p className="text-3xs text-text-muted px-3 pb-2 italic">No supporting files</p>
       ) : (
         <div className="px-2 pb-2 space-y-0.5">

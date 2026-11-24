@@ -13,6 +13,8 @@ import { SecretGenerator } from '../vault/SecretGenerator';
 import { VariableValueInput } from '../vault/VariableValueInput';
 import { validateVariableInput } from '../vault/variableTypeHelpers';
 import { describeReplace } from '../vault/replaceSummary';
+import { FailureBanner } from '../ui/EmptyState';
+import { describeError, isCancellation } from '../../lib/describeError';
 
 interface VariablesPopoverProps {
   onSelect: (reference: string) => void;
@@ -46,6 +48,9 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
   const [valueValid, setValueValid] = useState(true);
   const [replaceArmed, setReplaceArmed] = useState(false);
   const [position, setPosition] = useState<PopoverPosition | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [lockedError, setLockedError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const conflictNoticeId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -68,10 +73,40 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
   // Load variables when popover opens
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
     fetchVariables()
-      .then((s) => setVariables(s))
-      .catch(() => {});
-  }, [open, setVariables]);
+      .then((s) => {
+        if (cancelled) return;
+        setVariables(s);
+        setLoadError(null);
+        setLockedError(false);
+      })
+      .catch((err) => {
+        if (cancelled || isCancellation(err)) return;
+        if (err instanceof HTTPError && err.status === 423) {
+          setLockedError(true);
+          setLoadError(null);
+        } else {
+          setLockedError(false);
+          setLoadError(describeError(err, 'Load variables').text);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, setVariables, loadAttempt]);
+
+  const retryLoad = () => {
+    // Over a cached list the notice stays until the retry settles.
+    if (variables === null) {
+      setLoadError(null);
+      setLockedError(false);
+    }
+    setLoadAttempt((n) => n + 1);
+  };
+  const loadNotice = lockedError
+    ? 'Variables locked. Unlock them in the Variables workspace, then retry.'
+    : loadError;
 
   // Drop the stale position when the popover closes (state adjustment during
   // render; commits with the close, no extra frame).
@@ -79,6 +114,11 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
   // A replace confirmation never outlives the popover: the list is refetched
   // on reopen, so the summary it armed against may no longer hold.
   if (!open && replaceArmed) setReplaceArmed(false);
+  // A load failure is re-evaluated by the fetch on the next open.
+  if (!open && (loadError !== null || lockedError)) {
+    setLoadError(null);
+    setLockedError(false);
+  }
 
   // Compute position on open; reposition on scroll or resize. Layout effect
   // because the position comes from a DOM measurement and must land before
@@ -119,8 +159,8 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
     [onSelect],
   );
 
-  // The list can be stale or absent (its fetch failing is swallowed), so this
-  // is a hint only; the server's create_only refusal is the real guard.
+  // The list can be stale or absent (a failed fetch keeps the cached list), so
+  // this is a hint only; the server's create_only refusal is the real guard.
   const conflict = newKey
     ? (variables ?? []).find((v) => v.key === newKey)
     : undefined;
@@ -282,9 +322,13 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
         </div>
       </div>
 
+      {loadNotice && (
+        <FailureBanner message={loadNotice} onRetry={retryLoad} className="mx-3 mt-0 mb-2" />
+      )}
+
       {/* Variable list */}
       <div className="max-h-36 overflow-y-auto scrollbar-dark">
-        {filtered.length === 0 && !creating && (
+        {filtered.length === 0 && !creating && !(variables === null && loadNotice) && (
           <div className="px-3 py-4 text-center text-3xs text-text-muted">
             {variables === null ? 'Loading...' : 'No variables found'}
           </div>
