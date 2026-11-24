@@ -217,7 +217,8 @@ workspace-specific props.
 - Spread `listNavProps` from `hooks/useListNav.ts` on the element that
   holds a `useListNav` list's rows, and `listNavRowProps` on each focusable
   row. Arrows, Home, End, `e`, `d`, and Enter act only when focus is on the
-  page or inside the marked element, and Enter on a focused control (a
+  page or inside the marked element, and not while a modal dialog is open.
+  Enter on a focused control (a
   button, a link, or a row with a control role) is left to that control. A
   row that is itself a control handles its own Enter, as `VariableRow`
   does. When a list key moves the selection, focus follows it only from a
@@ -225,6 +226,11 @@ workspace-specific props.
   when selected; an index that shifts because rows changed leaves focus
   where it is. Don't put
   toolbars or filters inside the marked element.
+- Enroll an overlay that closes on Escape through `hooks/useEscapeLayer.ts`
+  (`modal: true` for a dialog, `false` for a slide-over) instead of adding
+  its own `keydown` listener, so one Escape closes only the topmost layer.
+  Window or document shortcut handlers return early when
+  `isModalDialogOpen()` from `lib/dom.ts` is true.
 - Use Tailwind **semantic tokens** (`bg-primary`, `text-secondary`,
   `border-status-error`, `bg-surface-overlay-2`, `stroke-chart-blue`) -
   never raw palette classes such as `bg-amber-500`. Destructive fills use
