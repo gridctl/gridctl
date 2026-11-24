@@ -8,6 +8,7 @@ import { useGlobalCommands } from '../hooks/useGlobalCommands';
 import { useStackStore } from '../stores/useStackStore';
 import { useUIStore } from '../stores/useUIStore';
 import { useAuthStore } from '../stores/useAuthStore';
+import { useInspectorToolsGuardStore } from '../stores/useInspectorToolsGuardStore';
 import type { ClientStatus, GatewayStatus, MCPServerStatus } from '../types';
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -48,6 +49,26 @@ describe('useGlobalCommands inspect entry', () => {
     ];
     useStackStore.getState().setClients(clients);
     useAuthStore.setState({ credential: null });
+    useInspectorToolsGuardStore.setState({ dirtyServer: null, pendingLeave: null });
+  });
+
+  it('holds Inspect behind a dirty inspector tool draft on another server', async () => {
+    useStackStore.setState({ selectedNodeId: 'resource-postgres' });
+    useUIStore.setState({ sidebarOpen: true });
+    useInspectorToolsGuardStore.setState({ dirtyServer: 'files', pendingLeave: null });
+    const { result } = renderHook(() => useProbe(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.commands.some((command) => command.id === 'node:github')).toBe(true);
+    });
+    result.current.commands.find((item) => item.id === 'node:github')?.onSelect();
+    expect(useStackStore.getState().selectedNodeId).toBe('resource-postgres');
+    expect(useInspectorToolsGuardStore.getState().pendingLeave).not.toBeNull();
+
+    // Inspecting the draft's own server passes straight through.
+    useInspectorToolsGuardStore.setState({ dirtyServer: 'github', pendingLeave: null });
+    result.current.commands.find((item) => item.id === 'node:github')?.onSelect();
+    expect(useInspectorToolsGuardStore.getState().pendingLeave).toBeNull();
+    expect(useStackStore.getState().selectedNodeId).toBe('mcp-github');
   });
 
   it('registers Forget gateway credential only while a credential is held', async () => {

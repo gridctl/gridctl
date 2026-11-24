@@ -24,6 +24,7 @@ import { CanvasBase } from '../canvas/CanvasBase';
 import { SpecModeOverlay } from '../spec/SpecModeOverlay';
 import { OverlaysMenu } from './OverlaysMenu';
 import { SubGrid } from './SubGrid';
+import { requestInspectorLeave } from '../../stores/useInspectorToolsGuardStore';
 
 const MAX_ANIMATED_EDGES = 12;
 const GATEWAY_MCP_EDGE_PREFIX = 'edge-gateway-mcp-';
@@ -308,9 +309,16 @@ export function Canvas() {
       toggleDraftServer(node.data.name);
       return true;
     }
-    selectNode(node.id);
-    setSidebarOpen(true);
-    requestInspectorFocus(fromKeyboard ? node.id : null);
+    // An unsaved inspector tool draft asks before the selection moves;
+    // re-selecting the draft's own server passes straight through.
+    requestInspectorLeave(
+      () => {
+        selectNode(node.id);
+        setSidebarOpen(true);
+        requestInspectorFocus(fromKeyboard ? node.id : null);
+      },
+      { targetServer: nodeType === 'mcp-server' ? node.data?.name : undefined },
+    );
     return true;
   }, [selectNode, setSidebarOpen, requestInspectorFocus, lensActive, toggleDraftServer]);
 
@@ -352,10 +360,12 @@ export function Canvas() {
   // above re-frames; the explicit fitView covers the nothing-was-open case.
   const collapseAllServers = useStackStore((s) => s.collapseAllServers);
   const onPaneClick = useCallback(() => {
-    selectNode(null);
-    setSidebarOpen(false);
-    collapseAllServers();
-    fitView({ padding: 0.2, duration: 400 });
+    requestInspectorLeave(() => {
+      selectNode(null);
+      setSidebarOpen(false);
+      collapseAllServers();
+      fitView({ padding: 0.2, duration: 400 });
+    });
   }, [selectNode, setSidebarOpen, collapseAllServers, fitView]);
 
   // No-op connect handler. The canvas does not support drawing connections;

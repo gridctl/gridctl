@@ -9,6 +9,7 @@ import { ToastContainer } from '../ui/Toast';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { useStackStore } from '../../stores/useStackStore';
 import { useToolsDirtyStore } from '../../stores/useToolsDirtyStore';
+import { requestInspectorLeave } from '../../stores/useInspectorToolsGuardStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { usePolling } from '../../hooks/usePolling';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
@@ -82,11 +83,13 @@ export function AppShell() {
       ? () => useCanvasActionsStore.getState().fitView({ padding: 0.2, duration: 300 })
       : undefined,
     onEscape: () => {
-      if (useUIStore.getState().sidebarOpen) {
-        restoreNodeFocus(useStackStore.getState().selectedNodeId);
-      }
-      selectNode(null);
-      setSidebarOpen(false);
+      requestInspectorLeave(() => {
+        if (useUIStore.getState().sidebarOpen) {
+          restoreNodeFocus(useStackStore.getState().selectedNodeId);
+        }
+        selectNode(null);
+        setSidebarOpen(false);
+      });
     },
     onZoomIn: canvasShortcuts
       ? () => useCanvasActionsStore.getState().zoomIn({ duration: 200 })

@@ -2,6 +2,7 @@ import { KeyRound } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
+import { requestInspectorLeave } from '../../stores/useInspectorToolsGuardStore';
 
 /**
  * AuthPendingBadge is the status-bar chip for servers waiting on downstream
@@ -20,8 +21,14 @@ export function AuthPendingBadge() {
   const label = `Auth: ${pending.length} pending`;
 
   const handleClick = () => {
-    selectNode(`mcp-${pending[0].name}`);
-    setSidebarOpen(true);
+    const target = pending[0].name;
+    requestInspectorLeave(
+      () => {
+        selectNode(`mcp-${target}`);
+        setSidebarOpen(true);
+      },
+      { targetServer: target },
+    );
   };
 
   return (

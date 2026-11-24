@@ -21,6 +21,7 @@ import { reuseGraphIdentities, structurallyEqual } from '../lib/graph/identity';
 import { useRegistryStore } from './useRegistryStore';
 import { useUIStore } from './useUIStore';
 import { usePinsStore } from './usePinsStore';
+import { requestInspectorLeave } from './useInspectorToolsGuardStore';
 
 // Per-server autoscale sample. Populated every poll cycle; capped at
 // AUTOSCALE_HISTORY_CAP entries so the ring buffer stays O(1) in memory.
@@ -175,8 +176,13 @@ export const useStackStore = create<StackState>()(
             action: {
               label: 'Authorize',
               onClick: () => {
-                get().selectNode(`mcp-${s.name}`);
-                useUIStore.getState().setSidebarOpen(true);
+                requestInspectorLeave(
+                  () => {
+                    get().selectNode(`mcp-${s.name}`);
+                    useUIStore.getState().setSidebarOpen(true);
+                  },
+                  { targetServer: s.name },
+                );
               },
             },
           });
