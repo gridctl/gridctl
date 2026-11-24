@@ -420,6 +420,19 @@ describe('VariablesPopover', () => {
       expect(screen.getByText('DB_PASSWORD')).toBeInTheDocument();
     });
 
+    it('keeps the notice over cached variables while a Retry is in flight', async () => {
+      useVaultStore.setState({ variables: seeded });
+      vi.mocked(api.fetchVariables).mockRejectedValueOnce(new Error('offline'));
+      render(<VariablesPopover onSelect={onSelect} />);
+      fireEvent.click(screen.getByTitle('Insert variable'));
+      const alert = await screen.findByRole('alert');
+
+      vi.mocked(api.fetchVariables).mockReturnValueOnce(new Promise(() => {}));
+      fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+      expect(screen.getByRole('alert')).toHaveTextContent('Load variables failed: offline.');
+      expect(screen.getByText('DB_PASSWORD')).toBeInTheDocument();
+    });
+
     it('shows the empty copy only for a loaded empty list', async () => {
       vi.mocked(api.fetchVariables).mockResolvedValue([]);
       render(<VariablesPopover onSelect={onSelect} />);

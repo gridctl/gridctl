@@ -97,8 +97,11 @@ export function VariablesPopover({ onSelect, className }: VariablesPopoverProps)
   }, [open, setVariables, loadAttempt]);
 
   const retryLoad = () => {
-    setLoadError(null);
-    setLockedError(false);
+    // Over a cached list the notice stays until the retry settles.
+    if (variables === null) {
+      setLoadError(null);
+      setLockedError(false);
+    }
     setLoadAttempt((n) => n + 1);
   };
   const loadNotice = lockedError
