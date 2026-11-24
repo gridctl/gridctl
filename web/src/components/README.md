@@ -279,6 +279,20 @@ workspace-specific props.
   variant does not fire when the device has no hover. Add
   `hover-none:opacity-100` and `group-focus-within:opacity-100`. A named
   group keeps its suffix.
+- Don't style focus per component. The global `:focus-visible` rule in
+  `web/src/index.css` draws a 2px primary outline on every control. Don't
+  add `outline-none`, `outline-hidden`, `outline-0`, focus rings
+  (`focus:ring-*`, `focus-visible:ring-*`, `focus-within:ring-*`), or
+  focus border or background classes (`focus:border-*`, `focus:bg-*`,
+  `focus-visible:bg-*`), and don't give an outline a translucent color.
+  When an ancestor clips the outline, move it inside the control with
+  `focus-visible:-outline-offset-2`. Mark the current row of an
+  active-descendant list with `outline-2 -outline-offset-2 outline-primary`
+  gated on focus inside its list: a named group on the list root and
+  `group-focus-within/<name>:` on the row (cmdk rows also gate on
+  `data-[selected=true]:`, since cmdk selects the first row on render).
+  `__tests__/focusIndicators.test.ts` enforces this for `.ts` and `.tsx`
+  files.
 - Don't start a custom drag with `mousedown` alone. Pointer events,
   capture, and `touch-none` cover mouse, touch, and pen. `pointerup`,
   `pointercancel`, and window `blur` share one cleanup
