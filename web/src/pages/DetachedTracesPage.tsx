@@ -5,6 +5,7 @@ import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { fetchMCPServers } from '../lib/api';
 import { TracesView } from '../components/traces/TracesView';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
+import { ToastContainer } from '../components/ui/Toast';
 import { useAuthStore } from '../stores/useAuthStore';
 
 // Frameless traces popout. The trace surface itself is the shared TracesView;
@@ -91,6 +92,8 @@ function DetachedTracesPageContent() {
           Detached Window
         </span>
       </footer>
+
+      <ToastContainer />
     </div>
   );
 }

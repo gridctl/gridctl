@@ -14,6 +14,7 @@ import { SkillEditor } from '../components/registry/SkillEditor';
 import { SkillCardSkeleton } from '../components/registry/SkillCardSkeleton';
 import { LibraryGrid } from '../components/registry/LibraryGrid';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { FailedState, FailureBanner } from '../components/ui/EmptyState';
 import { ToastContainer, showToast } from '../components/ui/Toast';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { useInterval } from '../hooks/useInterval';
@@ -47,6 +48,7 @@ function DetachedRegistryContent() {
   const [skills, setSkills] = useState<AgentSkill[] | null>(null);
   const [status, setStatus] = useState<RegistryStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
 
@@ -76,9 +78,14 @@ function DetachedRegistryContent() {
       if (!current()) return;
       setStatus(regStatus);
       setSkills(regSkills);
+      setLoadError(null);
       setIsLoading(false);
-    } catch {
-      if (current()) setIsLoading(false);
+    } catch (err) {
+      // A cancellation keeps the skeleton until the next poll rather than
+      // leaving an unloaded page blank.
+      if (!current() || isCancellation(err)) return;
+      setLoadError(describeError(err, 'Refresh').text);
+      setIsLoading(false);
     }
   }, [generation]);
 
@@ -263,8 +270,16 @@ function DetachedRegistryContent() {
           </div>
         )}
 
+        {!isLoading && loadError && skills === null && (
+          <FailedState feature="Library" message={loadError} onRetry={fetchData} />
+        )}
+
+        {!isLoading && loadError && skills !== null && (
+          <FailureBanner message={loadError} onRetry={fetchData} />
+        )}
+
         {/* No skills at all */}
-        {!isLoading && !hasSkills && (
+        {!isLoading && !loadError && skills !== null && !hasSkills && (
           <div className="h-full flex flex-col items-center justify-center text-text-muted gap-3 animate-fade-in-scale">
             <div className="p-4 rounded-xl bg-surface-elevated/50 border border-border/30">
               <BookOpen size={32} className="text-text-muted/50" />

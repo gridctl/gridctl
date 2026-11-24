@@ -5,6 +5,7 @@ import type { GatewayStatus } from '../types';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useBroadcastChannel, type BroadcastMessage } from './useBroadcastChannel';
 import { useInterval } from './useInterval';
+import { describeError, isCancellation } from '../lib/describeError';
 
 // Longer than two visible status cycles so a slow main-window poll does not
 // flap the fallback. A hidden main window does not broadcast, so this window
@@ -24,6 +25,11 @@ export interface SharedStatus {
   // True after a snapshot arrives or the first self-poll attempt finishes.
   // A popout can leave its loading state when status never arrives.
   settled: boolean;
+  // Text of the last failed status fetch made by this hook. Cleared by a
+  // successful fetch or a valid snapshot.
+  error: string | null;
+  // One status fetch now, whether or not the self-poll is running.
+  refresh: () => Promise<void>;
 }
 
 // Broadcast is the primary source. Self-poll starts when snapshots go stale
@@ -34,6 +40,7 @@ export function useSharedStatus({ enabled }: { enabled: boolean }): SharedStatus
   const [status, setStatus] = useState<GatewayStatus | null>(null);
   const [source, setSource] = useState<'broadcast' | 'self' | null>(null);
   const [settled, setSettled] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selfPoll, setSelfPoll] = useState(false);
   const selfPollRef = useRef(false);
   const lastSnapshotAt = useRef<number | null>(null);
@@ -57,6 +64,7 @@ export function useSharedStatus({ enabled }: { enabled: boolean }): SharedStatus
     setStatus(next);
     setSource('broadcast');
     setSettled(true);
+    setError(null);
     if (!selfPollRef.current) {
       setLiveEpoch((n) => n + 1);
       return;
@@ -89,6 +97,8 @@ export function useSharedStatus({ enabled }: { enabled: boolean }): SharedStatus
     return () => window.clearTimeout(timer);
   }, [enabled, selfPoll, liveEpoch]);
 
+  // Shared by the self-poll interval and refresh, which must not change the
+  // self-poll schedule.
   const selfFetch = useCallback(async () => {
     const current = () =>
       useAuthStore.getState().generation === generation && !useAuthStore.getState().authRequired;
@@ -98,8 +108,10 @@ export function useSharedStatus({ enabled }: { enabled: boolean }): SharedStatus
       if (!current()) return;
       setStatus(next);
       setSource('self');
-    } catch {
+      setError(null);
+    } catch (err) {
       // The next tick retries. A status miss must not blank the popout.
+      if (current() && !isCancellation(err)) setError(describeError(err, 'Status').text);
     } finally {
       setSettled(true);
     }
@@ -109,5 +121,5 @@ export function useSharedStatus({ enabled }: { enabled: boolean }): SharedStatus
     enabled: enabled && selfPoll && !authRequired,
   });
 
-  return { status, source, settled };
+  return { status, source, settled, error, refresh: selfFetch };
 }

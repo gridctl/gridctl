@@ -3,6 +3,7 @@ import { BarChart3, Maximize2, Minimize2, Users, Server, Wrench } from 'lucide-r
 import { IconButton } from '../components/ui/IconButton';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { FailedState, FailureBanner } from '../components/ui/EmptyState';
+import { ToastContainer } from '../components/ui/Toast';
 import { refreshPhase } from '../lib/refreshPhase';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { useSharedStatus } from '../hooks/useSharedStatus';
@@ -285,6 +286,8 @@ function DetachedMetricsPageContent() {
           Detached Window
         </span>
       </footer>
+
+      <ToastContainer />
     </div>
   );
 }

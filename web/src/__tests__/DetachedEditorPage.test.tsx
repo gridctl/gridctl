@@ -68,6 +68,7 @@ describe('DetachedEditorPage unload guard', () => {
   it('does not prompt to leave when discard closes the window', async () => {
     renderPage();
     await waitFor(() => expect(bodyField()).toHaveValue('# Triage\n\nReal instructions.'));
+    expect(screen.getByRole('region', { name: 'Notifications' })).toBeInTheDocument();
 
     fireEvent.change(bodyField(), { target: { value: '# Edited\n' } });
     const dirty = new Event('beforeunload', { cancelable: true });

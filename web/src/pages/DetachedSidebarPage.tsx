@@ -21,7 +21,7 @@ import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { useSharedStatus } from '../hooks/useSharedStatus';
 import { useInterval } from '../hooks/useInterval';
 import { useLogFontSize } from '../hooks/useLogFontSize';
-import { fetchStatus, fetchTools, fetchToolCatalog } from '../lib/api';
+import { fetchTools, fetchToolCatalog } from '../lib/api';
 import { getTransportIcon, getTransportColorClasses } from '../lib/transport';
 import { POLLING } from '../lib/constants';
 import { useStackStore } from '../stores/useStackStore';
@@ -32,6 +32,8 @@ import type {
 } from '../types';
 import { InspectorSection } from '../components/inspector';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
+import { EmptyState, FailedState } from '../components/ui/EmptyState';
+import { ToastContainer } from '../components/ui/Toast';
 import { SourceProvenance } from '../components/sidebar/SourceProvenance';
 import { ExecutionDetails } from '../components/sidebar/ExecutionDetails';
 import { SecurityEvidence } from '../components/sidebar/SecurityEvidence';
@@ -52,7 +54,7 @@ function DetachedSidebarPageContent() {
 
   const [selectedNode, setSelectedNode] = useState<string | null>(initialNode);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const { status, settled } = useSharedStatus({ enabled: !authRequired });
+  const { status, settled, error, refresh } = useSharedStatus({ enabled: !authRequired });
   const nodes = useMemo<NodeOption[]>(() => {
     if (!status || useAuthStore.getState().generation !== generation || useAuthStore.getState().authRequired) {
       return [];
@@ -102,23 +104,11 @@ function DetachedSidebarPageContent() {
     }
   }, [generation]);
 
+  // Status goes through the shared hook so the node list this page renders
+  // updates; inventory goes to the store that ToolsEditor reads.
   const refreshAll = useCallback(async () => {
-    const current = () => useAuthStore.getState().generation === generation && !useAuthStore.getState().authRequired;
-    if (!current()) return;
-    try {
-      const [next, toolsResult, catalogResult] = await Promise.all([
-        fetchStatus(),
-        fetchTools(),
-        fetchToolCatalog(),
-      ]);
-      if (!current()) return;
-      useStackStore.getState().setGatewayStatus(next);
-      useStackStore.getState().setTools(toolsResult.tools ?? []);
-      useStackStore.getState().setToolCatalog(catalogResult.tools ?? []);
-    } catch {
-      // Manual refresh is best-effort; the interval retries inventory.
-    }
-  }, [generation]);
+    await Promise.all([refresh(), loadInventory()]);
+  }, [refresh, loadInventory]);
 
   useInterval(loadInventory, POLLING.INVENTORY, { enabled: !authRequired });
 
@@ -132,6 +122,14 @@ function DetachedSidebarPageContent() {
   }, [selectedNode, setSearchParams]);
 
   const selectedData = (nodes ?? []).find((n) => n.name === selectedNode);
+  // Under a credential prompt the page stays mounted but inert with no nodes,
+  // so it keeps the neutral prompt instead of reporting a failure.
+  const contentState: 'unavailable' | 'not-found' | 'select' =
+    !authRequired && status == null && settled
+      ? 'unavailable'
+      : !authRequired && status != null && selectedNode
+        ? 'not-found'
+        : 'select';
 
   const handleSelectNode = (name: string) => {
     setSelectedNode(name);
@@ -240,17 +238,29 @@ function DetachedSidebarPageContent() {
           </div>
         )}
 
-        {!isLoading && !selectedData && (
+        {!isLoading && selectedData && (
+          <NodeDetails node={selectedData} />
+        )}
+
+        {!isLoading && !selectedData && contentState === 'unavailable' && (
+          <FailedState feature="Gateway" message={error ?? undefined} onRetry={() => void refreshAll()} />
+        )}
+
+        {!isLoading && !selectedData && contentState === 'not-found' && (
+          <EmptyState
+            icon={Layers}
+            title={`Node "${selectedNode}" not found`}
+            description="It is not in the running stack. Choose another node from the list."
+          />
+        )}
+
+        {!isLoading && !selectedData && contentState === 'select' && (
           <div className="h-full flex flex-col items-center justify-center text-text-muted gap-3 animate-fade-in-scale">
             <div className="p-4 rounded-xl bg-surface-elevated/50 border border-border/30">
               <Layers size={32} className="text-text-muted/50" />
             </div>
             <span className="text-sm">Select a node to view details</span>
           </div>
-        )}
-
-        {!isLoading && selectedData && (
-          <NodeDetails node={selectedData} />
         )}
       </main>
 
@@ -264,6 +274,8 @@ function DetachedSidebarPageContent() {
           Detached Window
         </span>
       </footer>
+
+      <ToastContainer />
     </div>
   );
 }

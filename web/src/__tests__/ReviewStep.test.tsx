@@ -377,7 +377,7 @@ describe('ReviewStep validation and deploy failures', () => {
     expect(alert).toHaveTextContent('stack validation failed after append');
     expect(within(alert).getByText('mcp-servers[1].name')).toBeInTheDocument();
     expect(within(alert).getByText(/duplicate MCP server name 'github'/)).toBeInTheDocument();
-    expect(alert).toHaveFocus();
+    await waitFor(() => expect(alert).toHaveFocus());
     expect(showToast).toHaveBeenCalledWith('error', 'stack validation failed after append');
     expect(screen.queryByText(/Deploy failed: 400/)).not.toBeInTheDocument();
   });

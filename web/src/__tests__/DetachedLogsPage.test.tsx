@@ -68,6 +68,14 @@ afterEach(() => {
 });
 
 describe('DetachedLogsPage', () => {
+  it('renders the notifications region', async () => {
+    renderAt('/logs-window');
+    expect(screen.getByRole('region', { name: 'Notifications' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('gateway listening')).toBeInTheDocument();
+    });
+  });
+
   it('filters to a single trace from the ?trace= param with a clearable chip', async () => {
     renderAt('/logs-window?trace=abc123def456');
     await waitFor(() => {
