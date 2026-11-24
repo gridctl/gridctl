@@ -171,6 +171,47 @@ describe('CommandPalette', () => {
     });
   });
 
+  // ── Group headings ────────────────────────────────────────────────────────
+
+  describe('group headings', () => {
+    const labels = ['Recent', 'Current Context', 'Navigate To'];
+
+    function renderAllGroups() {
+      const recent = makeCommand({ id: 'navigate:vault', label: 'Open Variables' });
+      const context = makeCommand({ id: 'node:github', label: 'Inspect github', section: 'canvas' });
+      const nav = makeCommand({ id: 'navigate:traces', label: 'Open Traces' });
+      mockGetRecentCommands.mockReturnValue([recent]);
+      mockGetSortedCommands.mockImplementation((query?: string, scope?: string) => {
+        if (query) return [];
+        if (scope === 'canvas') return [context];
+        if (!scope) return [nav];
+        return [];
+      });
+      render(<CommandPalette isOpen={true} onClose={onClose} />);
+    }
+
+    it('renders each group heading exactly once', () => {
+      renderAllGroups();
+      for (const label of labels) {
+        expect(screen.getAllByText(label)).toHaveLength(1);
+      }
+      expect(document.querySelectorAll('[cmdk-group-heading]')).toHaveLength(3);
+    });
+
+    it('names each group with its heading text', () => {
+      renderAllGroups();
+      for (const label of labels) {
+        expect(screen.getByRole('group', { name: label })).toBeInTheDocument();
+      }
+      const names = Array.from(document.querySelectorAll('[cmdk-group-items]')).map((items) => {
+        const id = items.getAttribute('aria-labelledby');
+        expect(id).toBeTruthy();
+        return document.getElementById(id!)?.textContent?.trim();
+      });
+      expect(names).toEqual(labels);
+    });
+  });
+
   // ── Command selection ─────────────────────────────────────────────────────
 
   describe('command selection', () => {

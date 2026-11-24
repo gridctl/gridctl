@@ -102,7 +102,7 @@ function PaletteItem({ command, onSelect, showBadge }: PaletteItemProps) {
 
 function GroupHeading({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
-    <div className="flex items-center gap-1.5 px-4 pt-3 pb-1.5" aria-hidden="true">
+    <div className="flex items-center gap-1.5 px-4 pt-3 pb-1.5">
       <span className="text-text-muted opacity-50">{icon}</span>
       <span className="text-3xs font-semibold text-text-muted tracking-widest uppercase opacity-50">
         {label}
@@ -284,8 +284,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
               /* Default state: grouped */
               <>
                 {recentCommands.length > 0 && (
-                  <Command.Group heading="Recent" aria-label="Recent commands">
-                    <GroupHeading icon={<Clock size={11} />} label="Recent" />
+                  <Command.Group heading={<GroupHeading icon={<Clock size={11} />} label="Recent" />}>
                     {recentCommands.map((cmd) => (
                       <PaletteItem key={cmd.id} command={cmd} onSelect={handleSelect} showBadge />
                     ))}
@@ -293,8 +292,9 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                 )}
 
                 {contextCommands.length > 0 && (
-                  <Command.Group heading="Current Context" aria-label="Current context commands">
-                    <GroupHeading icon={<Layers size={11} />} label="Current Context" />
+                  <Command.Group
+                    heading={<GroupHeading icon={<Layers size={11} />} label="Current Context" />}
+                  >
                     {contextCommands.map((cmd) => (
                       <PaletteItem key={cmd.id} command={cmd} onSelect={handleSelect} />
                     ))}
@@ -302,8 +302,9 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                 )}
 
                 {navCommands.length > 0 && (
-                  <Command.Group heading="Navigate To" aria-label="Navigation commands">
-                    <GroupHeading icon={<ArrowRight size={11} />} label="Navigate To" />
+                  <Command.Group
+                    heading={<GroupHeading icon={<ArrowRight size={11} />} label="Navigate To" />}
+                  >
                     {navCommands.map((cmd) => (
                       <PaletteItem key={cmd.id} command={cmd} onSelect={handleSelect} />
                     ))}

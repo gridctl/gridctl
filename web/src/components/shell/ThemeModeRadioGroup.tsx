@@ -13,7 +13,7 @@ const OPTIONS: { mode: ThemeMode; label: string; icon: typeof Sun }[] = [
 
 /**
  * Light/Dark/System radiogroup shared by the header ThemePicker and Preferences.
- * Arrow keys rove the selection. While System is active, a live line names the
+ * Arrow keys move focus and selection together. While System is active, a live line names the
  * concrete theme the OS currently resolves to.
  */
 export function ThemeModeRadioGroup() {
@@ -21,14 +21,20 @@ export function ThemeModeRadioGroup() {
   const setThemeMode = useUIStore((s) => s.setThemeMode);
   const resolved = useResolvedTheme();
 
-  const onRadioKeyDown = (e: KeyboardEvent, index: number) => {
+  const onRadioKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let next: number;
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-      e.preventDefault();
-      setThemeMode(OPTIONS[(index + 1) % OPTIONS.length].mode);
+      next = (index + 1) % OPTIONS.length;
     } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      setThemeMode(OPTIONS[(index - 1 + OPTIONS.length) % OPTIONS.length].mode);
+      next = (index - 1 + OPTIONS.length) % OPTIONS.length;
+    } else {
+      return;
     }
+    e.preventDefault();
+    // Scoped to this group: the header popover and Preferences can both be mounted.
+    const radios = e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="radio"]');
+    radios?.[next]?.focus();
+    setThemeMode(OPTIONS[next].mode);
   };
 
   return (
