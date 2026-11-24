@@ -18,6 +18,8 @@ import {
 import { cn } from '../../lib/cn';
 import { Button } from '../ui/Button';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { useNavigationGuard } from '../../hooks/useNavigationGuard';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { VariableTypeSelector } from './VariableTypeSelector';
 import { validateVariableInput } from './variableTypeHelpers';
 import { parseImport } from '../../lib/parseFile';
@@ -128,6 +130,7 @@ export function EnvImportModal({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
 
   const parsed = useMemo(() => parseImport(text), [text]);
 
@@ -160,17 +163,41 @@ export function EnvImportModal({
     [parsed.entries, effectiveDefaultSet, existingKeys, overrides],
   );
 
-  // Escape closes; click on backdrop closes; both common in this codebase.
+  // Seeded text counts as pristine, and revealing a value is not a choice
+  // the import would lose.
+  const dirty =
+    text !== initialText ||
+    Object.values(overrides).some(
+      (o) =>
+        o.type !== undefined ||
+        o.set !== undefined ||
+        o.isSecret !== undefined ||
+        o.skipped !== undefined,
+    );
+
+  // Escape, the backdrop, the X, and Cancel all land here: a dirty modal asks
+  // before discarding. During an in-flight import the dismiss falls through.
+  const requestClose = useCallback(() => {
+    if (confirmDiscard) return;
+    if (dirty && !submitting) {
+      setConfirmDiscard(true);
+      return;
+    }
+    onClose();
+  }, [confirmDiscard, dirty, submitting, onClose]);
+
+  useNavigationGuard({ dirty, label: 'variable import', onDiscard: onClose });
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        requestClose();
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
+  }, [requestClose]);
 
   const counts = useMemo(() => {
     let newCount = 0;
@@ -325,7 +352,7 @@ export function EnvImportModal({
         'bg-background/80 backdrop-blur-sm flex items-center justify-center',
       )}
     >
-      <div className="absolute inset-0" onClick={onClose} />
+      <div className="absolute inset-0" onClick={requestClose} />
 
       <div
         ref={panelRef}
@@ -357,7 +384,7 @@ export function EnvImportModal({
           </div>
           <button
             ref={closeRef}
-            onClick={onClose}
+            onClick={requestClose}
             className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors text-text-muted hover:text-text-primary"
             aria-label="Close import"
           >
@@ -646,7 +673,7 @@ export function EnvImportModal({
               <span className="text-3xs text-status-error">{submitError}</span>
             )}
             <button
-              onClick={onClose}
+              onClick={requestClose}
               className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary rounded-lg transition-colors"
             >
               Cancel
@@ -666,6 +693,25 @@ export function EnvImportModal({
             </Button>
           </div>
         </footer>
+
+        {/* Inside the trapped panel so both focus traps agree on Tab. */}
+        <ConfirmDialog
+          isOpen={confirmDiscard}
+          onClose={() => setConfirmDiscard(false)}
+          onConfirm={() => {
+            setConfirmDiscard(false);
+            onClose();
+          }}
+          title="Discard import"
+          message={
+            <p>
+              This import has content or row choices that have not been imported. Discard them?
+            </p>
+          }
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          variant="danger"
+        />
       </div>
     </div>
   );
