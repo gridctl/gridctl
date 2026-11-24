@@ -13,6 +13,7 @@ import { GATEWAY_LOG_SOURCE, LogsView, useLogsView } from '../components/log';
 import { useDetachedWindowSync } from '../hooks/useBroadcastChannel';
 import { useSharedStatus } from '../hooks/useSharedStatus';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
+import { ToastContainer } from '../components/ui/Toast';
 import { useAuthStore } from '../stores/useAuthStore';
 
 interface NodeOption {
@@ -207,6 +208,8 @@ function DetachedLogsPageContent() {
           Detached Window
         </span>
       </footer>
+
+      <ToastContainer />
     </div>
   );
 }

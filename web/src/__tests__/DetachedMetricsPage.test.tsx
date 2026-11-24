@@ -49,6 +49,13 @@ beforeEach(() => {
 });
 
 describe('DetachedMetricsPage refresh states', () => {
+  it('renders the notifications region', async () => {
+    vi.mocked(fetchTokenMetrics).mockImplementation((range = '30m') => Promise.resolve({ ...seeded, range }));
+    renderPage();
+    expect(screen.getByRole('region', { name: 'Notifications' })).toBeInTheDocument();
+    expect(await screen.findByText('1.8k')).toBeInTheDocument();
+  });
+
   it('keeps the dashboard under a banner when a refresh fails', async () => {
     vi.mocked(fetchTokenMetrics).mockImplementation((range = '30m') => Promise.resolve({ ...seeded, range }));
     renderPage();
