@@ -460,6 +460,70 @@ describe('useToolsEditor', () => {
     expect(result.current.dirty).toBe(false);
   });
 
+  it('does not plant the old server baseline when a hidden-reference rejection lands after a switch', async () => {
+    let reject: (err: unknown) => void = () => {};
+    const setSpy = vi
+      .spyOn(apiModule, 'setServerTools')
+      .mockReturnValue(new Promise((_, r) => { reject = r; }));
+    const all = ['query', 'insert', 'delete_row'];
+    const { result, rerender } = renderHook(
+      ({ server, saved }: { server: string; saved: string[] }) =>
+        useToolsEditor(server, saved, all),
+      { initialProps: { server: 'db-a', saved: ['query', 'insert'] } },
+    );
+    act(() => result.current.toggle('insert'));
+    let pending: Promise<void> = Promise.resolve();
+    act(() => {
+      pending = result.current.handleSave();
+    });
+    act(() => result.current.handleDiscard());
+    rerender({ server: 'db-b', saved: ['query'] });
+    expect(result.current.owner).toBe('db-b');
+    expect(result.current.dirty).toBe(false);
+
+    await act(async () => {
+      reject(new SetServerToolsError('hidden_tool_reference', 'x', undefined, 400, []));
+      await pending;
+    });
+
+    expect(result.current.owner).toBe('db-b');
+    expect(result.current.dirty).toBe(false);
+    expect([...result.current.selected]).toEqual(['query']);
+    expect(result.current.hiddenReference).toBeNull();
+    expect(setSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a locked draft alone when a hidden-reference rejection lands after a switch', async () => {
+    let reject: (err: unknown) => void = () => {};
+    vi.spyOn(apiModule, 'setServerTools').mockReturnValue(
+      new Promise((_, r) => { reject = r; }),
+    );
+    const all = ['query', 'insert', 'delete_row'];
+    const { result, rerender } = renderHook(
+      ({ server, saved }: { server: string; saved: string[] }) =>
+        useToolsEditor(server, saved, all),
+      { initialProps: { server: 'db-a', saved: ['query', 'insert'] } },
+    );
+    act(() => result.current.toggle('insert'));
+    let pending: Promise<void> = Promise.resolve();
+    act(() => {
+      pending = result.current.handleSave();
+    });
+    rerender({ server: 'db-b', saved: ['query'] });
+    expect(result.current.discardPrompt).toBe('db-a');
+
+    await act(async () => {
+      reject(new SetServerToolsError('hidden_tool_reference', 'x', undefined, 400, []));
+      await pending;
+    });
+
+    // The draft stays with its owner and the prompt stays up.
+    expect(result.current.locked).toBe(true);
+    expect(result.current.discardPrompt).toBe('db-a');
+    expect(result.current.selected.has('insert')).toBe(false);
+    expect(result.current.hiddenReference).toBeNull();
+  });
+
   it('keeps a dirty draft through a poll that reshuffles the saved list', () => {
     const { result, rerender } = renderHook(
       ({ saved }: { saved: string[] }) => useToolsEditor(SERVER, saved),

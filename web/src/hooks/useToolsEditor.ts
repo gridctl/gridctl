@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStackStore } from '../stores/useStackStore';
 import { TOOL_NAME_DELIMITER } from '../lib/constants';
 import { showToast } from '../components/ui/Toast';
@@ -117,11 +117,15 @@ export interface UseToolsEditor {
   handleKeepEditing: () => void;
 }
 
-interface DraftOwner {
+// The draft and the server it belongs to live in one state object so a late
+// update (an in-flight save's revert) can check ownership in a functional
+// update instead of trusting values captured before the await.
+interface Draft {
   owner: string;
   // The owner's canonical saved selection. The incoming savedSelection
   // belongs to serverName, which differs from the owner while locked.
   ownerSaved: string[];
+  selection: string[];
 }
 
 // useToolsEditor owns the per-server tool whitelist editing controller: the
@@ -195,11 +199,20 @@ export function useToolsEditor(
   // join delimiter for the membership signature the sync below keys on.
   const savedSignature = savedSelection.join(String.fromCharCode(0));
 
-  const [selection, setSelection] = useState<string[]>(savedSelection);
-  const [draftOwner, setDraftOwner] = useState<DraftOwner>({
+  const [draft, setDraft] = useState<Draft>({
     owner: serverName,
     ownerSaved: savedSelection,
+    selection: savedSelection,
   });
+  const selection = draft.selection;
+  const setSelection = useCallback(
+    (next: string[] | ((prev: string[]) => string[])) =>
+      setDraft((cur) => ({
+        ...cur,
+        selection: typeof next === 'function' ? next(cur.selection) : next,
+      })),
+    [],
+  );
   const [synced, setSynced] = useState({ server: serverName, signature: savedSignature });
   const [query, setQuery] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -214,21 +227,30 @@ export function useToolsEditor(
   if (synced.server !== serverName || synced.signature !== savedSignature) {
     setSynced({ server: serverName, signature: savedSignature });
     if (synced.server !== serverName) setHiddenReference(null);
-    const draftDirty = !arraysEqual(canonicalWhitelist(selection), draftOwner.ownerSaved);
-    if (draftOwner.owner === serverName) {
+    const draftDirty = !arraysEqual(canonicalWhitelist(selection), draft.ownerSaved);
+    if (draft.owner === serverName) {
       // Same owner: a refreshed baseline (poll, save, or a return from a
       // locked switch). Pending edits survive; a clean draft follows disk.
-      setDraftOwner({ owner: serverName, ownerSaved: savedSelection });
-      if (!draftDirty) setSelection(savedSelection);
+      setDraft({
+        owner: serverName,
+        ownerSaved: savedSelection,
+        selection: draftDirty ? selection : savedSelection,
+      });
     } else if (!draftDirty) {
-      setDraftOwner({ owner: serverName, ownerSaved: savedSelection });
-      setSelection(savedSelection);
+      setDraft({ owner: serverName, ownerSaved: savedSelection, selection: savedSelection });
     }
     // Otherwise the draft stays with its owner and the editor stays locked.
   }
 
-  const owner = draftOwner.owner;
+  const owner = draft.owner;
   const locked = owner !== serverName;
+
+  // The server the consumer shows as of the last commit. An in-flight save
+  // reads it after the await to tell whether the editor has moved on.
+  const currentServerRef = useRef(serverName);
+  useLayoutEffect(() => {
+    currentServerRef.current = serverName;
+  }, [serverName]);
 
   const visible = useFuzzySearch(allTools, query);
 
@@ -244,7 +266,7 @@ export function useToolsEditor(
     return count;
   }, [canonicalSelection, savedSelection, selected]);
   const discardPrompt =
-    locked && !arraysEqual(canonicalSelection, draftOwner.ownerSaved) ? owner : null;
+    locked && !arraysEqual(canonicalSelection, draft.ownerSaved) ? owner : null;
 
   // Functional update so this identity does not follow the selection. A
   // dependency on selected would change every toggle and defeat row memo.
@@ -258,7 +280,7 @@ export function useToolsEditor(
         return [...next];
       });
     },
-    [locked],
+    [locked, setSelection],
   );
 
   const selectAll = () => {
@@ -299,7 +321,7 @@ export function useToolsEditor(
       targetSelection,
       allTools.map((t) => t.name),
     );
-    const baseline = draftOwner.ownerSaved;
+    const savedFor = serverName;
     try {
       const resp = await setServerTools(serverName, wire);
       showToast('success', `Tools saved for ${serverName}`);
@@ -362,10 +384,17 @@ export function useToolsEditor(
             }
             return;
           case 'hidden_tool_reference': {
-            setSelection(baseline);
             const notice = formatHiddenToolReference(err.issues, err.hint);
-            setHiddenReference(notice);
             showToast('error', notice);
+            // The editor may have moved to another server while the request
+            // was in flight. Revert and show the notice only when it still
+            // shows the server this save was for, and revert to that owner's
+            // current baseline, never a value captured before the await.
+            if (currentServerRef.current !== savedFor) return;
+            setDraft((cur) =>
+              cur.owner === savedFor ? { ...cur, selection: cur.ownerSaved } : cur,
+            );
+            setHiddenReference(notice);
             return;
           }
           default:
@@ -436,8 +465,7 @@ export function useToolsEditor(
   const handleDiscard = () => {
     // Drop the in-flight edit and adopt serverName's saved state. Serves the
     // locked prompt, the in-place Discard button, and the leave confirms.
-    setDraftOwner({ owner: serverName, ownerSaved: savedSelection });
-    setSelection(savedSelection);
+    setDraft({ owner: serverName, ownerSaved: savedSelection, selection: savedSelection });
   };
 
   const handleKeepEditing = () => {
