@@ -54,6 +54,18 @@ keyboard shortcuts panel. The switcher is `<nav aria-label="Workspaces">` with
 `aria-current="page"` on the active link. It is not a tab list. Fit view
 (`f`, `⌘0`) and canvas zoom apply only on Stack. `⌘F` is left to the browser.
 
+The Stack canvas is read-only: `graph/Canvas.tsx` passes
+`nodesConnectable={false}`, `edgesFocusable={false}`, and
+`deleteKeyCode={null}`, and its change handlers drop `remove` changes, so
+Tab moves between nodes and no key hides an element until the next poll.
+Enter or Space on a node, and a palette Inspect command, call
+`requestInspectorFocus(nodeId)` on `useUIStore`; the Stack `Sidebar` focuses
+the inspector heading once that node is shown and clears the request either
+way. A mouse click clears it. Before the inspector closes (its close button
+or Escape in AppShell), `restoreNodeFocus` in `lib/inspectorFocus.ts`
+returns focus to the node, but only when focus is inside the inspector or
+on `<body>`.
+
 AppShell owns the only in-shell `<main>`. A workspace root that used to
 render `<main>` is a `<section aria-labelledby>` with one `<h1>`. Give every
 `<aside>` a distinct `aria-label`.
@@ -152,7 +164,7 @@ workspaces. Reach for them before duplicating UI:
 | Primitive | Location | Used by |
 |---|---|---|
 | `CanvasBase` | `components/canvas/` | Stack `graph/Canvas.tsx` |
-| `InspectorHeader` | `components/inspector/` | Inspectors that need the standard icon + title + close/popout strip |
+| `InspectorHeader` | `components/inspector/` | Inspectors that need the standard icon + title + close/popout strip. `headingRef` makes the title a focus target (`tabIndex={-1}`); only the Stack inspector passes it |
 | `InspectorSection` | `components/inspector/` | Stack `Sidebar.tsx`, `GatewaySidebar.tsx`, `DetachedSidebarPage.tsx` (collapsible section pattern; contents mount on first open) |
 | `Tabs` / `Tab` / `TabPanel` | `components/ui/` | Keyboard-operable tab lists. Arrow keys move and select. `InspectorTabList` / `InspectorTabButton` are wrappers that keep inspector chrome |
 | `EmptyState` | `components/ui/` | Anywhere a "no items / no selection" affordance is needed |
