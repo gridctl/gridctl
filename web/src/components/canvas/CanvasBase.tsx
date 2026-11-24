@@ -43,6 +43,9 @@ export interface CanvasBaseProps<NodeData extends Record<string, unknown> = Reco
   maxZoom?: number;
   nodesDraggable?: boolean;
   nodesConnectable?: boolean;
+  edgesFocusable?: boolean;
+  // null disables keyboard deletion; undefined falls back to Backspace.
+  deleteKeyCode?: string | string[] | null;
   elementsSelectable?: boolean;
   zoomOnScroll?: boolean;
   panOnScroll?: boolean;
@@ -97,6 +100,8 @@ export function CanvasBase<
   maxZoom,
   nodesDraggable,
   nodesConnectable,
+  edgesFocusable,
+  deleteKeyCode,
   elementsSelectable,
   zoomOnScroll,
   panOnScroll,
@@ -125,6 +130,8 @@ export function CanvasBase<
         maxZoom={maxZoom}
         nodesDraggable={nodesDraggable}
         nodesConnectable={nodesConnectable}
+        edgesFocusable={edgesFocusable}
+        deleteKeyCode={deleteKeyCode}
         elementsSelectable={elementsSelectable}
         zoomOnScroll={zoomOnScroll}
         panOnScroll={panOnScroll}
