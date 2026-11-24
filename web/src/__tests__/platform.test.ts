@@ -40,6 +40,19 @@ describe('isMacPlatform', () => {
       delete (window.navigator as { userAgentData?: unknown }).userAgentData;
     }
   });
+
+  it('falls back to navigator.platform when userAgentData.platform is empty', () => {
+    stubPlatform('MacIntel');
+    Object.defineProperty(window.navigator, 'userAgentData', {
+      value: { platform: '' },
+      configurable: true,
+    });
+    try {
+      expect(isMacPlatform()).toBe(true);
+    } finally {
+      delete (window.navigator as { userAgentData?: unknown }).userAgentData;
+    }
+  });
 });
 
 describe('displayKey and formatShortcut', () => {

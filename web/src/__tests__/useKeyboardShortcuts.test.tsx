@@ -422,18 +422,22 @@ describe('useKeyboardShortcuts — modifier chords from fields', () => {
     vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel');
     const onOpenPalette = vi.fn();
     renderHook(() => useKeyboardShortcuts({ onOpenPalette }));
-    const [input] = makeFields();
+    const fields = makeFields();
 
-    const ctrlInField = dispatchKey('k', { ctrlKey: true }, input);
-    expect(onOpenPalette).not.toHaveBeenCalled();
-    expect(ctrlInField.defaultPrevented).toBe(false);
+    let calls = 0;
+    for (const field of fields) {
+      const ctrlInField = dispatchKey('k', { ctrlKey: true }, field);
+      expect(onOpenPalette).toHaveBeenCalledTimes(calls);
+      expect(ctrlInField.defaultPrevented).toBe(false);
 
-    const cmdInField = dispatchKey('k', { metaKey: true }, input);
-    expect(onOpenPalette).toHaveBeenCalledTimes(1);
-    expect(cmdInField.defaultPrevented).toBe(true);
+      const cmdInField = dispatchKey('k', { metaKey: true }, field);
+      calls += 1;
+      expect(onOpenPalette).toHaveBeenCalledTimes(calls);
+      expect(cmdInField.defaultPrevented).toBe(true);
+    }
 
     const ctrlOutside = dispatchKey('k', { ctrlKey: true });
-    expect(onOpenPalette).toHaveBeenCalledTimes(2);
+    expect(onOpenPalette).toHaveBeenCalledTimes(calls + 1);
     expect(ctrlOutside.defaultPrevented).toBe(true);
   });
 
