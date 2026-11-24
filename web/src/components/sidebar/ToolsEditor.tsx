@@ -1,8 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Command } from 'cmdk';
 import { AlertCircle, Check, Loader2, RefreshCw, Save, Search, Undo2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useToolsEditor } from '../../hooks/useToolsEditor';
+import { useBeforeUnloadGuard } from '../../hooks/useBeforeUnloadGuard';
+import { useInspectorToolsGuardStore } from '../../stores/useInspectorToolsGuardStore';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
 
 interface ToolsEditorProps {
   serverName: string;
@@ -19,13 +23,17 @@ interface ToolsEditorProps {
   // list of every tool the server exposes, unaffected by code mode — which
   // hides downstream tools behind meta-tools in the global aggregated list.
   serverTools?: string[];
+  // Moves the host's selection back to the draft's owner on "Keep editing".
+  // Defaults to selecting the owner's node in the Stack store, which only the
+  // main-window inspector uses.
+  onRestoreServer?: (name: string) => void;
 }
 
 // ToolsEditor is the sidebar's per-server whitelist editor. All of its state
 // and the save-and-reload flow live in useToolsEditor; this component is the
 // presentational shell. The fleet Tools workspace reuses the same hook so the
 // two surfaces stay in lock-step.
-export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditorProps) {
+export function ToolsEditor({ serverName, savedTools, serverTools, onRestoreServer }: ToolsEditorProps) {
   const {
     allTools,
     visible,
@@ -41,57 +49,78 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
     isSaving,
     conflict,
     hiddenReference,
+    owner,
+    locked,
     discardPrompt,
     handleSave,
     handleReloadFromDisk,
     handleDiscard,
     handleKeepEditing,
-  } = useToolsEditor(serverName, savedTools, serverTools);
+  } = useToolsEditor(serverName, savedTools, serverTools, { onRestoreServer });
 
-  const saveLabel = dirty
+  // Publish the draft's owner while it has unsaved edits so leave actions
+  // outside this tree can ask first. Cleared on unmount.
+  const guarding = locked || dirty;
+  useEffect(() => {
+    useInspectorToolsGuardStore.getState().setDirtyServer(guarding ? owner : null);
+  }, [guarding, owner]);
+  useEffect(
+    () => () => {
+      useInspectorToolsGuardStore.setState({ dirtyServer: null, pendingLeave: null });
+    },
+    [],
+  );
+  useBeforeUnloadGuard(guarding);
+
+  const pendingLeave = useInspectorToolsGuardStore((s) => s.pendingLeave);
+  const promptOpen = discardPrompt !== null || pendingLeave !== null;
+  // dirty and diffCount compare against serverName's baseline, which is the
+  // wrong server while locked, so the lock gates them first.
+  const inert = locked || pendingLeave !== null;
+  const showDirty = dirty && !locked;
+
+  const saveLabel = showDirty
     ? `Save ${diffCount} change${diffCount === 1 ? '' : 's'} & Reload`
     : 'Saved';
-  const keepEditingRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    if (discardPrompt) keepEditingRef.current?.focus();
-  }, [discardPrompt]);
+  const confirmPrompt = () => {
+    handleDiscard();
+    if (useInspectorToolsGuardStore.getState().pendingLeave) {
+      useInspectorToolsGuardStore.getState().confirmLeave();
+    }
+  };
+  const cancelPrompt = () => {
+    // A pending leave is dropped first; a locked prompt behind it stays up.
+    if (useInspectorToolsGuardStore.getState().pendingLeave) {
+      useInspectorToolsGuardStore.getState().cancelLeave();
+      return;
+    }
+    handleKeepEditing();
+  };
 
   return (
     <div aria-label="Tools Editor" aria-busy={isSaving} className="space-y-2">
-      {discardPrompt && (
-        <div
-          role="alertdialog"
-          aria-label="Discard unsaved tool changes"
-          className="rounded-md border border-status-pending/40 bg-status-pending/[0.05] px-3 py-2 space-y-2"
-          onKeyDown={(e) => {
-            if (e.key !== 'Escape') return;
-            e.stopPropagation();
-            handleKeepEditing();
-          }}
-        >
-          <p className="text-2xs text-status-pending font-medium">
-            Discard unsaved changes to {discardPrompt}?
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleDiscard}
-              className="text-3xs px-2 py-1 rounded-md bg-status-pending/20 text-status-pending hover:bg-status-pending/30 transition-colors"
-            >
-              Discard
-            </button>
-            <button
-              ref={keepEditingRef}
-              type="button"
-              onClick={handleKeepEditing}
-              className="text-3xs px-2 py-1 rounded-md border border-border/40 text-text-secondary hover:bg-surface-highlight/50 transition-colors"
-            >
-              Keep editing
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Portaled: a collapsed InspectorSection hides its panel, which would
+          hide an in-place fixed dialog while its focus trap stayed active.
+          The wrapper keeps clicks inside the dialog from reaching React
+          ancestors of the editor. */}
+      {promptOpen &&
+        createPortal(
+          <div onClick={(e) => e.stopPropagation()}>
+            <ConfirmDialog
+              isOpen
+              onClose={cancelPrompt}
+              onConfirm={confirmPrompt}
+              title="Unsaved tool changes"
+              message={<p>Discard unsaved changes to {owner}?</p>}
+              confirmLabel="Discard"
+              cancelLabel="Keep editing"
+              variant="danger"
+              busy={isSaving}
+            />
+          </div>,
+          document.body,
+        )}
 
       <div className="rounded-lg border border-border/40 bg-background/60 overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2 text-3xs text-text-muted border-b border-border/30">
@@ -113,7 +142,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
               type="button"
               onClick={selectAll}
               aria-label="Select all tools"
-              disabled={isSaving}
+              disabled={isSaving || inert}
               className="text-3xs text-secondary hover:text-secondary-light transition-colors disabled:opacity-50"
             >
               Select all
@@ -123,7 +152,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
               type="button"
               onClick={clearAll}
               aria-label="Clear all tools"
-              disabled={isSaving}
+              disabled={isSaving || inert}
               className="text-3xs text-secondary hover:text-secondary-light transition-colors disabled:opacity-50"
             >
               Clear
@@ -157,6 +186,7 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
                 <Command.Item
                   key={opt.name}
                   value={opt.name}
+                  disabled={inert}
                   onSelect={() => toggle(opt.name)}
                   aria-checked={isSelected}
                   aria-label={opt.name}
@@ -230,11 +260,11 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
       )}
 
       <div className="flex items-center gap-2">
-        {dirty && (
+        {showDirty && (
           <button
             type="button"
             onClick={handleDiscard}
-            disabled={isSaving}
+            disabled={isSaving || inert}
             aria-label="Discard unsaved tool changes"
             className="flex-shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-2xs font-medium border border-border/40 text-text-secondary hover:text-text-primary hover:bg-surface-highlight/50 transition-colors disabled:opacity-50"
           >
@@ -245,11 +275,11 @@ export function ToolsEditor({ serverName, savedTools, serverTools }: ToolsEditor
         <button
           type="button"
           onClick={handleSave}
-          disabled={!dirty || isSaving || saveBlocked}
+          disabled={!showDirty || isSaving || saveBlocked || inert}
           aria-label={saveLabel}
           className={cn(
             'flex-1 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-2xs font-medium transition-colors',
-            dirty && !isSaving && !saveBlocked
+            showDirty && !isSaving && !saveBlocked && !inert
               ? 'bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30'
               : 'bg-surface-highlight/50 text-text-muted border border-border/30 cursor-not-allowed',
           )}

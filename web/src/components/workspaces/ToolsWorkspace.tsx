@@ -297,10 +297,12 @@ export function ToolsWorkspace() {
   );
 
   // ---- Editor controller (single instance, owned here) --------------------
+  // Keep editing restores through the URL, never the Stack selection.
   const editor = useToolsEditor(
     activeServerName,
     activeServer?.toolWhitelist ?? [],
     activeServer?.tools ?? [],
+    { onRestoreServer: (name) => applyServer(name) },
   );
 
   // Fleet bulk-action panel (expose-all / hide-pattern across servers).
@@ -459,6 +461,9 @@ export function ToolsWorkspace() {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [editor.dirty]);
+
+  const ownerGone =
+    editor.discardPrompt !== null && !servers.some((s) => s.name === editor.discardPrompt);
 
   // ---- Global search ------------------------------------------------------
   const searchActive = globalQuery.trim().length > 0;
@@ -686,6 +691,34 @@ export function ToolsWorkspace() {
         message={<p>Leave Tools and discard unsaved tool changes?</p>}
         confirmLabel="Discard & leave"
         variant="danger"
+      />
+
+      {/* The active server changed under a dirty draft (an external ?server=
+          change, or the owner left the stack and the fallback picked another).
+          When the owner is gone a restore cannot unlock, so only Discard is
+          offered. Gated so it never stacks on another overlay. */}
+      <ConfirmDialog
+        isOpen={
+          editor.discardPrompt !== null &&
+          pendingServer === null &&
+          exitNavTarget === null &&
+          !fleetOpen
+        }
+        onClose={editor.handleKeepEditing}
+        onConfirm={editor.handleDiscard}
+        title="Discard unsaved changes"
+        message={
+          <p>
+            Discard unsaved changes to{' '}
+            <span className="font-mono text-primary">{editor.discardPrompt}</span>?
+            {ownerGone && ' It is no longer in the stack.'}
+          </p>
+        }
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        variant="danger"
+        busy={editor.isSaving}
+        hideCancel={ownerGone}
       />
 
       <FleetActions
@@ -1155,6 +1188,7 @@ function ServerDetail({
     disableTools,
     handleReloadFromDisk,
     handleDiscard,
+    locked,
   } = editor;
 
   // Audit state per tool row, computed once per usage/selection/window change.
@@ -1458,7 +1492,7 @@ function ServerDetail({
         <button
           type="button"
           onClick={handleSave}
-          disabled={!dirty || isSaving || saveBlocked}
+          disabled={!dirty || isSaving || saveBlocked || locked}
           aria-label={saveLabel}
           className={cn(
             'flex-1 inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-2xs font-medium transition-colors',
@@ -1482,7 +1516,7 @@ function ServerDetail({
       </div>
 
       <ConfirmDialog
-        isOpen={remediateOpen}
+        isOpen={remediateOpen && !locked}
         onClose={() => setRemediateOpen(false)}
         onConfirm={() => {
           setRemediateOpen(false);
