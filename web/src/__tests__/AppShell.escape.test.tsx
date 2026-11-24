@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { AppShell } from '../components/shell/AppShell';
 import { useStackStore } from '../stores/useStackStore';
 import { useUIStore } from '../stores/useUIStore';
+import { useInspectorToolsGuardStore } from '../stores/useInspectorToolsGuardStore';
 
 vi.mock('../components/layout/Header', () => ({ Header: () => null }));
 vi.mock('../components/layout/StatusBar', () => ({ StatusBar: () => null }));
@@ -16,6 +17,23 @@ describe('AppShell Escape', () => {
   beforeEach(() => {
     useStackStore.setState({ selectedNodeId: 'mcp-github' });
     useUIStore.setState({ sidebarOpen: true });
+    useInspectorToolsGuardStore.setState({ dirtyServer: null, pendingLeave: null });
+  });
+
+  it('holds Escape behind a dirty inspector tool draft', () => {
+    useInspectorToolsGuardStore.setState({ dirtyServer: 'github', pendingLeave: null });
+    render(
+      <MemoryRouter initialEntries={['/stack']}>
+        <Routes>
+          <Route path="*" element={<AppShell />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(useStackStore.getState().selectedNodeId).toBe('mcp-github');
+    expect(useUIStore.getState().sidebarOpen).toBe(true);
+    expect(useInspectorToolsGuardStore.getState().pendingLeave).not.toBeNull();
+    useInspectorToolsGuardStore.setState({ dirtyServer: null, pendingLeave: null });
   });
 
   it('clears the selected node and closes the sidebar', () => {

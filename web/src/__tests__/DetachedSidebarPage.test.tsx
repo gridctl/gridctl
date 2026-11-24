@@ -39,6 +39,7 @@ import {
   setServerTools,
 } from '../lib/api';
 import { useAuthStore } from '../stores/useAuthStore';
+import { useInspectorToolsGuardStore } from '../stores/useInspectorToolsGuardStore';
 
 const STATUS = {
   gateway: { name: 'main', version: '0' },
@@ -116,6 +117,41 @@ afterEach(() => {
 });
 
 describe('DetachedSidebarPage', () => {
+  it('asks before a node change discards a tool draft, even from a collapsed section', async () => {
+    useInspectorToolsGuardStore.setState({ dirtyServer: null, pendingLeave: null });
+    const cache = { ...STATUS['mcp-servers'][0], name: 'cache', tools: ['get', 'set'] };
+    setShared({ status: { ...STATUS, 'mcp-servers': [...STATUS['mcp-servers'], cache] } });
+    renderAt('/sidebar?node=db');
+    const section = screen.getByRole('button', { name: /^Tools/ });
+    fireEvent.click(section);
+    fireEvent.click(await screen.findByRole('option', { name: 'insert' }));
+    fireEvent.click(section);
+
+    const pick = (name: string) => {
+      fireEvent.click(screen.getByRole('button', { name: /^(db|cache)$/ }));
+      fireEvent.click(screen.getByRole('menuitemradio', { name: new RegExp(name) }));
+    };
+    pick('cache');
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Discard unsaved changes to db?');
+    expect(dialog.closest('[hidden]')).toBeNull();
+    expect(document.title).toBe('Gridctl - Details: db');
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Keep editing' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(document.title).toBe('Gridctl - Details: db');
+    expect(screen.getByRole('option', { name: 'insert', hidden: true })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+
+    pick('cache');
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Discard' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(document.title).toBe('Gridctl - Details: cache');
+    expect(setServerTools).not.toHaveBeenCalled();
+  });
+
   it('renders the notifications region', () => {
     renderAt('/sidebar');
     expect(region()).toBeInTheDocument();

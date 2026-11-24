@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router';
 import '@testing-library/jest-dom';
 import { ToolsWorkspace } from '../components/workspaces/ToolsWorkspace';
 import { requestGatewayPoll } from '../hooks/usePolling';
@@ -305,6 +305,108 @@ describe('ToolsWorkspace — leave-workspace guard', () => {
     fireEvent.click(screen.getByRole('button', { name: /discard & leave/i }));
     expect(useToolsDirtyStore.getState().exitNavTarget).toBeNull();
     expect(useToolsDirtyStore.getState().dirty).toBe(false);
+  });
+});
+
+// Changes ?server= from outside the workspace's own switch guard, the way a
+// cross-workspace deep link or browser history does.
+function ExternalNav() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" data-testid="external-nav" onClick={() => navigate('/tools?server=atlassian')} />
+  );
+}
+
+describe('ToolsWorkspace — active server changes under a dirty draft', () => {
+  beforeEach(() => {
+    useToolsDirtyStore.setState({ dirty: false, exitNavTarget: null });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('offers only Discard when the owner leaves the stack', () => {
+    const setSpy = vi.spyOn(api, 'setServerTools');
+    const selectSpy = vi.spyOn(useStackStore.getState(), 'selectNode');
+    renderAt('/tools?server=github');
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+
+    act(() => {
+      useStackStore.setState({ mcpServers: [server(ATLAS, ['get_page'], [])] });
+    });
+
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Discard unsaved changes to github?');
+    expect(within(dialog).queryByRole('button', { name: 'Keep editing' })).not.toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(setSpy).not.toHaveBeenCalled();
+    expect(selectSpy).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Discard' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /get_page/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Saved$/ })).toBeDisabled();
+    expect(setSpy).not.toHaveBeenCalled();
+    expect(selectSpy).not.toHaveBeenCalled();
+  });
+
+  it('holds the discard confirm while the fleet panel is open', () => {
+    renderAt('/tools?server=github');
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open fleet tool actions' }));
+    const fleet = screen.getByRole('dialog', { name: 'Fleet tool actions' });
+
+    act(() => {
+      useStackStore.setState({ mcpServers: [server(ATLAS, ['get_page'], [])] });
+    });
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+
+    fireEvent.click(within(fleet).getByRole('button', { name: 'Close' }));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Discard unsaved changes to github?');
+  });
+
+  it('holds the discard confirm behind the leave confirm', () => {
+    renderAt('/tools?server=github');
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+    act(() => useToolsDirtyStore.getState().requestExitNav('/metrics'));
+
+    act(() => {
+      useStackStore.setState({ mcpServers: [server(ATLAS, ['get_page'], [])] });
+    });
+    const dialogs = screen.getAllByRole('alertdialog');
+    expect(dialogs).toHaveLength(1);
+    expect(dialogs[0]).toHaveTextContent(/leave tools and discard unsaved tool changes/i);
+
+    fireEvent.click(within(dialogs[0]).getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Discard unsaved changes to github?');
+  });
+
+  it('Keep editing returns to the owner through the URL', () => {
+    const selectSpy = vi.spyOn(useStackStore.getState(), 'selectNode');
+    render(
+      <MemoryRouter initialEntries={['/tools?server=github']}>
+        <ToolsWorkspace />
+        <ExternalNav />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+    fireEvent.click(screen.getByTestId('external-nav'));
+
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Discard unsaved changes to github?');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Keep editing' }));
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByTestId('loc')).toHaveTextContent('server=github');
+    expect(screen.getByRole('checkbox', { name: /list_repos/i })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: /save 1 change & reload/i })).toBeEnabled();
+    expect(selectSpy).not.toHaveBeenCalled();
   });
 });
 

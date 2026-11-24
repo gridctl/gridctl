@@ -44,6 +44,7 @@ import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
 import { hasMixedGenerations } from '../../lib/graph/nodes';
 import { useUIStore } from '../../stores/useUIStore';
 import { useAccessLensStore } from '../../stores/useAccessLensStore';
+import { requestInspectorLeave } from '../../stores/useInspectorToolsGuardStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { formatRelativeTime } from '../../lib/time';
 import { restoreNodeFocus } from '../../lib/inspectorFocus';
@@ -80,9 +81,11 @@ export function Sidebar() {
   }, [focusRequest, selectedNodeId, hasData, requestInspectorFocus]);
 
   const handleClose = () => {
-    restoreNodeFocus(selectedNodeId);
-    setSidebarOpen(false);
-    selectNode(null);
+    requestInspectorLeave(() => {
+      restoreNodeFocus(selectedNodeId);
+      setSidebarOpen(false);
+      selectNode(null);
+    });
   };
 
   // Don't render content if no valid selection
@@ -132,16 +135,22 @@ export function Sidebar() {
   // handleViewSecrets pattern below. Writes the canonical ?source= param;
   // legacy ?agent= links keep working via the read-side alias.
   const handleShowLogs = () => {
-    navigate(`/logs?source=${encodeURIComponent(data.name)}`);
+    requestInspectorLeave(() => navigate(`/logs?source=${encodeURIComponent(data.name)}`));
   };
 
+  // Opening the popout closes this inspector, so it asks first; focusing an
+  // existing popout leaves the inspector as it is.
   const handlePopout = () => {
     if (sidebarDetached) focusDetachedWindow('sidebar');
-    else openDetachedWindow('sidebar', `node=${encodeURIComponent(data.name)}`);
+    else {
+      requestInspectorLeave(() =>
+        openDetachedWindow('sidebar', `node=${encodeURIComponent(data.name)}`),
+      );
+    }
   };
 
   const handleViewSecrets = () => {
-    navigate(`/vault?filter=server:${encodeURIComponent(data.name)}`);
+    requestInspectorLeave(() => navigate(`/vault?filter=server:${encodeURIComponent(data.name)}`));
   };
 
   return (
@@ -564,7 +573,11 @@ export function Sidebar() {
             />
             <button
               type="button"
-              onClick={() => navigate(`/tools?server=${encodeURIComponent(data.name)}`)}
+              onClick={() =>
+                requestInspectorLeave(() =>
+                  navigate(`/tools?server=${encodeURIComponent(data.name)}`),
+                )
+              }
               className="mt-2 inline-flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
             >
               <ArrowUpRight size={10} />

@@ -6,6 +6,7 @@ import { Canvas } from '../components/graph/Canvas';
 import { useStackStore } from '../stores/useStackStore';
 import { useUIStore } from '../stores/useUIStore';
 import { useAccessLensStore } from '../stores/useAccessLensStore';
+import { useInspectorToolsGuardStore } from '../stores/useInspectorToolsGuardStore';
 import type { ClientStatus, GatewayStatus, MCPServerStatus } from '../types';
 
 const { fitView, flowProps } = vi.hoisted(() => ({
@@ -113,6 +114,45 @@ describe('Canvas keyboard activation', () => {
 
   afterEach(() => {
     useAccessLensStore.setState({ enabled: false, clientSlug: null, draft: [] });
+    useInspectorToolsGuardStore.setState({ dirtyServer: null, pendingLeave: null });
+  });
+
+  it('holds node and pane clicks behind a dirty inspector tool draft', () => {
+    useStackStore.getState().setGatewayStatus(
+      status([makeServer('github', 3), makeServer('files', 2)]),
+    );
+    useStackStore.setState({ selectedNodeId: 'mcp-github' });
+    useUIStore.setState({ sidebarOpen: true });
+    useInspectorToolsGuardStore.setState({ dirtyServer: 'github', pendingLeave: null });
+    const { container } = render(<Canvas />);
+
+    fireEvent.keyDown(node(container, 'mcp-files'), { key: 'Enter' });
+    expect(useStackStore.getState().selectedNodeId).toBe('mcp-github');
+    expect(useUIStore.getState().sidebarOpen).toBe(true);
+    expect(useInspectorToolsGuardStore.getState().pendingLeave).not.toBeNull();
+
+    useInspectorToolsGuardStore.getState().cancelLeave();
+    const onPaneClick = flowProps.current.onPaneClick as () => void;
+    act(() => onPaneClick());
+    expect(useStackStore.getState().selectedNodeId).toBe('mcp-github');
+    expect(useUIStore.getState().sidebarOpen).toBe(true);
+    expect(useInspectorToolsGuardStore.getState().pendingLeave).not.toBeNull();
+
+    // Confirming runs the held action.
+    act(() => useInspectorToolsGuardStore.getState().confirmLeave());
+    expect(useStackStore.getState().selectedNodeId).toBeNull();
+    expect(useUIStore.getState().sidebarOpen).toBe(false);
+  });
+
+  it('re-selecting the dirty server passes through the guard', () => {
+    useStackStore.setState({ selectedNodeId: 'mcp-github' });
+    useUIStore.setState({ sidebarOpen: true });
+    useInspectorToolsGuardStore.setState({ dirtyServer: 'github', pendingLeave: null });
+    const { container } = render(<Canvas />);
+    fireEvent.keyDown(node(container, 'mcp-github'), { key: 'Enter' });
+    expect(useInspectorToolsGuardStore.getState().pendingLeave).toBeNull();
+    expect(useStackStore.getState().selectedNodeId).toBe('mcp-github');
+    expect(useUIStore.getState().inspectorFocusRequest).toBe('mcp-github');
   });
 
   it('opens the inspector on Enter and Space for a focused server node', () => {

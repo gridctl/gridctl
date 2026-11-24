@@ -39,6 +39,7 @@ import { useRegistryStore } from '../stores/useRegistryStore';
 import { useWizardStore } from '../stores/useWizardStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useCanvasActionsStore } from '../stores/useCanvasActionsStore';
+import { requestInspectorLeave } from '../stores/useInspectorToolsGuardStore';
 import type { PaletteCommand } from '../types/palette';
 
 interface GlobalCommandsOptions {
@@ -333,10 +334,15 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   // ones, matching createClientNodes: a detected but unlinked client has no
   // canvas node, so inspecting it would open a blank inspector.
   useEffect(() => {
-    const inspect = (nodeId: string) => {
-      selectNode(nodeId);
-      setSidebarOpen(true);
-      requestInspectorFocus(nodeId);
+    const inspect = (nodeId: string, targetServer?: string) => {
+      requestInspectorLeave(
+        () => {
+          selectNode(nodeId);
+          setSidebarOpen(true);
+          requestInspectorFocus(nodeId);
+        },
+        { targetServer },
+      );
     };
     const serverCommands: PaletteCommand[] = (mcpServers ?? []).map((server) => ({
       id: `node:${server.name}`,
@@ -345,7 +351,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
       workspaces: ['stack' as const],
       icon: <Server size={14} />,
       keywords: [server.name, 'node', 'server', 'mcp', 'inspect'],
-      onSelect: () => inspect(`mcp-${server.name}`),
+      onSelect: () => inspect(`mcp-${server.name}`, server.name),
     }));
     const clientCommands: PaletteCommand[] = (clients ?? [])
       .filter((client) => client.linked)

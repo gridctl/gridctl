@@ -39,6 +39,7 @@ import { ExecutionDetails } from '../components/sidebar/ExecutionDetails';
 import { SecurityEvidence } from '../components/sidebar/SecurityEvidence';
 import { CatalogSummary } from '../components/sidebar/CatalogSummary';
 import { useAuthStore } from '../stores/useAuthStore';
+import { requestInspectorLeave } from '../stores/useInspectorToolsGuardStore';
 
 interface NodeOption {
   name: string;
@@ -123,6 +124,13 @@ function DetachedSidebarPageContent() {
     }
   }, [selectedNode, setSearchParams]);
 
+  // An unsaved tool draft in this window asks before the node changes.
+  const handleSelectNode = (node: NodeOption) => {
+    requestInspectorLeave(() => setSelectedNode(node.name), {
+      targetServer: node.type === 'mcp-server' ? node.name : undefined,
+    });
+  };
+
   const selectedData = (nodes ?? []).find((n) => n.name === selectedNode);
   // Under a credential prompt the page stays mounted but inert with no nodes,
   // so it keeps the neutral prompt instead of reporting a failure.
@@ -164,7 +172,7 @@ function DetachedSidebarPageContent() {
               dotClass: node.type === 'mcp-server' ? 'bg-tertiary-light' : 'bg-secondary',
               tag: node.type === 'mcp-server' ? 'MCP server' : 'resource',
               selected: selectedNode === node.name,
-              onSelect: () => setSelectedNode(node.name),
+              onSelect: () => handleSelectNode(node),
             }))}
           />
         ),
@@ -198,7 +206,7 @@ function DetachedSidebarPageContent() {
         )}
 
         {!isLoading && selectedData && (
-          <NodeDetails node={selectedData} />
+          <NodeDetails node={selectedData} onRestoreServer={setSelectedNode} />
         )}
 
         {!isLoading && !selectedData && contentState === 'unavailable' && (
@@ -236,7 +244,13 @@ export function DetachedSidebarPage() {
 }
 
 // Node details component
-function NodeDetails({ node }: { node: NodeOption }) {
+function NodeDetails({
+  node,
+  onRestoreServer,
+}: {
+  node: NodeOption;
+  onRestoreServer: (name: string) => void;
+}) {
   const isServer = node.type === 'mcp-server';
 
   const serverData = isServer ? (node.data as MCPServerStatus) : null;
@@ -376,6 +390,7 @@ function NodeDetails({ node }: { node: NodeOption }) {
               serverName={node.name}
               savedTools={serverData?.toolWhitelist ?? []}
               serverTools={advertisedTools}
+              onRestoreServer={onRestoreServer}
             />
           )}
         </InspectorSection>

@@ -17,6 +17,11 @@ interface ConfirmDialogProps {
   autoFocus?: 'cancel' | 'confirm';
   /** Disables the confirm button while a mutation is in flight. */
   busy?: boolean;
+  /**
+   * Omits the cancel button for a decision with no safe way back. Escape and
+   * the backdrop then do nothing, and focus starts on the confirm button.
+   */
+  hideCancel?: boolean;
 }
 
 export function ConfirmDialog({
@@ -30,12 +35,13 @@ export function ConfirmDialog({
   variant = 'default',
   autoFocus = 'cancel',
   busy = false,
+  hideCancel = false,
 }: ConfirmDialogProps) {
   const titleId = useId();
   const descId = useId();
   const cancelRef = useRef<HTMLButtonElement | null>(null);
   const confirmRef = useRef<HTMLButtonElement | null>(null);
-  const initialFocusRef = autoFocus === 'confirm' ? confirmRef : cancelRef;
+  const initialFocusRef = autoFocus === 'confirm' || hideCancel ? confirmRef : cancelRef;
   const panelRef = useFocusTrap<HTMLDivElement>({
     active: isOpen,
     initialFocusRef,
@@ -45,10 +51,10 @@ export function ConfirmDialog({
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        if (!hideCancel) onClose();
       }
     },
-    [onClose],
+    [onClose, hideCancel],
   );
 
   useEffect(() => {
@@ -81,7 +87,7 @@ export function ConfirmDialog({
         'bg-background/80 backdrop-blur-sm flex items-center justify-center',
       )}
     >
-      <div className="absolute inset-0" onClick={onClose} />
+      <div className="absolute inset-0" onClick={hideCancel ? undefined : onClose} />
 
       <div
         ref={panelRef}
@@ -103,17 +109,19 @@ export function ConfirmDialog({
           {message}
         </div>
         <div className="flex justify-end gap-2 pt-2">
-          <button
-            ref={cancelRef}
-            type="button"
-            onClick={onClose}
-            className={cn(
-              'px-3 py-1.5 text-xs rounded-lg transition-colors',
-              'text-text-secondary hover:text-text-primary bg-surface-elevated hover:bg-surface-highlight',
-            )}
-          >
-            {cancelLabel}
-          </button>
+          {!hideCancel && (
+            <button
+              ref={cancelRef}
+              type="button"
+              onClick={onClose}
+              className={cn(
+                'px-3 py-1.5 text-xs rounded-lg transition-colors',
+                'text-text-secondary hover:text-text-primary bg-surface-elevated hover:bg-surface-highlight',
+              )}
+            >
+              {cancelLabel}
+            </button>
+          )}
           <button
             ref={confirmRef}
             type="button"
