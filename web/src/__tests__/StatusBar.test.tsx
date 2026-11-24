@@ -386,6 +386,7 @@ describe('StatusBar freshness', () => {
     renderBar();
     // Let the mount-time work (LimitsBadge's first poll) settle.
     await advance(0);
+    expect(formatCompactNumber).toHaveBeenCalled();
     vi.mocked(formatCompactNumber).mockClear();
     vi.mocked(formatRelativeTime).mockClear();
 
