@@ -289,7 +289,8 @@ web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). 
                     Stack, Library, Variables (`/vault`), Tools, Metrics, Pins, Logs, Traces (Runs tab), Connections. The Pins
                     workspace has a Context tab beside Server and Skills. The Library kind switch has Skills, Agents, Hooks,
                     Packs, and Proposals segments; registry/proposals/ reviews staged proposals over `/api/proposals`. The Detached*Page
-                    files are lazy popout windows that mirror specific panels.
+                    files are lazy popout windows that mirror specific panels; each renders through
+                    src/components/detached/DetachedWindowFrame.tsx, which owns the window title, toasts, and chrome.
                     src/lib/gatewayRequest.ts owns same-origin, no-redirect credential-bearing fetch.
                     The shell and detached routes do not request `/sse`; status polling is the disconnect signal.
                     credentials.ts owns versioned storage and Fetch header validation;
