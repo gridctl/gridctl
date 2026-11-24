@@ -283,8 +283,9 @@ workspace-specific props.
   `web/src/index.css` draws a 2px primary outline on every control. Don't
   add `outline-none`, `outline-hidden`, `outline-0`, focus rings
   (`focus:ring-*`, `focus-visible:ring-*`, `focus-within:ring-*`), or
-  focus border or background classes (`focus:border-*`, `focus:bg-*`,
-  `focus-visible:bg-*`), and don't give an outline a translucent color.
+  focus border or background classes (`focus:border-*`, `focus:bg-*`, and
+  their `focus-visible:` forms), and don't give an outline a translucent
+  color.
   When an ancestor clips the outline, move it inside the control with
   `focus-visible:-outline-offset-2`. Mark the current row of an
   active-descendant list with `outline-2 -outline-offset-2 outline-primary`
