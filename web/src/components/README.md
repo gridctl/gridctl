@@ -168,6 +168,8 @@ workspaces. Reach for them before duplicating UI:
 | `PreferencesDialog` | `components/shell/` | Header and palette. Theme, compact mode for the seven workspaces that read it, and text size |
 | `ShortcutsPanel` | `components/shell/` | Opens on `?`, from the palette, and from Preferences. One static binding table, grouped by scope |
 
+Every detached page (`pages/Detached*Page.tsx`) mounts `ToastContainer` itself as the last child of its root element, because it renders outside `AppShell`. Do not add one to `AuthBoundary` or `routes.tsx`: a second container in the same document shows every toast twice.
+
 ## Layering
 
 Overlay stacking uses named steps from `web/src/index.css`. Tailwind maps `--z-index-<name>` to the `z-<name>` utility.
