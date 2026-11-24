@@ -89,4 +89,19 @@ describe('GatewaySidebar', () => {
     const link = screen.getByRole('link', { name: /manage skills/i });
     expect(link.textContent).not.toMatch(/\(\d+\)/);
   });
+
+  it('opens its sections by default and reports their state', () => {
+    renderSidebar();
+    for (const name of [/optimize/i, /policy/i, /security evidence/i]) {
+      const toggle = screen.getByRole('button', { name });
+      expect(toggle).toHaveAttribute('type', 'button');
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      expect(document.getElementById(toggle.getAttribute('aria-controls') as string)).toBeInTheDocument();
+    }
+  });
+
+  it('leaves the heading without a tabindex when no headingRef is passed', () => {
+    renderSidebar();
+    expect(screen.getByRole('heading', { level: 2 })).not.toHaveAttribute('tabindex');
+  });
 });

@@ -134,9 +134,10 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
     }
   }, [isOpen]);
 
-  const handleClose = useCallback(() => {
+  const handleClose = useCallback((restoreFocus = true) => {
     const toRestore = previousFocusRef.current;
     onClose();
+    if (!restoreFocus) return;
     requestAnimationFrame(() => {
       toRestore?.focus();
     });
@@ -194,7 +195,9 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
       }
       recordUsage(command.id);
       command.onSelect();
-      handleClose();
+      // A command that opened the Stack inspector hands focus to its heading;
+      // restoring the prior element afterwards would pull focus back out.
+      handleClose(useUIStore.getState().inspectorFocusRequest === null);
     },
     [recordUsage, handleClose],
   );

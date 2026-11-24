@@ -26,6 +26,7 @@ import {
   LogOut,
   SlidersHorizontal,
   Keyboard,
+  Database,
 } from 'lucide-react';
 import type { ThemeMode } from '../themes/types';
 import { useCommandRegistry } from './useCommandRegistry';
@@ -54,8 +55,11 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   const setThemeMode = useUIStore((s) => s.setThemeMode);
   const setPreferencesOpen = useUIStore((s) => s.setPreferencesOpen);
   const setShortcutsOpen = useUIStore((s) => s.setShortcutsOpen);
+  const requestInspectorFocus = useUIStore((s) => s.requestInspectorFocus);
 
   const mcpServers = useStackStore((s) => s.mcpServers);
+  const clients = useStackStore((s) => s.clients);
+  const resources = useStackStore((s) => s.resources);
   const selectNode = useStackStore((s) => s.selectNode);
 
   const traces = useTracesStore((s) => s.traces);
@@ -324,23 +328,56 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
     return () => unregisterCommands('auth-forget');
   }, [credential, registerCommands, unregisterCommands]);
 
-  // Dynamic node commands from stack store
+  // Dynamic node commands from stack store. Clients are limited to linked
+  // ones, matching createClientNodes: a detected but unlinked client has no
+  // canvas node, so inspecting it would open a blank inspector.
   useEffect(() => {
-    const commands: PaletteCommand[] = (mcpServers ?? []).map((server) => ({
+    const inspect = (nodeId: string) => {
+      selectNode(nodeId);
+      setSidebarOpen(true);
+      requestInspectorFocus(nodeId);
+    };
+    const serverCommands: PaletteCommand[] = (mcpServers ?? []).map((server) => ({
       id: `node:${server.name}`,
       label: `Inspect ${server.name}`,
       section: 'canvas' as const,
       workspaces: ['stack' as const],
       icon: <Server size={14} />,
       keywords: [server.name, 'node', 'server', 'mcp', 'inspect'],
-      onSelect: () => {
-        selectNode(`mcp-${server.name}`);
-        setSidebarOpen(true);
-      },
+      onSelect: () => inspect(`mcp-${server.name}`),
     }));
-    registerCommands('dynamic-nodes', commands);
+    const clientCommands: PaletteCommand[] = (clients ?? [])
+      .filter((client) => client.linked)
+      .map((client) => ({
+        id: `node:client:${client.slug}`,
+        label: `Inspect ${client.name}`,
+        section: 'canvas' as const,
+        workspaces: ['stack' as const],
+        icon: <Plug size={14} />,
+        keywords: [client.name, client.slug, 'node', 'client', 'inspect'],
+        onSelect: () => inspect(`client-${client.slug}`),
+      }));
+    const resourceCommands: PaletteCommand[] = (resources ?? []).map((resource) => ({
+      id: `node:resource:${resource.name}`,
+      label: `Inspect ${resource.name}`,
+      section: 'canvas' as const,
+      workspaces: ['stack' as const],
+      icon: <Database size={14} />,
+      keywords: [resource.name, 'node', 'resource', 'inspect'],
+      onSelect: () => inspect(`resource-${resource.name}`),
+    }));
+    registerCommands('dynamic-nodes', [...serverCommands, ...clientCommands, ...resourceCommands]);
     return () => unregisterCommands('dynamic-nodes');
-  }, [mcpServers, registerCommands, unregisterCommands, selectNode, setSidebarOpen]);
+  }, [
+    mcpServers,
+    clients,
+    resources,
+    registerCommands,
+    unregisterCommands,
+    selectNode,
+    setSidebarOpen,
+    requestInspectorFocus,
+  ]);
 
   // Dynamic trace commands
   useEffect(() => {

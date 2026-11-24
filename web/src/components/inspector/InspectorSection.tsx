@@ -1,6 +1,5 @@
-import { useState, type ComponentType, type ReactNode } from 'react';
+import { useId, useState, type ComponentType, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { cn } from '../../lib/cn';
 
 interface InspectorSectionProps {
   title: string;
@@ -11,10 +10,13 @@ interface InspectorSectionProps {
 }
 
 /**
- * Collapsible section used inside both the Stack Sidebar and the
- * detached-sidebar popout. Section headers carry an optional Lucide icon
- * and an optional count badge; the body slides via the same `max-h` +
- * opacity transition as before so existing visual tests are unaffected.
+ * Collapsible section used inside the Stack Sidebar, the gateway sidebar,
+ * and the detached-sidebar popout. Section headers carry an optional Lucide
+ * icon and an optional count badge. The panel element is always rendered so
+ * the toggle's aria-controls resolves, and it is `hidden` while collapsed.
+ * Its contents mount on the first open and stay mounted afterwards, so a
+ * section that was never opened does no work, and collapsing keeps state
+ * such as an unsaved tool selection.
  */
 export function InspectorSection({
   title,
@@ -24,11 +26,21 @@ export function InspectorSection({
   children,
 }: InspectorSectionProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [hasOpened, setHasOpened] = useState(defaultOpen);
+  const panelId = useId();
+
+  const toggle = () => {
+    if (!isOpen) setHasOpened(true);
+    setIsOpen(!isOpen);
+  };
 
   return (
     <div className="border-b border-border/30">
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        type="button"
+        onClick={toggle}
+        aria-expanded={isOpen}
+        aria-controls={panelId}
         className="w-full flex items-center justify-between p-4 hover:bg-surface-highlight/50 transition-colors group"
       >
         <div className="flex items-center gap-2.5">
@@ -55,13 +67,8 @@ export function InspectorSection({
           )}
         </div>
       </button>
-      <div
-        className={cn(
-          'overflow-hidden transition-all duration-200',
-          isOpen ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0',
-        )}
-      >
-        <div className="px-4 pb-4">{children}</div>
+      <div id={panelId} hidden={!isOpen}>
+        {hasOpened && <div className="px-4 pb-4">{children}</div>}
       </div>
     </div>
   );

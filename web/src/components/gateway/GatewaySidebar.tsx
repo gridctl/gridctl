@@ -1,10 +1,11 @@
-import { memo, useState } from 'react';
+import { memo, type Ref } from 'react';
 import { Link } from 'react-router';
-import { ArrowRight, ChevronDown, ChevronRight, KeyRound, Library, Lightbulb, X } from 'lucide-react';
+import { ArrowRight, KeyRound, Library, Lightbulb, X } from 'lucide-react';
 import { MCP } from '@lobehub/icons';
 import { OptimizeSection } from '../sidebar/OptimizeSection';
 import { PolicySummary } from '../sidebar/PolicySummary';
 import { SecurityEvidence } from '../sidebar/SecurityEvidence';
+import { InspectorSection } from '../inspector';
 import { cn } from '../../lib/cn';
 import { useStackStore, useSelectedNodeData } from '../../stores/useStackStore';
 import { useRegistryStore } from '../../stores/useRegistryStore';
@@ -12,9 +13,11 @@ import type { GatewayNodeData } from '../../types';
 
 interface GatewaySidebarProps {
   onClose: () => void;
+  // Focus target for the Stack inspector; see InspectorHeader.headingRef.
+  headingRef?: Ref<HTMLHeadingElement>;
 }
 
-const GatewaySidebar = memo(({ onClose }: GatewaySidebarProps) => {
+const GatewaySidebar = memo(({ onClose, headingRef }: GatewaySidebarProps) => {
   const selectedData = useSelectedNodeData() as GatewayNodeData | null;
   const skills = useRegistryStore((s) => s.skills);
   const mcpServers = useStackStore((s) => s.mcpServers);
@@ -38,7 +41,11 @@ const GatewaySidebar = memo(({ onClose }: GatewaySidebarProps) => {
             <MCP size={16} className="text-primary" />
           </div>
           <div className="min-w-0">
-            <h2 className="font-semibold text-text-primary truncate tracking-tight">
+            <h2
+              ref={headingRef}
+              tabIndex={headingRef ? -1 : undefined}
+              className="font-semibold text-text-primary truncate tracking-tight"
+            >
               {selectedData?.name ?? 'Gateway'}
             </h2>
             <p className="text-3xs text-text-muted font-mono tracking-wider">
@@ -46,7 +53,7 @@ const GatewaySidebar = memo(({ onClose }: GatewaySidebarProps) => {
             </p>
           </div>
         </div>
-        <button onClick={onClose} aria-label="Close gateway sidebar" className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
+        <button type="button" onClick={onClose} aria-label="Close gateway sidebar" className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors group">
           <X size={16} className="text-text-muted group-hover:text-text-primary transition-colors" />
         </button>
       </div>
@@ -79,17 +86,17 @@ const GatewaySidebar = memo(({ onClose }: GatewaySidebarProps) => {
             </button>
           </div>
         )}
-        <CollapsibleSection title="Optimize" icon={Lightbulb}>
+        <InspectorSection defaultOpen title="Optimize" icon={Lightbulb}>
           <OptimizeSection />
-        </CollapsibleSection>
+        </InspectorSection>
 
-        <CollapsibleSection title="Policy" icon={KeyRound}>
+        <InspectorSection defaultOpen title="Policy" icon={KeyRound}>
           <PolicySummary />
-        </CollapsibleSection>
+        </InspectorSection>
 
-        <CollapsibleSection title="Security evidence" icon={KeyRound}>
+        <InspectorSection defaultOpen title="Security evidence" icon={KeyRound}>
           <SecurityEvidence scope="gateway" />
-        </CollapsibleSection>
+        </InspectorSection>
 
         <div className="p-4 border-b border-border/30">
           <Link
@@ -120,42 +127,6 @@ const GatewaySidebar = memo(({ onClose }: GatewaySidebarProps) => {
     </div>
   );
 });
-
-interface CollapsibleSectionProps {
-  title: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}
-
-function CollapsibleSection({ title, icon: Icon, defaultOpen = true, children }: CollapsibleSectionProps) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
-  return (
-    <div className="border-b border-border/30">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-4 hover:bg-surface-highlight/50 transition-colors group"
-      >
-        <div className="flex items-center gap-2.5">
-          <div className="p-1 rounded-md bg-surface-highlight/50 group-hover:bg-surface-highlight transition-colors">
-            <Icon size={12} className="text-text-muted group-hover:text-primary transition-colors" />
-          </div>
-          <span className="text-sm font-medium text-text-primary">{title}</span>
-        </div>
-        <div className="p-1 rounded-md group-hover:bg-surface-highlight transition-colors">
-          {isOpen ? (
-            <ChevronDown size={14} className="text-text-muted" />
-          ) : (
-            <ChevronRight size={14} className="text-text-muted" />
-          )}
-        </div>
-      </button>
-      <div className={cn('overflow-hidden transition-all duration-200', isOpen ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0')}>
-        <div className="px-4 pb-4">{children}</div>
-      </div>
-    </div>
-  );
-}
 
 GatewaySidebar.displayName = 'GatewaySidebar';
 

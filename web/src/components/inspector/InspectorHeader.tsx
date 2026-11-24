@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import type { ComponentType, ReactNode } from 'react';
+import type { ComponentType, ReactNode, Ref } from 'react';
 import { cn } from '../../lib/cn';
 
 type AccentTone = 'primary' | 'secondary' | 'tertiary' | 'violet' | 'muted' | 'neutral';
@@ -34,6 +34,9 @@ interface InspectorHeaderProps {
   // Right-aligned actions slot — for popout buttons or workspace-specific
   // controls. Rendered before the close button.
   actions?: ReactNode;
+  // Makes the title a programmatic focus target. Only the Stack inspector
+  // passes it; other consumers keep a plain heading.
+  headingRef?: Ref<HTMLHeadingElement>;
 }
 
 /**
@@ -51,6 +54,7 @@ export function InspectorHeader({
   onDetach,
   detachDisabled,
   actions,
+  headingRef,
 }: InspectorHeaderProps) {
   return (
     <div className="flex items-center justify-between p-4 border-b border-border/50 bg-surface-elevated/30">
@@ -66,7 +70,13 @@ export function InspectorHeader({
           </div>
         )}
         <div className="min-w-0">
-          <h2 className="font-semibold text-text-primary truncate tracking-tight">{title}</h2>
+          <h2
+            ref={headingRef}
+            tabIndex={headingRef ? -1 : undefined}
+            className="font-semibold text-text-primary truncate tracking-tight"
+          >
+            {title}
+          </h2>
           {subtitle && <div className="flex items-center gap-1.5">{subtitle}</div>}
         </div>
       </div>

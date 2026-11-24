@@ -8,7 +8,7 @@ import { useGlobalCommands } from '../hooks/useGlobalCommands';
 import { useStackStore } from '../stores/useStackStore';
 import { useUIStore } from '../stores/useUIStore';
 import { useAuthStore } from '../stores/useAuthStore';
-import type { GatewayStatus, MCPServerStatus } from '../types';
+import type { ClientStatus, GatewayStatus, MCPServerStatus } from '../types';
 
 function wrapper({ children }: { children: ReactNode }) {
   return (
@@ -37,10 +37,16 @@ describe('useGlobalCommands inspect entry', () => {
     const status: GatewayStatus = {
       gateway: { name: 'gw', version: '0.0.0' },
       'mcp-servers': [server],
+      resources: [{ name: 'postgres', image: 'postgres:16', status: 'running' }],
     };
     useStackStore.getState().setGatewayStatus(status);
     useStackStore.setState({ selectedNodeId: null });
-    useUIStore.setState({ sidebarOpen: false });
+    useUIStore.setState({ sidebarOpen: false, inspectorFocusRequest: null });
+    const clients: ClientStatus[] = [
+      { name: 'Claude', slug: 'claude', detected: true, linked: true, transport: 'http' },
+      { name: 'Cursor', slug: 'cursor', detected: true, linked: false, transport: 'http' },
+    ];
+    useStackStore.getState().setClients(clients);
     useAuthStore.setState({ credential: null });
   });
 
@@ -75,5 +81,37 @@ describe('useGlobalCommands inspect entry', () => {
     command?.onSelect();
     expect(useStackStore.getState().selectedNodeId).toBe('mcp-github');
     expect(useUIStore.getState().sidebarOpen).toBe(true);
+    expect(useUIStore.getState().inspectorFocusRequest).toBe('mcp-github');
+  });
+
+  it('inspects a linked client and a resource and requests inspector focus', async () => {
+    const { result } = renderHook(() => useProbe(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.commands.some((command) => command.id === 'node:client:claude')).toBe(true);
+    });
+    const client = result.current.commands.find((item) => item.id === 'node:client:claude');
+    expect(client?.label).toBe('Inspect Claude');
+    client?.onSelect();
+    expect(useStackStore.getState().selectedNodeId).toBe('client-claude');
+    expect(useUIStore.getState().sidebarOpen).toBe(true);
+    expect(useUIStore.getState().inspectorFocusRequest).toBe('client-claude');
+
+    useStackStore.setState({ selectedNodeId: null });
+    useUIStore.setState({ sidebarOpen: false, inspectorFocusRequest: null });
+    const resource = result.current.commands.find((item) => item.id === 'node:resource:postgres');
+    expect(resource?.label).toBe('Inspect postgres');
+    resource?.onSelect();
+    expect(useStackStore.getState().selectedNodeId).toBe('resource-postgres');
+    expect(useUIStore.getState().sidebarOpen).toBe(true);
+    expect(useUIStore.getState().inspectorFocusRequest).toBe('resource-postgres');
+  });
+
+  it('registers no Inspect command for a detected but unlinked client', async () => {
+    const { result } = renderHook(() => useProbe(), { wrapper });
+    await waitFor(() => {
+      expect(result.current.commands.some((command) => command.id === 'node:client:claude')).toBe(true);
+    });
+    expect(result.current.commands.some((command) => command.id === 'node:client:cursor')).toBe(false);
+    expect(result.current.commands.some((command) => command.label === 'Inspect Cursor')).toBe(false);
   });
 });

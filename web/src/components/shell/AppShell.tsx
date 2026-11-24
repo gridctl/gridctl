@@ -16,6 +16,7 @@ import { useCanvasActionsStore } from '../../stores/useCanvasActionsStore';
 import { useGlobalCommands } from '../../hooks/useGlobalCommands';
 import { documentTitleForWorkspace, isWorkspace, type Workspace } from '../../types/workspace';
 import { writePref } from '../../lib/preferences';
+import { restoreNodeFocus } from '../../lib/inspectorFocus';
 
 const HEADER_HEIGHT = 56;
 const STATUSBAR_HEIGHT = 32;
@@ -81,6 +82,9 @@ export function AppShell() {
       ? () => useCanvasActionsStore.getState().fitView({ padding: 0.2, duration: 300 })
       : undefined,
     onEscape: () => {
+      if (useUIStore.getState().sidebarOpen) {
+        restoreNodeFocus(useStackStore.getState().selectedNodeId);
+      }
       selectNode(null);
       setSidebarOpen(false);
     },

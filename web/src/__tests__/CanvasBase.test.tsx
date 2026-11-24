@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { CanvasBase } from '../components/canvas/CanvasBase';
 
@@ -70,5 +70,55 @@ describe('CanvasBase', () => {
       fireEvent.click(pane);
       expect(onPaneClick).toHaveBeenCalled();
     }
+  });
+
+  it('sends no remove change on Backspace or Delete when deleteKeyCode is null', async () => {
+    const onNodesChange = vi.fn();
+    const onEdgesChange = vi.fn();
+    const nodes = [
+      { id: 'a', position: { x: 0, y: 0 }, data: { label: 'A' }, selected: true },
+      { id: 'b', position: { x: 200, y: 0 }, data: { label: 'B' } },
+    ];
+    const edges = [{ id: 'a-b', source: 'a', target: 'b', selected: true }];
+    render(
+      <ReactFlowProvider>
+        <CanvasBase
+          nodes={nodes}
+          edges={edges}
+          deleteKeyCode={null}
+          edgesFocusable={false}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+        />
+      </ReactFlowProvider>,
+    );
+    for (const key of ['Backspace', 'Delete']) {
+      fireEvent.keyDown(document, { key, code: key });
+      fireEvent.keyUp(document, { key, code: key });
+    }
+    // React Flow deletes asynchronously; let any pending deletion settle.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const calls = [...onNodesChange.mock.calls, ...onEdgesChange.mock.calls];
+    for (const [changes] of calls) {
+      expect((changes as Array<{ type: string }>).some((c) => c.type === 'remove')).toBe(false);
+    }
+  });
+
+  it('deletes on Backspace by default, so the null opt-out is meaningful', async () => {
+    const onNodesChange = vi.fn();
+    const nodes = [{ id: 'a', position: { x: 0, y: 0 }, data: { label: 'A' }, selected: true }];
+    render(
+      <ReactFlowProvider>
+        <CanvasBase nodes={nodes} edges={[]} onNodesChange={onNodesChange} />
+      </ReactFlowProvider>,
+    );
+    fireEvent.keyDown(document, { key: 'Backspace', code: 'Backspace' });
+    fireEvent.keyUp(document, { key: 'Backspace', code: 'Backspace' });
+    await waitFor(() => {
+      const removed = onNodesChange.mock.calls.some(([changes]) =>
+        (changes as Array<{ type: string }>).some((c) => c.type === 'remove'),
+      );
+      expect(removed).toBe(true);
+    });
   });
 });

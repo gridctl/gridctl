@@ -830,6 +830,28 @@ body::before {
   stroke: var(--color-border) !important;
 }
 
+/* Keyboard focus ring on the node wrapper. React Flow's own stylesheet sets
+   outline:none on .react-flow__node.selectable:focus-visible outside any
+   layer, which beats the layered app focus style, so this rule stays
+   unlayered and adds the .react-flow ancestor to win on specificity. The
+   ring sits on the wrapper because disabled cards fade their own opacity. */
+.react-flow .react-flow__node.selectable:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+  border-radius: 0.75rem;
+}
+
+.react-flow .react-flow__node-gateway.selectable:focus-visible {
+  border-radius: 1rem;
+}
+
+/* A dimmed node returns to full strength while focused so its ring is not
+   drawn at the dimmed opacity. */
+.react-flow .react-flow__node.dimmed:focus-visible {
+  opacity: 1;
+  filter: none;
+}
+
 /* Highlighted state - nodes get elevated z-index */
 .react-flow__node.highlighted {
   z-index: 10;
