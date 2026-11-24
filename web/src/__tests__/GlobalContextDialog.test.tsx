@@ -258,6 +258,23 @@ describe('GlobalContextDialog', () => {
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 
+  it('closes the import dialog alone on Escape', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
+    const onClose = vi.fn();
+    render(<GlobalContextDialog isOpen onClose={onClose} />);
+    await screen.findByLabelText('Canonical global context');
+
+    fireEvent.click(screen.getByRole('button', { name: /^import$/i }));
+    const importDialog = screen.getByRole('dialog', { name: 'Import global context' });
+    const button = importDialog.querySelector('button');
+    expect(button).toBeTruthy();
+    fireEvent.keyDown(button as HTMLElement, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog', { name: 'Import global context' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Global Context' })).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('prevents unload while canonical edits are pending', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
     let open = true;

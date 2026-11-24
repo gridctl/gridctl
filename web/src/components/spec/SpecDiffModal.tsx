@@ -5,6 +5,7 @@ import { cn } from '../../lib/cn';
 import { fetchStackHealth, fetchStackPlan } from '../../lib/api';
 import { describeError } from '../../lib/describeError';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { useEscapeLayer } from '../../hooks/useEscapeLayer';
 import { useSpecStore } from '../../stores/useSpecStore';
 import { Button } from '../ui/Button';
 import type { DiffAction, DiffItem, PlanDiff } from '../../types';
@@ -132,19 +133,14 @@ export function SpecDiffModal({ onApply, onDismiss }: SpecDiffModalProps) {
     onApply();
   }, [onApply]);
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === 'Escape') dismiss();
-    },
-    [dismiss],
-  );
-
-  useEffect(() => {
-    if (diffModalOpen) {
-      document.addEventListener('keydown', handleKeyDown);
-      return () => document.removeEventListener('keydown', handleKeyDown);
-    }
-  }, [diffModalOpen, handleKeyDown]);
+  // The diff has no fields of its own, so Escape closes from any target.
+  useEscapeLayer({
+    active: diffModalOpen,
+    onEscape: dismiss,
+    modal: true,
+    ref: panelRef,
+    closeFromFields: true,
+  });
 
   // Compare mode asks the server on every open and retry. The cleanup marks
   // the request stale, so a response that lands after close, a mode change,
