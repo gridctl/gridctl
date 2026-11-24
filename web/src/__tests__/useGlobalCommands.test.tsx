@@ -44,7 +44,7 @@ describe('useGlobalCommands inspect entry', () => {
     useUIStore.setState({ sidebarOpen: false, inspectorFocusRequest: null });
     const clients: ClientStatus[] = [
       { name: 'Claude', slug: 'claude', detected: true, linked: true, transport: 'http' },
-      { name: 'Cursor', slug: 'cursor', detected: true, linked: false },
+      { name: 'Cursor', slug: 'cursor', detected: true, linked: false, transport: 'http' },
     ];
     useStackStore.getState().setClients(clients);
     useAuthStore.setState({ credential: null });
