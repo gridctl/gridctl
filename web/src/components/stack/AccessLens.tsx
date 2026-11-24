@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { ScanEye, PanelRightOpen, Save, Undo2, AlertTriangle } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { isModalDialogOpen } from '../../lib/dom';
 import { useStackStore } from '../../stores/useStackStore';
 import {
   useAccessLensStore,
@@ -204,6 +205,8 @@ export function AccessLens({ servers }: AccessLensProps) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (gateOpen || slideOverOpen || hasPendingExit) return;
+      // Any other modal (Preferences, a palette) closes first; the lens waits.
+      if (isModalDialogOpen()) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       e.stopPropagation();

@@ -316,6 +316,23 @@ describe('LibraryWorkspace', () => {
       expect(screen.getByText(/select a skill to inspect/i)).toBeInTheDocument();
     });
 
+    it('keeps the selection on Escape while a modal dialog is open', async () => {
+      let currentSearch = '?selected=incident-triage';
+      renderAt('/library?selected=incident-triage', (s) => { currentSearch = s; });
+      const dialog = document.createElement('div');
+      dialog.setAttribute('role', 'dialog');
+      dialog.setAttribute('aria-modal', 'true');
+      document.body.appendChild(dialog);
+
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(screen.getByRole('heading', { name: 'incident-triage' })).toBeInTheDocument();
+      expect(currentSearch).toContain('selected=incident-triage');
+
+      dialog.remove();
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      await waitFor(() => expect(currentSearch).not.toContain('selected='));
+    });
+
     it('promotes to the editor when the inspector Edit button is clicked', async () => {
       renderAt('/library?selected=incident-triage');
       fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));

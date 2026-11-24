@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useId, type ReactNode } from 'react';
+import { useId, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { useEscapeLayer } from '../../hooks/useEscapeLayer';
 
 interface SlideOverProps {
   isOpen: boolean;
@@ -36,30 +37,16 @@ export function SlideOver({
   closeLabel = 'Close access editor',
 }: SlideOverProps) {
   const titleId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
-        (e.target as HTMLElement).blur();
-        return;
-      }
-      onClose();
-    },
-    [onClose],
-  );
-
-  useEffect(() => {
-    if (!isOpen) return;
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, handleKeyDown]);
+  // Non-modal: any modal layer outranks it, wherever it sits in the DOM.
+  useEscapeLayer({ active: isOpen, onEscape: onClose, modal: false, ref: rootRef });
 
   if (!isOpen) return null;
 
   return (
     <div
+      ref={rootRef}
       role="dialog"
       aria-labelledby={titleId}
       aria-describedby={describedById}

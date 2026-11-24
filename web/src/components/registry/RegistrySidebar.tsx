@@ -14,6 +14,7 @@ import {
   ArrowUpCircle,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { isModalDialogOpen } from '../../lib/dom';
 import { useRegistryStore } from '../../stores/useRegistryStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
@@ -209,6 +210,7 @@ export function RegistrySidebar({ embedded = false }: { embedded?: boolean } = {
       const tag = target.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return;
       if (target.closest('[role="dialog"], [role="alertdialog"]')) return;
+      if (isModalDialogOpen()) return;
 
       if (e.key === '/') {
         e.preventDefault();

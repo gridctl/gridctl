@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { AccessLens } from '../components/stack/AccessLens';
+import { Modal } from '../components/ui/Modal';
 import { useStackStore } from '../stores/useStackStore';
 import { useAccessLensStore } from '../stores/useAccessLensStore';
 import type { ClientStatus, MCPServerStatus } from '../types';
@@ -103,5 +104,31 @@ describe('AccessLens', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
     expect(useAccessLensStore.getState().enabled).toBe(false);
     expect(useAccessLensStore.getState().clientSlug).toBeNull();
+  });
+
+  it('lets an unrelated modal close on Escape and stays enabled', () => {
+    const onClose = vi.fn();
+    render(
+      <MemoryRouter>
+        <AccessLens servers={SERVERS} />
+        <Modal isOpen onClose={onClose} title="Preferences">
+          <button type="button">Theme</button>
+        </Modal>
+      </MemoryRouter>,
+    );
+    act(() => {
+      useAccessLensStore.setState({ enabled: true });
+    });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Theme' }), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(useAccessLensStore.getState().enabled).toBe(true);
+  });
+
+  it('still exits on Escape when no modal is open', () => {
+    renderLens();
+    fireEvent.click(screen.getByRole('button', { name: 'Toggle Access Lens' }));
+    expect(useAccessLensStore.getState().enabled).toBe(true);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(useAccessLensStore.getState().enabled).toBe(false);
   });
 });

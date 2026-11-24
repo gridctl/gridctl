@@ -6,7 +6,7 @@ import {
   usePanelRef,
 } from 'react-resizable-panels';
 import { cn } from '../../lib/cn';
-import { isTextInputTarget } from '../../lib/dom';
+import { isModalDialogOpen, isTextInputTarget } from '../../lib/dom';
 import { SeparatorBody } from '../ui/SeparatorBody';
 import { useWorkspaceLayout } from '../../hooks/useWorkspaceLayout';
 import type { Workspace } from '../../types/workspace';
@@ -38,7 +38,7 @@ const RIGHT_ID = 'right';
  * over react-resizable-panels v4. Widths are persisted per workspace via
  * `useWorkspaceLayout`, double-clicking a separator resets to defaults,
  * and `[` / `]` toggle rail collapse (suppressed when focus is in a
- * text input).
+ * text input or while a modal dialog is open).
  */
 export function WorkspaceShell({
   workspace,
@@ -89,6 +89,7 @@ export function WorkspaceShell({
       if (e.key !== '[' && e.key !== ']') return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTextInputTarget(e.target)) return;
+      if (isModalDialogOpen()) return;
       if (e.key === '[' && left) {
         e.preventDefault();
         togglePanel(leftPanelRef);

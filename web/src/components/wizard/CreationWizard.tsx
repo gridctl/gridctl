@@ -20,6 +20,7 @@ import type { LucideIcon } from 'lucide-react';
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from 'react-resizable-panels';
 import { cn } from '../../lib/cn';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { useEscapeLayer } from '../../hooks/useEscapeLayer';
 import { Button } from '../ui/Button';
 import { useWizardStore, type WizardStep } from '../../stores/useWizardStore';
 import { useStackStore } from '../../stores/useStackStore';
@@ -292,25 +293,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
     };
   }, [formData, selectedType, isOpen, expertMode, setYamlContent]);
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
-        (e.target as HTMLElement).blur();
-        return;
-      }
-      close();
-    },
-    [close],
-  );
-
-  useEffect(() => {
-    if (isOpen) {
-      document.addEventListener('keydown', handleKeyDown);
-      return () => document.removeEventListener('keydown', handleKeyDown);
-    }
-  }, [isOpen, handleKeyDown]);
+  useEscapeLayer({ active: isOpen, onEscape: close, modal: true, ref: panelRef });
 
   const handleExpertModeToggle = (enabled: boolean) => {
     if (enabled) {

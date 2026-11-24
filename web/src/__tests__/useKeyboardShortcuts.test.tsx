@@ -183,3 +183,96 @@ describe('useKeyboardShortcuts — editable targets and browser chords', () => {
     dialog.remove();
   });
 });
+
+describe('useKeyboardShortcuts — modal dialogs own the keyboard', () => {
+  function appendDialog(role: string, modal: boolean) {
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', role);
+    if (modal) dialog.setAttribute('aria-modal', 'true');
+    const button = document.createElement('button');
+    dialog.appendChild(button);
+    document.body.appendChild(dialog);
+    return { dialog, button };
+  }
+
+  function allHandlers() {
+    return {
+      onFitView: vi.fn(),
+      onEscape: vi.fn(),
+      onZoomIn: vi.fn(),
+      onZoomOut: vi.fn(),
+      onRefresh: vi.fn(),
+      onOpenLogs: vi.fn(),
+      onOpenPalette: vi.fn(),
+      onSwitchToWorkspace: vi.fn(),
+      onToggleCompactMode: vi.fn(),
+      onOpenShortcuts: vi.fn(),
+    };
+  }
+
+  it('calls no handler and prevents no default while an aria-modal dialog is open', () => {
+    const handlers = allHandlers();
+    renderHook(() => useKeyboardShortcuts(handlers));
+    const { dialog, button } = appendDialog('dialog', true);
+
+    const events = [
+      dispatchKey('k', { metaKey: true }, button),
+      dispatchKey('2', { metaKey: true }, button),
+      dispatchKey('f', {}, button),
+      dispatchKey('0', { ctrlKey: true }, button),
+      dispatchKey('?', { shiftKey: true }, button),
+      dispatchKey('j', { metaKey: true }, button),
+      dispatchKey('r', { metaKey: true, shiftKey: true }, button),
+      dispatchKey('\\', { ctrlKey: true }, button),
+      dispatchKey('+', { metaKey: true }, button),
+      dispatchKey('Escape', {}, button),
+      // Focus can fall to <body> while the dialog is still open.
+      dispatchKey('f', {}, document.body),
+      dispatchKey('Escape', {}, document.body),
+    ];
+
+    for (const fn of Object.values(handlers)) expect(fn).not.toHaveBeenCalled();
+    for (const ev of events) expect(ev.defaultPrevented).toBe(false);
+    dialog.remove();
+  });
+
+  it('ignores ? under a modal alertdialog', () => {
+    const onOpenShortcuts = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onOpenShortcuts }));
+    const { dialog, button } = appendDialog('alertdialog', true);
+    const ev = dispatchKey('?', { shiftKey: true }, button);
+    expect(onOpenShortcuts).not.toHaveBeenCalled();
+    expect(ev.defaultPrevented).toBe(false);
+    dialog.remove();
+  });
+
+  it('ignores ? typed inside a non-modal alertdialog', () => {
+    const onOpenShortcuts = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onOpenShortcuts }));
+    const { dialog, button } = appendDialog('alertdialog', false);
+    dispatchKey('?', { shiftKey: true }, button);
+    expect(onOpenShortcuts).not.toHaveBeenCalled();
+    dialog.remove();
+  });
+
+  it('still fits the view beside a non-modal dialog', () => {
+    const onFitView = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onFitView }));
+    const { dialog, button } = appendDialog('dialog', false);
+    const ev = dispatchKey('f', {}, button);
+    expect(onFitView).toHaveBeenCalledTimes(1);
+    expect(ev.defaultPrevented).toBe(true);
+    dialog.remove();
+  });
+
+  it('acts again once the modal dialog is gone', () => {
+    const onOpenPalette = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onOpenPalette }));
+    const { dialog } = appendDialog('dialog', true);
+    dispatchKey('k', { metaKey: true });
+    expect(onOpenPalette).not.toHaveBeenCalled();
+    dialog.remove();
+    dispatchKey('k', { metaKey: true });
+    expect(onOpenPalette).toHaveBeenCalledTimes(1);
+  });
+});

@@ -570,6 +570,21 @@ describe('TracesWorkspace', () => {
     expect(listPanel.style.flexGrow).not.toBe('0');
   });
 
+  it('ignores [ while a modal dialog is open', async () => {
+    renderAt('/traces?trace=abc123def4567890');
+    await waitFor(() => {
+      expect(screen.getByText('mcp.client.call_tool')).toBeInTheDocument();
+    });
+    const listPanel = screen.getByTestId('trace-list');
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    document.body.appendChild(dialog);
+    expect(fireEvent.keyDown(document.body, { key: '[' })).toBe(true);
+    expect(listPanel.style.flexGrow).not.toBe('0');
+    dialog.remove();
+  });
+
   it('restores a persisted list|waterfall layout from the traces split key', async () => {
     // Drags cannot be simulated in jsdom (no pointer capture or geometry), so
     // assert the restore path instead: a saved layout under the workspace key

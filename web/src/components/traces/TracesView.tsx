@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { isTextInputTarget } from '../../lib/dom';
+import { isModalDialogOpen, isTextInputTarget } from '../../lib/dom';
 import { SeparatorBody } from '../ui/SeparatorBody';
 import { IconButton } from '../ui/IconButton';
 import { ZoomControls } from '../ui/ZoomControls';
@@ -285,6 +285,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
       if (e.key !== '[') return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTextInputTarget(e.target)) return;
+      if (isModalDialogOpen()) return;
       const panel = listPanelRef.current;
       if (!panel) return;
       e.preventDefault();

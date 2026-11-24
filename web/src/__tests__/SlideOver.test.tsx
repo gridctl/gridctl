@@ -56,4 +56,33 @@ describe('SlideOver', () => {
     fireEvent.click(screen.getByLabelText('Close access editor'));
     expect(onClose).toHaveBeenCalledOnce();
   });
+
+  it('keeps Escape from reaching the shell on window', () => {
+    const onClose = vi.fn();
+    const onWindow = vi.fn();
+    window.addEventListener('keydown', onWindow);
+    render(
+      <SlideOver isOpen onClose={onClose} title="Access editor">
+        <button type="button">Grant</button>
+      </SlideOver>,
+    );
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Grant' }), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onWindow).not.toHaveBeenCalled();
+    window.removeEventListener('keydown', onWindow);
+  });
+
+  it('blurs a field on Escape and stays open', () => {
+    const onClose = vi.fn();
+    render(
+      <SlideOver isOpen onClose={onClose} title="Access editor">
+        <input aria-label="Filter" />
+      </SlideOver>,
+    );
+    const field = screen.getByLabelText('Filter');
+    field.focus();
+    fireEvent.keyDown(field, { key: 'Escape' });
+    expect(field).not.toHaveFocus();
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });
