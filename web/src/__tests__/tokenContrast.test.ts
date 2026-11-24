@@ -158,12 +158,20 @@ describe('danger token usage', () => {
     text: readFileSync(path, 'utf8'),
   }));
 
-  it('fills white-text danger surfaces with the danger token, not status-error', () => {
-    const offenders = sources.flatMap(({ rel, text }) =>
-      [...text.matchAll(/from-status-error|to-status-error\/80|bg-status-error[^\s'"`]* text-white/g)].map(
-        (match) => `${rel}: ${match[0]}`,
-      ),
-    );
+  it('keeps white text off solid status-error fills and gradients within one class string', () => {
+    const offenders = sources.flatMap(({ rel, text }) => [
+      ...[...text.matchAll(/from-status-error|to-status-error\/80/g)].map((match) => `${rel}: ${match[0]}`),
+      ...[...text.matchAll(/(['"`])((?:(?!\1)[^\\]|\\.)*?)\1/g)]
+        .map((match) => match[2])
+        .filter((value) => {
+          const classes = value.split(/\s+/);
+          return (
+            classes.includes('text-white') &&
+            classes.some((cls) => /^(?:[\w-]+:)*bg-status-error(?!\/)/.test(cls))
+          );
+        })
+        .map((value) => `${rel}: ${value}`),
+    ]);
     expect(offenders).toEqual([]);
   });
 });
