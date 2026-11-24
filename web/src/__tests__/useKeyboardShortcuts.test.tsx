@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 
@@ -32,7 +32,7 @@ describe('useKeyboardShortcuts — workspace navigation', () => {
     expect(onSwitchToWorkspace).toHaveBeenCalledWith('vault');
   });
 
-  it('does not fire workspace shortcuts when focus is inside an input', () => {
+  it('fires workspace shortcuts when focus is inside an input', () => {
     const onSwitchToWorkspace = vi.fn();
     renderHook(() => useKeyboardShortcuts({ onSwitchToWorkspace }));
 
@@ -40,11 +40,12 @@ describe('useKeyboardShortcuts — workspace navigation', () => {
     document.body.appendChild(input);
     input.focus();
 
-    const ev = new KeyboardEvent('keydown', { key: '2', metaKey: true, bubbles: true });
+    const ev = new KeyboardEvent('keydown', { key: '2', ctrlKey: true, bubbles: true, cancelable: true });
     Object.defineProperty(ev, 'target', { value: input });
     window.dispatchEvent(ev);
 
-    expect(onSwitchToWorkspace).not.toHaveBeenCalled();
+    expect(onSwitchToWorkspace).toHaveBeenCalledWith('library');
+    expect(ev.defaultPrevented).toBe(true);
     input.remove();
   });
 
@@ -90,7 +91,12 @@ describe('useKeyboardShortcuts — editable targets and browser chords', () => {
   it('does not swallow f, Cmd+A, or Cmd+Plus in a contenteditable editor', () => {
     const onFitView = vi.fn();
     const onZoomIn = vi.fn();
-    renderHook(() => useKeyboardShortcuts({ onFitView, onZoomIn }));
+    const onZoomOut = vi.fn();
+    const onEscape = vi.fn();
+    const onOpenShortcuts = vi.fn();
+    renderHook(() =>
+      useKeyboardShortcuts({ onFitView, onZoomIn, onZoomOut, onEscape, onOpenShortcuts }),
+    );
 
     const editor = document.createElement('div');
     editor.contentEditable = 'true';
@@ -101,12 +107,28 @@ describe('useKeyboardShortcuts — editable targets and browser chords', () => {
     const fit = dispatchKey('f', {}, editor);
     const selectAll = dispatchKey('a', { metaKey: true }, editor);
     const zoom = dispatchKey('+', { metaKey: true }, editor);
+    const others = [
+      dispatchKey('a', { ctrlKey: true }, editor),
+      dispatchKey('f', { metaKey: true }, editor),
+      dispatchKey('f', { ctrlKey: true }, editor),
+      dispatchKey('0', { metaKey: true }, editor),
+      dispatchKey('0', { ctrlKey: true }, editor),
+      dispatchKey('=', { ctrlKey: true }, editor),
+      dispatchKey('-', { metaKey: true }, editor),
+      dispatchKey('-', { ctrlKey: true }, editor),
+      dispatchKey('?', { shiftKey: true }, editor),
+      dispatchKey('Escape', {}, editor),
+    ];
 
     expect(onFitView).not.toHaveBeenCalled();
     expect(onZoomIn).not.toHaveBeenCalled();
+    expect(onZoomOut).not.toHaveBeenCalled();
+    expect(onEscape).not.toHaveBeenCalled();
+    expect(onOpenShortcuts).not.toHaveBeenCalled();
     expect(fit.defaultPrevented).toBe(false);
     expect(selectAll.defaultPrevented).toBe(false);
     expect(zoom.defaultPrevented).toBe(false);
+    for (const ev of others) expect(ev.defaultPrevented).toBe(false);
     editor.remove();
   });
 
@@ -123,9 +145,9 @@ describe('useKeyboardShortcuts — editable targets and browser chords', () => {
     const workspace = dispatchKey('2', { metaKey: true }, select);
 
     expect(onFitView).not.toHaveBeenCalled();
-    expect(onSwitchToWorkspace).not.toHaveBeenCalled();
+    expect(onSwitchToWorkspace).toHaveBeenCalledWith('library');
     expect(fit.defaultPrevented).toBe(false);
-    expect(workspace.defaultPrevented).toBe(false);
+    expect(workspace.defaultPrevented).toBe(true);
     select.remove();
   });
 
@@ -274,5 +296,165 @@ describe('useKeyboardShortcuts — modal dialogs own the keyboard', () => {
     dialog.remove();
     dispatchKey('k', { metaKey: true });
     expect(onOpenPalette).toHaveBeenCalledTimes(1);
+  });
+});
+
+function allShellHandlers() {
+  return {
+    onFitView: vi.fn(),
+    onEscape: vi.fn(),
+    onZoomIn: vi.fn(),
+    onZoomOut: vi.fn(),
+    onRefresh: vi.fn(),
+    onOpenLogs: vi.fn(),
+    onOpenPalette: vi.fn(),
+    onSwitchToWorkspace: vi.fn(),
+    onToggleCompactMode: vi.fn(),
+    onOpenShortcuts: vi.fn(),
+  };
+}
+
+function makeFields(): HTMLElement[] {
+  const input = document.createElement('input');
+  const textarea = document.createElement('textarea');
+  const select = document.createElement('select');
+  const editor = document.createElement('div');
+  editor.contentEditable = 'true';
+  Object.defineProperty(editor, 'isContentEditable', { value: true });
+  const fields = [input, textarea, select, editor];
+  for (const field of fields) document.body.appendChild(field);
+  return fields;
+}
+
+describe('useKeyboardShortcuts — modifier chords from fields', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  it('fires the field allowlist from an input, textarea, select, and contenteditable', () => {
+    const handlers = allShellHandlers();
+    renderHook(() => useKeyboardShortcuts(handlers));
+
+    for (const field of makeFields()) {
+      for (const ev of [
+        dispatchKey('k', { ctrlKey: true }, field),
+        dispatchKey('5', { ctrlKey: true }, field),
+        dispatchKey('j', { ctrlKey: true }, field),
+        dispatchKey('\\', { ctrlKey: true }, field),
+        dispatchKey('R', { ctrlKey: true, shiftKey: true }, field),
+      ]) {
+        expect(ev.defaultPrevented, `${field.tagName} ${ev.key}`).toBe(true);
+      }
+    }
+
+    expect(handlers.onOpenPalette).toHaveBeenCalledTimes(4);
+    expect(handlers.onSwitchToWorkspace).toHaveBeenCalledTimes(4);
+    expect(handlers.onSwitchToWorkspace).toHaveBeenCalledWith('metrics');
+    expect(handlers.onOpenLogs).toHaveBeenCalledTimes(4);
+    expect(handlers.onToggleCompactMode).toHaveBeenCalledTimes(4);
+    expect(handlers.onRefresh).toHaveBeenCalledTimes(4);
+    expect(handlers.onFitView).not.toHaveBeenCalled();
+    expect(handlers.onEscape).not.toHaveBeenCalled();
+  });
+
+  it('refreshes on Ctrl+Shift+R with an uppercase key, in and out of a field', () => {
+    const onRefresh = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onRefresh }));
+
+    const outside = dispatchKey('R', { ctrlKey: true, shiftKey: true });
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(outside.defaultPrevented).toBe(true);
+
+    const [input] = makeFields();
+    const inField = dispatchKey('R', { ctrlKey: true, shiftKey: true }, input);
+    expect(onRefresh).toHaveBeenCalledTimes(2);
+    expect(inField.defaultPrevented).toBe(true);
+  });
+
+  it('matches K and J with Caps Lock on and Shift up', () => {
+    const onOpenPalette = vi.fn();
+    const onOpenLogs = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onOpenPalette, onOpenLogs }));
+
+    expect(dispatchKey('K', { metaKey: true }).defaultPrevented).toBe(true);
+    expect(dispatchKey('J', { ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(onOpenPalette).toHaveBeenCalledTimes(1);
+    expect(onOpenLogs).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves Ctrl+Shift+K and Ctrl+Shift+J to the browser', () => {
+    const handlers = allShellHandlers();
+    renderHook(() => useKeyboardShortcuts(handlers));
+    const [input] = makeFields();
+
+    const events = [
+      dispatchKey('K', { ctrlKey: true, shiftKey: true }),
+      dispatchKey('J', { ctrlKey: true, shiftKey: true }),
+      dispatchKey('K', { ctrlKey: true, shiftKey: true }, input),
+      dispatchKey('J', { ctrlKey: true, shiftKey: true }, input),
+    ];
+
+    for (const fn of Object.values(handlers)) expect(fn).not.toHaveBeenCalled();
+    for (const ev of events) expect(ev.defaultPrevented).toBe(false);
+  });
+
+  it('never treats Ctrl+Alt (AltGr) as a modifier chord, in or out of a field', () => {
+    const handlers = allShellHandlers();
+    renderHook(() => useKeyboardShortcuts(handlers));
+    const [input] = makeFields();
+
+    const events = [
+      dispatchKey('\\', { ctrlKey: true, altKey: true }, input),
+      dispatchKey('\\', { ctrlKey: true, altKey: true }),
+      dispatchKey('k', { ctrlKey: true, altKey: true }),
+      dispatchKey('2', { ctrlKey: true, altKey: true }),
+      dispatchKey('0', { ctrlKey: true, altKey: true }),
+      dispatchKey('+', { ctrlKey: true, altKey: true }),
+      dispatchKey('R', { ctrlKey: true, altKey: true, shiftKey: true }),
+    ];
+
+    for (const fn of Object.values(handlers)) expect(fn).not.toHaveBeenCalled();
+    for (const ev of events) expect(ev.defaultPrevented).toBe(false);
+  });
+
+  it('counts only Cmd in a field on macOS', () => {
+    vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel');
+    const onOpenPalette = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onOpenPalette }));
+    const [input] = makeFields();
+
+    const ctrlInField = dispatchKey('k', { ctrlKey: true }, input);
+    expect(onOpenPalette).not.toHaveBeenCalled();
+    expect(ctrlInField.defaultPrevented).toBe(false);
+
+    const cmdInField = dispatchKey('k', { metaKey: true }, input);
+    expect(onOpenPalette).toHaveBeenCalledTimes(1);
+    expect(cmdInField.defaultPrevented).toBe(true);
+
+    const ctrlOutside = dispatchKey('k', { ctrlKey: true });
+    expect(onOpenPalette).toHaveBeenCalledTimes(2);
+    expect(ctrlOutside.defaultPrevented).toBe(true);
+  });
+
+  it.each(['dialog', 'alertdialog'])('ignores chords from a field inside a role="%s"', (role) => {
+    const handlers = allShellHandlers();
+    renderHook(() => useKeyboardShortcuts(handlers));
+
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', role);
+    const input = document.createElement('input');
+    dialog.appendChild(input);
+    document.body.appendChild(dialog);
+
+    const events = [
+      dispatchKey('k', { ctrlKey: true }, input),
+      dispatchKey('2', { ctrlKey: true }, input),
+      dispatchKey('k', { metaKey: true }, input),
+      dispatchKey('R', { ctrlKey: true, shiftKey: true }, input),
+    ];
+
+    for (const fn of Object.values(handlers)) expect(fn).not.toHaveBeenCalled();
+    for (const ev of events) expect(ev.defaultPrevented).toBe(false);
   });
 });
