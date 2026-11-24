@@ -1659,6 +1659,16 @@ function FragmentsView({
     setSaving(true);
     try {
       const saved = await saveContextFragment(current.name, toSave);
+      // Patch the local list first so a failed reload below cannot show
+      // the pre-save text as clean content.
+      const savedName = current.name;
+      setFragments((prev) =>
+        prev?.map((f) =>
+          f.name === savedName
+            ? { ...f, content: toSave, bytes: new TextEncoder().encode(toSave).length }
+            : f,
+        ) ?? prev,
+      );
       setDraft((d) => (d === toSave ? null : d));
       showToast(
         'success',
@@ -1727,6 +1737,11 @@ function FragmentsView({
         await deleteContextFragment(name);
         showToast('success', `Fragment "${name}" removed (backup saved). Run a sync to drop its projections.`);
         if (name === selected) setDraft(null);
+        // Drop the entry locally so a failed reload below cannot leave the
+        // removed fragment listed and editable.
+        const remaining = fragments?.filter((f) => f.name !== name) ?? null;
+        setFragments((prev) => prev?.filter((f) => f.name !== name) ?? prev);
+        if (name === selected) setSelected(remaining?.[0]?.name ?? null);
         await loadFragments();
         await refresh();
       } catch (err) {
@@ -1736,7 +1751,7 @@ function FragmentsView({
         }
       }
     },
-    [selected, loadFragments, refresh],
+    [selected, fragments, loadFragments, refresh],
   );
 
   const handleKeyDown = useCallback(
