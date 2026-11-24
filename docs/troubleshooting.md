@@ -1008,7 +1008,7 @@ Browser shows a blank page or connection refused when accessing the gateway URL.
 
 Pins, the Library skills list, Tools, Variables, Connections, Stack, Metrics, run history, Traces, or Logs shows a title ending in "unavailable" and a Retry control. Every one of them except Connections may instead show a banner above data that is already on screen. This is not a blank page, and it is not the authentication prompt.
 
-The Library Agents, Hooks, Packs, and Proposals segments, a pack detail, and the Global Context dialog use the same failed state ("Agents unavailable", "Pack unavailable", "Global context unavailable", and so on), and so does the context pin review ("Pin record unavailable"). A skill's file tree, the Global Context fragment rail, a proposal detail, and the Create new wizard's variable picker show the error with Retry in place of their list.
+The Library Agents, Hooks, Packs, and Proposals segments, a pack detail, and the Global Context dialog use the same failed state ("Agents unavailable", "Pack unavailable", "Global context unavailable", and so on), and so does the context pin review ("Pin record unavailable"). A skill's file tree, the Global Context fragment rail, a proposal detail, and the Create new wizard's variable picker show the error with Retry inline: in place of the list when nothing is loaded, or above content that is already on screen.
 
 **Causes:**
 
