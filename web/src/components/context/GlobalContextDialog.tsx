@@ -1598,7 +1598,9 @@ function FragmentsView({
     fragmentsRef.current = fragments;
   }, [fragments]);
 
-  const loadFragments = useCallback(async (selectName?: string) => {
+  // Resolves to the name of a fragment whose unsaved draft kept the
+  // selection in place of selectName, or null.
+  const loadFragments = useCallback(async (selectName?: string): Promise<string | null> => {
     try {
       const res = await fetchContextFragments();
       setFragments(res.fragments);
@@ -1617,13 +1619,20 @@ function FragmentsView({
           );
         }
       }
+      // Edits typed while this fetch was pending own the selection, so a
+      // requested switch cannot hide them from the dirty guards.
+      const live = draftRef.current;
+      const liveFragment = live ? res.fragments.find((f) => f.name === live.name) : undefined;
+      const held = live && liveFragment && live.value !== liveFragment.content ? live.name : null;
       setSelected((prev) => {
-        const want = selectName ?? prev;
+        const want = held ?? selectName ?? prev;
         if (want && res.fragments.some((f) => f.name === want)) return want;
         return res.fragments[0]?.name ?? null;
       });
+      return held !== null && selectName !== undefined && held !== selectName ? held : null;
     } catch (err) {
       if (!isCancellation(err)) setFragmentsError(describeError(err, 'Load fragments').text);
+      return null;
     }
   }, []);
 
@@ -1713,7 +1722,8 @@ function FragmentsView({
           ? 'Fragment saved. Run a sync to propagate. Pin drift: review and approve in Pins'
           : 'Fragment saved. Run a sync to propagate.',
       );
-      await loadFragments(savedName);
+      // No name: the user may have switched to another fragment meanwhile.
+      await loadFragments();
       await refresh();
     } catch (err) {
       if (!isCancellation(err)) {
@@ -1761,21 +1771,15 @@ function FragmentsView({
       try {
         await saveContextFragment(name, '');
         created = true;
-        // The user may have started typing while the create was in flight;
-        // switching now would strand that draft, so stay put.
-        const d = draftRef.current;
-        const editing =
-          d !== null && d.value !== fragmentsRef.current?.find((f) => f.name === d.name)?.content;
-        if (editing) {
-          showToast(
-            'success',
-            `Fragment "${name}" created. Staying on "${d.name}" because it has unsaved changes.`,
-          );
-          await loadFragments();
-        } else {
-          showToast('success', `Fragment "${name}" created`);
-          await loadFragments(name);
-        }
+        // Typing that started during the create or the reload keeps the
+        // selection on its fragment rather than switching to the new one.
+        const held = await loadFragments(name);
+        showToast(
+          'success',
+          held !== null
+            ? `Fragment "${name}" created. Staying on "${held}" because it has unsaved changes.`
+            : `Fragment "${name}" created`,
+        );
         await refresh();
       } catch (err) {
         if (!isCancellation(err)) {
