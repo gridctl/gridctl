@@ -1006,7 +1006,7 @@ Browser shows a blank page or connection refused when accessing the gateway URL.
 
 **Symptoms:**
 
-Pins, the Library skills list, Tools, Variables, Connections, run history, or Logs shows a title ending in "unavailable" and a Retry control. Pins, the Library skills list, Tools, and Variables may instead show a banner above data that is already on screen. Metrics already offered Retry; its title is now "Metrics unavailable". This is not a blank page, and it is not the authentication prompt.
+Pins, the Library skills list, Tools, Variables, Connections, Stack, Metrics, run history, Traces, or Logs shows a title ending in "unavailable" and a Retry control. Every one of them except Connections may instead show a banner above data that is already on screen. This is not a blank page, and it is not the authentication prompt.
 
 **Causes:**
 
@@ -1014,13 +1014,13 @@ The request for that workspace failed. `gridctl apply` restarts the daemon and i
 
 **Resolution:**
 
-1. Use Retry on that workspace. Pins, the Library skills list, and Tools retry through the shell poller, which refreshes status and inventory. Variables, Connections, run history, and Logs retry their own fetch. The detached logs window uses the same Retry as Logs.
+1. Use Retry on that workspace. Pins, the Library skills list, Tools, and Stack retry through the shell poller, which refreshes status and inventory. Variables, Connections, Metrics, run history, Traces, and Logs retry their own fetch. The detached logs window uses the same Retry as Logs.
 2. If Retry fails the same way, confirm the gateway is running:
    ```bash
    gridctl status
    ```
-3. Read the text under the title. On Pins, the Library skills list, and Tools, a connection failure says "Gateway connection unavailable". On Variables, Connections, and Logs, a connection failure says "Gateway connection failed. Check connectivity, TLS, and browser access policy." An HTTP failure on Variables and Connections says `API error: <status> <statusText>`. Logs says `Logs fetch failed: <status> <statusText>`. Run history does not show that text. It uses "Run history is unreadable. This is not an empty history.", so a failed read is not an empty history. A credential rejection does not use this state.
-4. A banner means the last refresh failed and the previous Pins, Library skills, Tools, or Variables data is still on screen. An unsaved Tools whitelist edit stays mounted. Run history and Logs replace the list instead. The Pins server tab and skills tab fail independently. Connections does not poll wiring. After clients have loaded, only the sessions axis changes until the next health refresh (a mount, a mutation, or Retry). If that refresh fails before any wiring rows have loaded, the Ownership badge and the Wiring summary say "unavailable", and the Wiring body reads "Wiring status could not be loaded." Retry keeps that text until the new result arrives.
+3. Read the text under the title. On Pins, the Library skills list, Tools, and Stack, a connection failure says "Gateway connection unavailable". On Variables, Connections, and Logs, a connection failure says "Gateway connection failed. Check connectivity, TLS, and browser access policy." An HTTP failure on Variables and Connections says `API error: <status> <statusText>`. Logs says `Logs fetch failed: <status> <statusText>`. Run history shows "Run history is unreadable. This is not an empty history." followed by the request error, so a failed read is not an empty history. Stack adds "The gateway may have been shut down or restarted. It will reconnect automatically when available." when the shell has lost its connection. A credential rejection does not use this state.
+4. A banner means the last refresh failed and the previous data is still on screen. On run history and Traces it stays up while Retry runs and clears when a load succeeds. The full "unavailable" state appears only when nothing has loaded yet. An unsaved Tools whitelist edit stays mounted. On Logs, Stack, Metrics, and Traces the banner also shows "Last updated" with the time of the last successful load; the time does not count up. Log rows stay scrollable, expandable, and exportable. Stack greys out the graph but leaves it interactive, and the spec and Access Lens editors keep full color. Run history keeps its rows after a failed Refresh or Load older, and its header reads "History: refresh failed". When the failed load was for different filters, run history and Traces show the full state instead, so rows from other filters are never shown. Metrics shows the loading state, not the previous range's error, while a new time range loads. The Pins server tab and skills tab fail independently. Connections does not poll wiring. After clients have loaded, only the sessions axis changes until the next health refresh (a mount, a mutation, or Retry). If that refresh fails before any wiring rows have loaded, the Ownership badge and the Wiring summary say "unavailable", and the Wiring body reads "Wiring status could not be loaded." Retry keeps that text until the new result arrives.
 
 ### A workspace says "Reload needed"
 

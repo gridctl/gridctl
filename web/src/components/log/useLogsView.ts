@@ -71,6 +71,8 @@ export interface LogsViewState {
   relativeTime: boolean;
   /** Anchor of the last completed load; freezes time windows while paused. */
   lastLoadedAt: number;
+  /** True once a load has completed (independent of filters and clear). */
+  hasLoaded: boolean;
   /** Expanded entry key (entry identity, not index), shared across surfaces. */
   expandedKey: string | null;
   setExpandedKey: (key: string | null) => void;
@@ -147,7 +149,7 @@ export function useLogsView(): LogsViewState {
   const windowSize = normalizeLogWindowParam(searchParams.get('n'), DEFAULT_LOG_WINDOW);
   const timeRange = normalizeLogTimeRangeParam(searchParams.get('range'));
 
-  const { logs, isLoading, error, bufferTotal, bufferCapacity, lastLoadedAt, refresh, clear } =
+  const { logs, isLoading, error, bufferTotal, bufferCapacity, lastLoadedAt, hasLoaded, refresh, clear } =
     useLogStream({ active: true, paused: isPaused, lines: windowSize });
 
   const setSource = useCallback(
@@ -338,6 +340,7 @@ export function useLogsView(): LogsViewState {
     wrap: logsPrefs.wrap,
     relativeTime: logsPrefs.relativeTime,
     lastLoadedAt,
+    hasLoaded,
     expandedKey,
     setExpandedKey,
     setSource,

@@ -5,7 +5,8 @@ import { exportRuns, updateStackRuns, wipeRuns, type RunRecord } from '../../lib
 import { formatBytes } from '../../lib/format-bytes';
 import { cn } from '../../lib/cn';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
-import { FailedState } from '../ui/EmptyState';
+import { FailedState, FailureBanner } from '../ui/EmptyState';
+import { refreshPhase } from '../../lib/refreshPhase';
 
 const RECORDING_BLURB =
   'Records are saved after dispatch attempts return. Recording is best-effort. Attempts interrupted by a crash may leave no record, and older records may have been removed by retention or wipe.';
@@ -30,6 +31,7 @@ export function RunsView({ servers }: RunsViewProps) {
   const load = useRunsStore((s) => s.load);
   const setMutationError = useRunsStore((s) => s.setMutationError);
   const isLoading = useRunsStore((s) => s.isLoading);
+  const hasLoaded = useRunsStore((s) => s.hasLoaded);
   const [confirmEnable, setConfirmEnable] = useState(false);
   const [confirmDisable, setConfirmDisable] = useState(false);
   const [confirmWipe, setConfirmWipe] = useState(false);
@@ -83,7 +85,9 @@ export function RunsView({ servers }: RunsViewProps) {
     [records, selected],
   );
 
-  const emptyReason = emptyState(status, error, records.length, isLoading);
+  const phase = refreshPhase({ error, hasLoaded });
+  const firstLoadPending = phase === 'loading' && isLoading;
+  const emptyReason = emptyState(status, records.length, firstLoadPending);
   const dropSummary = dropText(status);
 
   return (
@@ -95,7 +99,14 @@ export function RunsView({ servers }: RunsViewProps) {
             Writer: <Health value={status?.writer_health} />
           </span>
           <span className="text-text-muted">
-            History: {error ? 'unreadable' : partial ? 'partial' : 'readable'}
+            History:{' '}
+            {phase === 'failed'
+              ? 'unreadable'
+              : phase === 'stale'
+                ? 'refresh failed'
+                : partial
+                  ? 'partial'
+                  : 'readable'}
           </span>
           {statusError && (
             <span className="text-status-pending" role="status">
@@ -413,16 +424,19 @@ export function RunsView({ servers }: RunsViewProps) {
 
       <div className={cn('flex-1 min-h-0 flex', narrow && 'flex-col')}>
         <div className="flex-1 min-w-0 overflow-auto">
-          {isLoading && records.length === 0 ? (
+          {phase === 'stale' && error && (
+            <FailureBanner message={error} onRetry={() => void load()} className="mt-3" />
+          )}
+          {firstLoadPending ? (
             <div className="p-3 space-y-2 animate-pulse" data-testid="runs-skeleton">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="h-7 rounded bg-surface-elevated/60 border border-border/20" />
               ))}
             </div>
-          ) : emptyReason && error ? (
+          ) : phase === 'failed' ? (
             <FailedState
               feature="Run history"
-              message="Run history is unreadable. This is not an empty history."
+              message={`Run history is unreadable. This is not an empty history. ${error ?? ''}`.trim()}
               onRetry={() => void load()}
               inline
             />
@@ -594,12 +608,10 @@ function dropText(status: { drops?: Record<string, number>; failures?: Record<st
 
 function emptyState(
   status: { enabled?: boolean; logical_bytes?: number; inventory?: { fileCount: number; sizeBytes: number } } | null,
-  error: string | null,
   count: number,
   loading: boolean,
 ): string | null {
   if (loading) return null;
-  if (error) return 'Run history is unreadable. This is not an empty history.';
   if (count > 0) return null;
   const retained = (status?.logical_bytes ?? status?.inventory?.sizeBytes ?? 0) > 0;
   if (status && status.enabled === false && retained) {

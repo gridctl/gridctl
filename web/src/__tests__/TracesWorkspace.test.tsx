@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { TracesWorkspace } from '../components/workspaces/TracesWorkspace';
@@ -151,6 +151,8 @@ beforeEach(() => {
     isLoading: false,
     isPaused: false,
     error: null,
+    lastLoadedAt: 0,
+    loadedFilters: null,
     filters: { segment: 'tool-calls', server: '', errorsOnly: false, minDuration: null, timeRange: 'all', search: '' },
     selectedTraceId: null,
     traceDetail: null,
@@ -582,5 +584,143 @@ describe('TracesWorkspace', () => {
     });
     expect(screen.getByTestId('trace-list').style.flexGrow).toBe('20');
     expect(screen.getByTestId('trace-waterfall').style.flexGrow).toBe('80');
+  });
+
+  it('shows no skeleton on a pending poll after a completed empty load', async () => {
+    vi.mocked(fetchTraces).mockResolvedValue(listEnvelope([]));
+    renderAt('/traces');
+    expect(await screen.findByText('No traces yet')).toBeInTheDocument();
+
+    vi.mocked(fetchTraces).mockReturnValue(new Promise(() => {}));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(useTracesStore.getState().isLoading).toBe(true);
+    expect(screen.queryByTestId('traces-skeleton')).not.toBeInTheDocument();
+    expect(screen.getByText('No traces yet')).toBeInTheDocument();
+  });
+
+  it('keeps rows under a banner when a poll fails and clears it on the next success', async () => {
+    renderAt('/traces');
+    expect(await screen.findByText('create_issue')).toBeInTheDocument();
+
+    vi.mocked(fetchTraces).mockRejectedValue(new Error('trace buffer offline'));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('trace buffer offline');
+    expect(screen.getByText('create_issue')).toBeInTheDocument();
+    expect(screen.queryByText('Traces unavailable')).not.toBeInTheDocument();
+
+    // A pending poll keeps the error up instead of clearing it at start.
+    let resolvePoll: (v: ReturnType<typeof listEnvelope>) => void = () => {};
+    vi.mocked(fetchTraces).mockReturnValue(new Promise((resolve) => { resolvePoll = resolve; }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(useTracesStore.getState().error).toBe('trace buffer offline');
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+
+    await act(async () => {
+      resolvePoll(listEnvelope([summary]));
+    });
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(useTracesStore.getState().error).toBeNull();
+  });
+
+  it('shows the skeleton while the first load is pending', async () => {
+    vi.mocked(fetchTraces).mockReturnValue(new Promise(() => {}));
+    renderAt('/traces');
+    expect(await screen.findByTestId('traces-skeleton')).toBeInTheDocument();
+  });
+
+  it('shows the failed state on a first-load failure', async () => {
+    vi.mocked(fetchTraces).mockRejectedValue(new Error('trace buffer offline'));
+    renderAt('/traces');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Traces unavailable');
+    expect(alert).toHaveTextContent('trace buffer offline');
+  });
+
+  it('shows the failed state, not old rows, after a failed server filter change', async () => {
+    renderAt('/traces');
+    expect(await screen.findByText('create_issue')).toBeInTheDocument();
+
+    vi.mocked(fetchTraces).mockRejectedValue(new Error('filtered read failed'));
+    act(() => {
+      useTracesStore.getState().setFilters({ server: 'zapier' });
+    });
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Traces unavailable');
+    expect(screen.queryByText('create_issue')).not.toBeInTheDocument();
+    expect(screen.queryByRole('grid', { name: 'Traces' })).not.toBeInTheDocument();
+    expect(useTracesStore.getState().traces).toHaveLength(0);
+    expect(useTracesStore.getState().loadedFilters).toBeNull();
+  });
+});
+
+describe('useTracesStore loadTraces', () => {
+  it('keeps rows when only a client-side filter changed before a failure', async () => {
+    vi.mocked(fetchTraces).mockResolvedValueOnce(listEnvelope([summary]));
+    await useTracesStore.getState().loadTraces();
+    expect(useTracesStore.getState().loadedFilters).toEqual({ server: '', errorsOnly: false, minDuration: null });
+
+    useTracesStore.getState().setFilters({ search: 'create' });
+    vi.mocked(fetchTraces).mockRejectedValueOnce(new Error('boom'));
+    await useTracesStore.getState().loadTraces();
+    const s = useTracesStore.getState();
+    expect(s.traces).toHaveLength(1);
+    expect(s.error).toBe('boom');
+    expect(s.loadedFilters).not.toBeNull();
+  });
+
+  it('drops rows when a server-side filter changed before a failure', async () => {
+    vi.mocked(fetchTraces).mockResolvedValueOnce(listEnvelope([summary]));
+    await useTracesStore.getState().loadTraces();
+
+    useTracesStore.getState().setFilters({ server: 'zapier' });
+    vi.mocked(fetchTraces).mockRejectedValueOnce(new Error('boom'));
+    await useTracesStore.getState().loadTraces();
+    const s = useTracesStore.getState();
+    expect(s.traces).toEqual([]);
+    expect(s.total).toBe(0);
+    expect(s.loadedFilters).toBeNull();
+  });
+
+  it('does not clear the error when a load starts', async () => {
+    useTracesStore.setState({ error: 'earlier failure' });
+    vi.mocked(fetchTraces).mockReturnValueOnce(new Promise(() => {}));
+    void useTracesStore.getState().loadTraces();
+    expect(useTracesStore.getState().error).toBe('earlier failure');
+    expect(useTracesStore.getState().isLoading).toBe(true);
+  });
+
+  it('ignores a late failure from a superseded request', async () => {
+    let rejectA: (err: Error) => void = () => {};
+    vi.mocked(fetchTraces).mockReturnValueOnce(new Promise((_, reject) => { rejectA = reject; }));
+    const loadA = useTracesStore.getState().loadTraces();
+
+    useTracesStore.getState().setFilters({ server: 'github' });
+    vi.mocked(fetchTraces).mockResolvedValueOnce(listEnvelope([summary]));
+    await useTracesStore.getState().loadTraces();
+
+    rejectA(new Error('stale request failed'));
+    await loadA;
+    const s = useTracesStore.getState();
+    expect(s.traces).toHaveLength(1);
+    expect(s.error).toBeNull();
+    expect(s.isLoading).toBe(false);
+    expect(s.loadedFilters).toEqual({ server: 'github', errorsOnly: false, minDuration: null });
+  });
+
+  it('ignores a late success from a superseded request', async () => {
+    let resolveA: (value: Awaited<ReturnType<typeof fetchTraces>>) => void = () => {};
+    vi.mocked(fetchTraces).mockReturnValueOnce(new Promise((resolve) => { resolveA = resolve; }));
+    const loadA = useTracesStore.getState().loadTraces();
+
+    useTracesStore.getState().setFilters({ server: 'github' });
+    vi.mocked(fetchTraces).mockResolvedValueOnce(listEnvelope([summary]));
+    await useTracesStore.getState().loadTraces();
+
+    resolveA(listEnvelope([summary, infraSummary]));
+    await loadA;
+    const s = useTracesStore.getState();
+    expect(s.traces).toHaveLength(1);
+    expect(s.loadedFilters).toEqual({ server: 'github', errorsOnly: false, minDuration: null });
   });
 });

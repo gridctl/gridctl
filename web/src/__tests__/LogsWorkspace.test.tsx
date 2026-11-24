@@ -273,4 +273,45 @@ describe('LogsWorkspace', () => {
       expect(screen.getByText('gateway listening')).toBeInTheDocument();
     });
   });
+
+  it('keeps rows and actions under a failure banner when a refresh fails', async () => {
+    vi.mocked(fetchGatewayLogs)
+      .mockResolvedValueOnce(envelope([gatewayEntry, githubEntry, zapierEntry]))
+      .mockRejectedValue(new Error('Gateway connection unavailable'));
+    renderAt('/logs');
+    await waitFor(() => {
+      expect(screen.getByText('gateway listening')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Gateway connection unavailable');
+    expect(alert).toHaveTextContent('Last updated');
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.queryByText('Logs unavailable')).not.toBeInTheDocument();
+    expect(screen.getByRole('grid', { name: 'Log entries' })).toBeInTheDocument();
+    expect(screen.getByText('gateway listening')).toBeInTheDocument();
+    expect(screen.getByText('tool call failed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Copy filtered view/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Export filtered view/i })).toBeEnabled();
+
+    // Rows stay expandable while stale.
+    fireEvent.click(screen.getByText('tool call failed'));
+    expect(screen.getAllByText('tool call failed')).toHaveLength(2);
+
+    // The next success removes the banner.
+    vi.mocked(fetchGatewayLogs).mockResolvedValue(envelope([gatewayEntry, githubEntry, zapierEntry]));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+  });
+
+  it('shows the failed state when the first load fails', async () => {
+    vi.mocked(fetchGatewayLogs).mockRejectedValue(new Error('Gateway connection unavailable'));
+    renderAt('/logs');
+    expect(await screen.findByText('Logs unavailable')).toBeInTheDocument();
+    expect(screen.queryByRole('grid', { name: 'Log entries' })).not.toBeInTheDocument();
+  });
 });

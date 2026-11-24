@@ -48,6 +48,10 @@ interface RunsState {
   nextCursor: RunCursor | null;
   status: RunStatusResponse | null;
   isLoading: boolean;
+  /** A list load has completed successfully for the current filters. */
+  hasLoaded: boolean;
+  /** Filters of the last successful non-append load. */
+  loadedFilters: RunsFilters | null;
   error: string | null;
   statusError: string | null;
   mutationError: string | null;
@@ -79,6 +83,10 @@ function filterParams(filters: RunsFilters, cursor?: RunCursor | null) {
   };
 }
 
+function sameFilters(a: RunsFilters, b: RunsFilters): boolean {
+  return (Object.keys(a) as (keyof RunsFilters)[]).every((k) => a[k] === b[k]);
+}
+
 export const useRunsStore = create<RunsState>()((set, get) => ({
   records: [],
   warnings: [],
@@ -86,6 +94,8 @@ export const useRunsStore = create<RunsState>()((set, get) => ({
   nextCursor: null,
   status: null,
   isLoading: false,
+  hasLoaded: false,
+  loadedFilters: null,
   error: null,
   statusError: null,
   mutationError: null,
@@ -98,7 +108,9 @@ export const useRunsStore = create<RunsState>()((set, get) => ({
   load: async (opts) => {
     const seq = get().loadSeq + 1;
     const generation = useAuthStore.getState().generation;
-    set({ loadSeq: seq, isLoading: true, error: null });
+    // The error stays until a load succeeds, so a retry while stale does not
+    // briefly report the history as readable.
+    set({ loadSeq: seq, isLoading: true });
     const append = Boolean(opts?.append);
     const { filters, nextCursor } = get();
     let list: RunListResponse | null = null;
@@ -118,12 +130,18 @@ export const useRunsStore = create<RunsState>()((set, get) => ({
     if (get().loadSeq !== seq) return;
     if (useAuthStore.getState().generation !== generation) return;
     if (listError) {
+      // Rows loaded under the same filters stay as last-known data; rows
+      // from other filters are never shown under the new ones.
+      const loaded = get().loadedFilters;
+      const keep = append || (loaded !== null && sameFilters(loaded, filters));
       set({
         isLoading: false,
         error: listError,
         statusError,
         status: status ?? get().status,
-        records: append ? get().records : [],
+        ...(keep
+          ? {}
+          : { records: [], warnings: [], partial: false, nextCursor: null, hasLoaded: false, loadedFilters: null }),
       });
       return;
     }
@@ -136,6 +154,8 @@ export const useRunsStore = create<RunsState>()((set, get) => ({
       status: status ?? get().status,
       statusError,
       isLoading: false,
+      hasLoaded: true,
+      ...(append ? {} : { loadedFilters: { ...filters } }),
       error: null,
     });
   },

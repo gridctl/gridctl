@@ -52,6 +52,75 @@ describe('LogStream', () => {
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
+  it('keeps rows on screen when a refresh fails after a completed load', () => {
+    render(
+      <LogStream
+        logs={[entry({ message: 'still here' })]}
+        isLoading={false}
+        error="socket closed"
+        hasLoaded
+        fontSize={12}
+        containerRef={createRef<HTMLDivElement>()}
+        expandedKey={null}
+        onToggleExpand={() => {}}
+      />,
+    );
+    expect(screen.getByRole('grid', { name: 'Log entries' })).toBeInTheDocument();
+    expect(screen.getByText('still here')).toBeInTheDocument();
+    expect(screen.queryByText('Logs unavailable')).not.toBeInTheDocument();
+  });
+
+  it('defaults hasLoaded to having rows so direct callers keep their rows on error', () => {
+    render(
+      <LogStream
+        logs={[entry({ message: 'still here' })]}
+        isLoading={false}
+        error="socket closed"
+        fontSize={12}
+        containerRef={createRef<HTMLDivElement>()}
+        expandedKey={null}
+        onToggleExpand={() => {}}
+      />,
+    );
+    expect(screen.getByText('still here')).toBeInTheDocument();
+    expect(screen.queryByText('Logs unavailable')).not.toBeInTheDocument();
+  });
+
+  it('renders the filter empty state, not the failed state, for a stale empty filter', () => {
+    render(
+      <LogStream
+        logs={[]}
+        isLoading={false}
+        error="socket closed"
+        hasLoaded
+        hasActiveFilter
+        onClearFilter={() => {}}
+        fontSize={12}
+        containerRef={createRef<HTMLDivElement>()}
+        expandedKey={null}
+        onToggleExpand={() => {}}
+      />,
+    );
+    expect(screen.getByText('No entries match your filters')).toBeInTheDocument();
+    expect(screen.queryByText('Logs unavailable')).not.toBeInTheDocument();
+  });
+
+  it('shows the loading row only before the first load', () => {
+    const props = {
+      logs: [],
+      error: null,
+      fontSize: 12,
+      containerRef: createRef<HTMLDivElement>(),
+      expandedKey: null,
+      onToggleExpand: () => {},
+    };
+    const { rerender } = render(<LogStream {...props} isLoading hasLoaded={false} />);
+    expect(screen.getByText('Loading logs...')).toBeInTheDocument();
+    rerender(<LogStream {...props} isLoading hasLoaded />);
+    expect(screen.queryByText('Loading logs...')).not.toBeInTheDocument();
+    expect(screen.getByText('No logs yet')).toBeInTheDocument();
+  });
+
   it('keeps the same logical entry expanded when a poll replaces the array', () => {
     const first = entry({ message: 'first entry', timestamp: '2026-07-24T10:00:01Z' });
     const second = entry({ message: 'second entry', timestamp: '2026-07-24T10:00:02Z' });
