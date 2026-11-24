@@ -17,3 +17,22 @@ export function useGuardedNavigate(): NavigateFunction {
   );
   return guarded as NavigateFunction;
 }
+
+// onClick for a <Link to={to}>: an unsaved editor that the navigation would
+// leave cancels the link and asks through the shared confirm. Modified clicks
+// open a new tab and pass through untouched.
+export function useGuardedLinkClick(): (e: React.MouseEvent, to: To) => void {
+  const navigate = useNavigate();
+  return useCallback(
+    (e: React.MouseEvent, to: To) => {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const { isBlocked, guard } = useNavigationGuardStore.getState();
+      if (!isBlocked(to)) return;
+      e.preventDefault();
+      guard(to, () => {
+        void navigate(to);
+      });
+    },
+    [navigate],
+  );
+}

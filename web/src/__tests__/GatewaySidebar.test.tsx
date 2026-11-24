@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 
 vi.mock('../lib/api', async (importActual) => {
   const actual = await importActual<typeof import('../lib/api')>();
@@ -30,6 +30,8 @@ import { fetchPolicy } from '../lib/api';
 import { useRegistryStore } from '../stores/useRegistryStore';
 import { useStackStore } from '../stores/useStackStore';
 import type { AgentSkill } from '../types';
+import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
+import { leavesWorkspace, useNavigationGuardStore } from '../stores/useNavigationGuardStore';
 
 const SAMPLE_SKILLS: AgentSkill[] = [
   // @ts-expect-error partial AgentSkill is fine for the test
@@ -103,5 +105,46 @@ describe('GatewaySidebar', () => {
   it('leaves the heading without a tabindex when no headingRef is passed', () => {
     renderSidebar();
     expect(screen.getByRole('heading', { level: 2 })).not.toHaveAttribute('tabindex');
+  });
+
+  describe('Manage Skills with an unsaved Access Lens draft', () => {
+    function LocationProbe() {
+      return <div data-testid="location">{useLocation().pathname}</div>;
+    }
+    const resetGuards = () => useNavigationGuardStore.setState({ guards: [], hosts: 0, pending: null });
+
+    beforeEach(resetGuards);
+
+    it('asks before leaving Stack and keeps the draft on cancel', () => {
+      const onDiscard = vi.fn();
+      render(
+        <MemoryRouter initialEntries={['/stack']}>
+          <Routes>
+            <Route path="*" element={<GatewaySidebar onClose={() => {}} />} />
+          </Routes>
+          <NavigationGuardDialog />
+          <LocationProbe />
+        </MemoryRouter>,
+      );
+      useNavigationGuardStore.getState().register({
+        id: 'lens',
+        label: 'Access Lens for Cursor',
+        blocks: (to) => leavesWorkspace(to, 'stack'),
+        onDiscard,
+      });
+
+      fireEvent.click(screen.getByRole('link', { name: /manage skills/i }));
+      expect(screen.getByText('Discard unsaved changes')).toBeInTheDocument();
+      expect(screen.getByTestId('location')).toHaveTextContent('/stack');
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.getByTestId('location')).toHaveTextContent('/stack');
+      expect(onDiscard).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('link', { name: /manage skills/i }));
+      fireEvent.click(screen.getByRole('button', { name: 'Discard & leave' }));
+      expect(onDiscard).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('location')).toHaveTextContent('/library');
+      resetGuards();
+    });
   });
 });

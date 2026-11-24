@@ -50,7 +50,7 @@ describe('AppShell navigation shortcuts', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/logs');
   });
 
-  it('holds Cmd+2 behind a dirty modal editor with focus on a button', () => {
+  it('holds Cmd+2 behind an unconditional guard with focus on a button', () => {
     renderShell('/stack');
     const onDiscard = vi.fn();
     useNavigationGuardStore.getState().register({ id: 'skill', label: 'skill "triage"', onDiscard });
