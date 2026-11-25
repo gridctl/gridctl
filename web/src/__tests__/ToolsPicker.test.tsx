@@ -7,6 +7,7 @@ import { TOOL_NAME_DELIMITER } from '../lib/constants';
 import type { Tool } from '../types';
 import * as apiModule from '../lib/api';
 import { ProbeError } from '../lib/api';
+import { showToast } from '../components/ui/Toast';
 
 vi.mock('../components/ui/Toast', () => ({
   showToast: vi.fn(),
@@ -203,6 +204,7 @@ describe('ToolsPicker', () => {
   describe('probe integration', () => {
     beforeEach(() => {
       vi.spyOn(apiModule, 'probeServer');
+      vi.mocked(showToast).mockClear();
     });
     afterEach(() => {
       vi.restoreAllMocks();
@@ -348,6 +350,34 @@ describe('ToolsPicker', () => {
       expect(
         screen.getByRole('button', { name: /retry probing the server/i }),
       ).toBeInTheDocument();
+      expect(showToast).not.toHaveBeenCalled();
+    });
+
+    it('toasts the current failure message for each failed probe', async () => {
+      vi.mocked(apiModule.probeServer)
+        .mockRejectedValueOnce(new Error('connection refused'))
+        .mockRejectedValueOnce(new Error('host unreachable'));
+
+      render(
+        <ToolsPicker
+          serverName="x"
+          value={[]}
+          onChange={() => {}}
+          probeConfig={{ url: 'https://example.com/mcp' }}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole('button', { name: /discover tools by probing/i }),
+      );
+      await waitFor(() => expect(showToast).toHaveBeenCalledTimes(1));
+      expect(vi.mocked(showToast).mock.calls[0][1]).toContain('connection refused');
+
+      fireEvent.click(screen.getByRole('button', { name: /retry probing the server/i }));
+      await waitFor(() => expect(showToast).toHaveBeenCalledTimes(2));
+      expect(vi.mocked(showToast).mock.calls[1][1]).toContain('host unreachable');
+      for (const call of vi.mocked(showToast).mock.calls) {
+        expect(call[1]).not.toBe('Probe failed');
+      }
     });
 
     it('invalid_config errors do NOT show a Retry (the form needs fixing)', async () => {
