@@ -13,6 +13,7 @@ import {
   Zap,
   KeyRound,
   ShieldCheck,
+  AlertCircle,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
@@ -27,6 +28,7 @@ import { cardPrefill, useDetectCard } from '../../../hooks/useDetectCard';
 import type { DetectedCardInput } from '../../../lib/api';
 import { Field, FieldError } from '../../ui/Field';
 import { ExecutionFields } from './ExecutionFields';
+import { showPortField, TRANSPORT_DEFAULTS } from '../../../lib/wizard-validation';
 
 // --- Server type definitions ---
 
@@ -46,21 +48,21 @@ const SERVER_TYPES: ServerTypeOption[] = [
     icon: Container,
     label: 'Container',
     description: 'Docker image with HTTP, stdio, or SSE transport',
-    transportDefault: 'http',
+    transportDefault: TRANSPORT_DEFAULTS.container,
   },
   {
     type: 'source',
     icon: GitBranch,
     label: 'Source',
     description: 'Build from a Git repository, local path, or Python package',
-    transportDefault: 'http',
+    transportDefault: TRANSPORT_DEFAULTS.source,
   },
   {
     type: 'external',
     icon: Globe,
     label: 'External URL',
     description: 'Connect to an already-running remote server',
-    transportDefault: 'http',
+    transportDefault: TRANSPORT_DEFAULTS.external,
     hidePort: true,
   },
   {
@@ -68,7 +70,7 @@ const SERVER_TYPES: ServerTypeOption[] = [
     icon: Terminal,
     label: 'Local Process',
     description: 'Run a local command over stdio',
-    transportDefault: 'stdio',
+    transportDefault: TRANSPORT_DEFAULTS.local,
     transportLocked: true,
     hidePort: true,
   },
@@ -77,7 +79,7 @@ const SERVER_TYPES: ServerTypeOption[] = [
     icon: MonitorSmartphone,
     label: 'SSH',
     description: 'Execute commands on a remote host via SSH',
-    transportDefault: 'stdio',
+    transportDefault: TRANSPORT_DEFAULTS.ssh,
     transportLocked: true,
     hidePort: true,
   },
@@ -86,7 +88,7 @@ const SERVER_TYPES: ServerTypeOption[] = [
     icon: FileCode2,
     label: 'OpenAPI',
     description: 'Auto-generate tools from an OpenAPI specification',
-    transportDefault: '',
+    transportDefault: TRANSPORT_DEFAULTS.openapi,
     transportLocked: true,
     hidePort: true,
   },
@@ -159,11 +161,6 @@ function getAvailableTransports(serverType: ServerType): string[] {
   }
 }
 
-function showPortField(serverType: ServerType, transport: string): boolean {
-  if (serverType === 'external' || serverType === 'local' || serverType === 'ssh' || serverType === 'openapi') return false;
-  return transport !== 'stdio';
-}
-
 // Translate the wizard form into the probe endpoint's wire shape. Returns
 // null for every transport the probe does not support — which, after the
 // descope, is everything except external URL. Container / local-process / SSH
@@ -224,6 +221,7 @@ function Section({
   onToggle,
   children,
   badge,
+  hasError,
 }: {
   title: string;
   icon: LucideIcon;
@@ -231,6 +229,7 @@ function Section({
   onToggle: () => void;
   children: React.ReactNode;
   badge?: string;
+  hasError?: boolean;
 }) {
   return (
     <div className="border border-border/20 rounded-xl overflow-hidden transition-colors hover:border-border/30">
@@ -246,6 +245,12 @@ function Section({
         )}
         <Icon size={14} className="text-primary flex-shrink-0" />
         <span className="text-xs font-medium text-text-primary">{title}</span>
+        {hasError && (
+          <span className="flex items-center text-status-error">
+            <AlertCircle size={12} aria-hidden="true" />
+            <span className="sr-only">, has errors</span>
+          </span>
+        )}
         {badge && (
           <span className="ml-auto text-3xs text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full">
             {badge}
@@ -396,10 +401,15 @@ function KeyValueEditor({
 function CommandArrayBuilder({
   value,
   onChange,
+  error,
+  fieldKey,
 }: {
   value: string[];
   onChange: (val: string[]) => void;
+  error?: string;
+  fieldKey?: string;
 }) {
+  const errorId = `${useId()}-error`;
   const addItem = () => onChange([...value, '']);
   const updateItem = (idx: number, val: string) => {
     const next = [...value];
@@ -417,6 +427,8 @@ function CommandArrayBuilder({
         <button
           type="button"
           onClick={addItem}
+          data-wizard-field={value.length === 0 ? fieldKey : undefined}
+          aria-describedby={value.length === 0 && error ? errorId : undefined}
           className="flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
         >
           <Plus size={10} />
@@ -436,7 +448,10 @@ function CommandArrayBuilder({
               onChange={(e) => updateItem(i, e.target.value)}
               placeholder={i === 0 ? 'command' : `arg ${i}`}
               aria-label={i === 0 ? 'Command' : `Argument ${i}`}
-              className={cn(inputClass, 'flex-1 font-mono')}
+              data-wizard-field={i === 0 ? fieldKey : undefined}
+              aria-invalid={i === 0 && error ? true : undefined}
+              aria-describedby={i === 0 && error ? errorId : undefined}
+              className={cn(inputClass, 'flex-1 font-mono', i === 0 && error && 'border-status-error/50')}
             />
             <button
               type="button"
@@ -449,6 +464,7 @@ function CommandArrayBuilder({
           </div>
         ))}
       </div>
+      <FieldError id={errorId} error={error} />
     </div>
   );
 }
@@ -462,6 +478,7 @@ function PythonSourceFields({
   data,
   onChange,
   errors,
+  fieldPrefix = '',
 }: MCPServerFormProps) {
   const source = data.source ?? { type: 'git' };
   const [versionResult, setVersionResult] = useState<{
@@ -558,12 +575,12 @@ function PythonSourceFields({
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label htmlFor="python-package" className={labelClass}>Project name <span className="text-status-error">*</span></label>
-            <input id="python-package" value={source.package ?? ''} onChange={(event) => updateSource({ package: event.target.value })} placeholder="mcp-server-fetch" aria-invalid={errors?.['source.package'] ? true : undefined} aria-describedby={errors?.['source.package'] ? 'python-package-error' : undefined} className={cn(inputClass, 'font-mono')} />
+            <input id="python-package" data-wizard-field={`${fieldPrefix}source.package`} value={source.package ?? ''} onChange={(event) => updateSource({ package: event.target.value })} placeholder="mcp-server-fetch" aria-invalid={errors?.['source.package'] ? true : undefined} aria-describedby={errors?.['source.package'] ? 'python-package-error' : undefined} className={cn(inputClass, 'font-mono', errors?.['source.package'] && 'border-status-error/50')} />
             <FieldError id="python-package-error" error={errors?.['source.package']} />
           </div>
           <div>
             <label htmlFor="python-version" className={labelClass}>Exact version <span className="text-status-error">*</span></label>
-            <input id="python-version" value={source.ref ?? ''} onChange={(event) => updateSource({ ref: event.target.value })} list="python-package-versions" placeholder={!currentVersionResult || currentVersionResult.loading ? 'Resolving...' : '1.0.0'} aria-invalid={errors?.['source.ref'] || currentVersionResult?.error ? true : undefined} aria-describedby={errors?.['source.ref'] || currentVersionResult?.error ? 'python-version-error' : undefined} className={cn(inputClass, 'font-mono')} />
+            <input id="python-version" data-wizard-field={`${fieldPrefix}source.ref`} value={source.ref ?? ''} onChange={(event) => updateSource({ ref: event.target.value })} list="python-package-versions" placeholder={!currentVersionResult || currentVersionResult.loading ? 'Resolving...' : '1.0.0'} aria-invalid={errors?.['source.ref'] || currentVersionResult?.error ? true : undefined} aria-describedby={errors?.['source.ref'] || currentVersionResult?.error ? 'python-version-error' : undefined} className={cn(inputClass, 'font-mono', errors?.['source.ref'] && 'border-status-error/50')} />
             <datalist id="python-package-versions">{currentVersionResult?.versions.map((version) => <option key={version} value={version} />)}</datalist>
             <FieldError id="python-version-error" error={errors?.['source.ref'] ?? currentVersionResult?.error} />
           </div>
@@ -574,7 +591,7 @@ function PythonSourceFields({
             <>
               <div>
                 <label htmlFor="source-url" className={labelClass}>Repository URL <span className="text-status-error">*</span></label>
-                <input id="source-url" type="url" value={source.url ?? ''} onChange={(event) => updateSource({ url: event.target.value })} placeholder="https://github.com/org/repo.git" aria-invalid={errors?.['source.url'] ? true : undefined} aria-describedby={errors?.['source.url'] ? 'source-url-error' : undefined} className={cn(inputClass, errors?.['source.url'] && 'border-status-error/50')} />
+                <input id="source-url" data-wizard-field={`${fieldPrefix}source.url`} type="url" value={source.url ?? ''} onChange={(event) => updateSource({ url: event.target.value })} placeholder="https://github.com/org/repo.git" aria-invalid={errors?.['source.url'] ? true : undefined} aria-describedby={errors?.['source.url'] ? 'source-url-error' : undefined} className={cn(inputClass, errors?.['source.url'] && 'border-status-error/50')} />
                 <FieldError id="source-url-error" error={errors?.['source.url']} />
               </div>
               <div>
@@ -587,7 +604,7 @@ function PythonSourceFields({
           ) : (
             <div>
               <label htmlFor="source-path" className={labelClass}>Local root <span className="text-status-error">*</span></label>
-              <input id="source-path" value={source.path ?? ''} onChange={(event) => updateSource({ path: event.target.value })} placeholder="./path/to/server" aria-invalid={errors?.['source.path'] ? true : undefined} aria-describedby={errors?.['source.path'] ? 'source-path-error' : undefined} className={cn(inputClass, 'font-mono')} />
+              <input id="source-path" data-wizard-field={`${fieldPrefix}source.path`} value={source.path ?? ''} onChange={(event) => updateSource({ path: event.target.value })} placeholder="./path/to/server" aria-invalid={errors?.['source.path'] ? true : undefined} aria-describedby={errors?.['source.path'] ? 'source-path-error' : undefined} className={cn(inputClass, 'font-mono', errors?.['source.path'] && 'border-status-error/50')} />
               <FieldError id="source-path-error" error={errors?.['source.path']} />
             </div>
           )}
@@ -668,15 +685,35 @@ interface MCPServerFormProps {
   data: MCPServerFormData;
   onChange: (data: Partial<MCPServerFormData>) => void;
   errors?: Record<string, string>;
+  // Prepended to each data-wizard-field key, for forms nested in a stack.
+  fieldPrefix?: string;
+  // Each new value expands the sections that hold an error.
+  revealKey?: number;
 }
 
-export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
+function errorSection(key: string): string {
+  if (key === 'name') return 'identity';
+  if (key.startsWith('auth.')) return 'auth';
+  return 'config';
+}
+
+export function MCPServerForm({ data, onChange, errors, fieldPrefix = '', revealKey }: MCPServerFormProps) {
   const uid = useId();
   const cardDetect = useDetectCard();
   const [cardInputs, setCardInputs] = useState<DetectedCardInput[]>([]);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(['identity', 'type', 'config']),
   );
+  const headerErrorCount = data.serverType === 'external'
+    ? Object.keys(customHeaderErrors(data.headers, Boolean(data.auth))).length
+    : 0;
+  const errorSections = new Set(Object.keys(errors ?? {}).map(errorSection));
+  if (headerErrorCount > 0) errorSections.add('auth');
+  const [revealed, setRevealed] = useState<number | undefined>(undefined);
+  if (revealKey && revealKey !== revealed) {
+    setRevealed(revealKey);
+    setExpandedSections((prev) => new Set([...prev, ...errorSections]));
+  }
 
   const toggleSection = useCallback((section: string) => {
     setExpandedSections((prev) => {
@@ -722,6 +759,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
         icon={Zap}
         expanded={expandedSections.has('identity')}
         onToggle={() => toggleSection('identity')}
+        hasError={errorSections.has('identity')}
       >
         <Field label="Name" required error={errors?.name} help="Kebab-case identifier for this server">
           {({ id, describedBy, invalid }) => (
@@ -731,6 +769,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
               value={data.name}
               onChange={(e) => onChange({ name: toKebabCase(e.target.value) })}
               onBlur={(e) => onChange({ name: e.target.value.replace(/-+$/, '') })}
+              data-wizard-field={`${fieldPrefix}name`}
               placeholder="my-server"
               aria-describedby={describedBy}
               aria-invalid={invalid}
@@ -790,6 +829,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
         icon={typeOption.icon}
         expanded={expandedSections.has('config')}
         onToggle={() => toggleSection('config')}
+        hasError={errorSections.has('config')}
       >
         <div className="space-y-3 transition-all duration-200">
           {/* Container: image */}
@@ -802,6 +842,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                     type="text"
                     value={data.image ?? ''}
                     onChange={(e) => onChange({ image: e.target.value })}
+                    data-wizard-field={`${fieldPrefix}image`}
                     placeholder="image:tag"
                     list="image-presets"
                     aria-describedby={describedBy}
@@ -830,6 +871,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                   type="url"
                   value={data.url ?? ''}
                   onChange={(e) => onChange({ url: e.target.value })}
+                  data-wizard-field={`${fieldPrefix}url`}
                   placeholder="https://my-server.example.com/mcp"
                   aria-invalid={errors?.url ? true : undefined}
                   aria-describedby={errors?.url ? `${uid}-url-error` : undefined}
@@ -871,7 +913,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
 
           {/* Source config */}
           {visibility.source && (
-            <PythonSourceFields data={data} onChange={onChange} errors={errors} />
+            <PythonSourceFields data={data} onChange={onChange} errors={errors} fieldPrefix={fieldPrefix} />
           )}
 
           {/* SSH config */}
@@ -887,6 +929,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                       onChange={(e) =>
                         onChange({ ssh: { ...data.ssh, host: e.target.value, user: data.ssh?.user ?? '' } })
                       }
+                      data-wizard-field={`${fieldPrefix}ssh.host`}
                       placeholder="192.168.1.100"
                       aria-describedby={describedBy}
                       aria-invalid={invalid}
@@ -903,6 +946,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                       onChange={(e) =>
                         onChange({ ssh: { ...data.ssh, host: data.ssh?.host ?? '', user: e.target.value } })
                       }
+                      data-wizard-field={`${fieldPrefix}ssh.user`}
                       placeholder="root"
                       aria-describedby={describedBy}
                       aria-invalid={invalid}
@@ -1010,6 +1054,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                     onChange={(e) =>
                       onChange({ openapi: { ...data.openapi, spec: e.target.value } })
                     }
+                    data-wizard-field={`${fieldPrefix}openapi.spec`}
                     placeholder="https://api.example.com/openapi.yaml or ./spec.yaml"
                     aria-describedby={describedBy}
                     aria-invalid={invalid}
@@ -1412,6 +1457,8 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
             <CommandArrayBuilder
               value={data.command ?? []}
               onChange={(command) => onChange({ command })}
+              error={errors?.command}
+              fieldKey={`${fieldPrefix}command`}
             />
           )}
 
@@ -1453,6 +1500,7 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
                       onChange={(e) =>
                         onChange({ port: e.target.value ? Number(e.target.value) : undefined })
                       }
+                      data-wizard-field={`${fieldPrefix}port`}
                       placeholder="8080"
                       min={1}
                       max={65535}
@@ -1482,10 +1530,13 @@ export function MCPServerForm({ data, onChange, errors }: MCPServerFormProps) {
           expanded={expandedSections.has('auth')}
           onToggle={() => toggleSection('auth')}
           badge={data.auth ? EXTERNAL_AUTH_LABELS[data.auth.type] : undefined}
+          hasError={errorSections.has('auth')}
         >
           <ExternalAuthFields
             auth={data.auth}
             onChange={(auth) => onChange({ auth })}
+            errors={errors}
+            fieldPrefix={fieldPrefix}
           />
           <CustomHeadersEditor
             headers={data.headers}
@@ -1920,9 +1971,13 @@ function AutoscaleFields({
 function ExternalAuthFields({
   auth,
   onChange,
+  errors,
+  fieldPrefix = '',
 }: {
   auth: ExternalAuthFormData | undefined;
   onChange: (auth: ExternalAuthFormData | undefined) => void;
+  errors?: Record<string, string>;
+  fieldPrefix?: string;
 }) {
   const uid = useId();
   const update = (patch: Partial<ExternalAuthFormData>) => {
@@ -1966,10 +2021,14 @@ function ExternalAuthFields({
               value={auth.token ?? ''}
               onChange={(e) => update({ token: e.target.value })}
               placeholder="${var:MY_TOKEN}"
-              className={cn(inputClass, 'flex-1 font-mono', auth.token?.startsWith('${var:') && 'text-tertiary font-medium')}
+              data-wizard-field={`${fieldPrefix}auth.token`}
+              aria-invalid={errors?.['auth.token'] ? true : undefined}
+              aria-describedby={errors?.['auth.token'] ? `${uid}-token-error` : undefined}
+              className={cn(inputClass, 'flex-1 font-mono', auth.token?.startsWith('${var:') && 'text-tertiary font-medium', errors?.['auth.token'] && 'border-status-error/50')}
             />
             <VariablesPopover onSelect={(ref) => update({ token: ref })} />
           </div>
+          <FieldError id={`${uid}-token-error`} error={errors?.['auth.token']} />
           <p className="text-3xs text-text-muted mt-1">
             Sent as "Authorization: Bearer". Prefer a {'${var:KEY}'} reference over a literal secret.
           </p>
@@ -1988,8 +2047,12 @@ function ExternalAuthFields({
               value={auth.header ?? ''}
               onChange={(e) => update({ header: e.target.value })}
               placeholder="X-API-Key"
-              className={cn(inputClass, 'font-mono')}
+              data-wizard-field={`${fieldPrefix}auth.header`}
+              aria-invalid={errors?.['auth.header'] ? true : undefined}
+              aria-describedby={errors?.['auth.header'] ? `${uid}-header-error` : undefined}
+              className={cn(inputClass, 'font-mono', errors?.['auth.header'] && 'border-status-error/50')}
             />
+            <FieldError id={`${uid}-header-error`} error={errors?.['auth.header']} />
           </div>
           <div>
             <label htmlFor={`${uid}-value`} className={labelClass}>
@@ -2002,10 +2065,14 @@ function ExternalAuthFields({
                 value={auth.value ?? ''}
                 onChange={(e) => update({ value: e.target.value })}
                 placeholder="${var:MY_API_KEY}"
-                className={cn(inputClass, 'flex-1 font-mono', auth.value?.startsWith('${var:') && 'text-tertiary font-medium')}
+                data-wizard-field={`${fieldPrefix}auth.value`}
+                aria-invalid={errors?.['auth.value'] ? true : undefined}
+                aria-describedby={errors?.['auth.value'] ? `${uid}-value-error` : undefined}
+                className={cn(inputClass, 'flex-1 font-mono', auth.value?.startsWith('${var:') && 'text-tertiary font-medium', errors?.['auth.value'] && 'border-status-error/50')}
               />
               <VariablesPopover onSelect={(ref) => update({ value: ref })} />
             </div>
+            <FieldError id={`${uid}-value-error`} error={errors?.['auth.value']} />
             <p className="text-3xs text-text-muted mt-1">
               Prefer a {'${var:KEY}'} reference over a literal secret.
             </p>

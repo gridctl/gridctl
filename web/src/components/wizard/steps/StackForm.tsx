@@ -12,6 +12,7 @@ import {
   X,
   Trash2,
   Zap,
+  AlertCircle,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
@@ -22,14 +23,24 @@ import type {
 } from '../../../lib/yaml-builder';
 import { VariablesPopover } from '../VariablesPopover';
 import { VaultSetSelector } from '../VaultSetSelector';
-import { Field } from '../../ui/Field';
+import { Field, FieldError } from '../../ui/Field';
 import { MCPServerForm } from './MCPServerForm';
+import { subErrors } from '../../../lib/wizard-validation';
 
 // --- Shared form primitives ---
 
 const inputClass =
   'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-colors';
 const labelClass = 'block text-xs text-text-secondary mb-1.5';
+
+function ErrorIndicator() {
+  return (
+    <span className="flex items-center text-status-error flex-shrink-0">
+      <AlertCircle size={12} aria-hidden="true" />
+      <span className="sr-only">, has errors</span>
+    </span>
+  );
+}
 
 function toKebabCase(value: string): string {
   return value
@@ -48,6 +59,7 @@ function Section({
   onToggle,
   children,
   badge,
+  hasError,
 }: {
   title: string;
   icon: LucideIcon;
@@ -55,6 +67,7 @@ function Section({
   onToggle: () => void;
   children: React.ReactNode;
   badge?: string;
+  hasError?: boolean;
 }) {
   return (
     <div className="border border-border/20 rounded-xl overflow-hidden transition-colors hover:border-border/30">
@@ -70,6 +83,7 @@ function Section({
         )}
         <Icon size={14} className="text-primary flex-shrink-0" />
         <span className="text-xs font-medium text-text-primary">{title}</span>
+        {hasError && <ErrorIndicator />}
         {badge && (
           <span className="ml-auto text-3xs text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full">
             {badge}
@@ -309,6 +323,7 @@ function ItemHeader({
   onToggle,
   onRemove,
   iconColor = 'text-primary',
+  hasError,
 }: {
   icon: LucideIcon;
   name: string;
@@ -317,6 +332,7 @@ function ItemHeader({
   onToggle: () => void;
   onRemove: () => void;
   iconColor?: string;
+  hasError?: boolean;
 }) {
   return (
     <div className="flex items-center gap-2 px-3 py-2 bg-surface-overlay-1 border border-border/20 rounded-lg group hover:border-border/30 transition-colors">
@@ -330,6 +346,7 @@ function ItemHeader({
         <span className="text-xs font-medium text-text-primary truncate">
           {name || <span className="text-text-muted italic">{label}</span>}
         </span>
+        {hasError && <ErrorIndicator />}
       </button>
       <button
         type="button"
@@ -349,9 +366,13 @@ function ItemHeader({
 function InlineResourceForm({
   data,
   onChange,
+  errors,
+  fieldPrefix = '',
 }: {
   data: ResourceFormData;
   onChange: (data: Partial<ResourceFormData>) => void;
+  errors?: Record<string, string>;
+  fieldPrefix?: string;
 }) {
   const uid = useId();
   return (
@@ -366,8 +387,12 @@ function InlineResourceForm({
           value={data.name}
           onChange={(e) => onChange({ name: toKebabCase(e.target.value) })}
           placeholder="my-resource"
-          className={cn(inputClass, 'font-mono')}
+          data-wizard-field={`${fieldPrefix}name`}
+          aria-invalid={errors?.name ? true : undefined}
+          aria-describedby={errors?.name ? `${uid}-name-error` : undefined}
+          className={cn(inputClass, 'font-mono', errors?.name && 'border-status-error/50')}
         />
+        <FieldError id={`${uid}-name-error`} error={errors?.name} />
       </div>
       <div>
         <label htmlFor={`${uid}-image`} className={labelClass}>
@@ -379,8 +404,12 @@ function InlineResourceForm({
           value={data.image}
           onChange={(e) => onChange({ image: e.target.value })}
           placeholder="postgres:16"
-          className={cn(inputClass, 'font-mono')}
+          data-wizard-field={`${fieldPrefix}image`}
+          aria-invalid={errors?.image ? true : undefined}
+          aria-describedby={errors?.image ? `${uid}-image-error` : undefined}
+          className={cn(inputClass, 'font-mono', errors?.image && 'border-status-error/50')}
         />
+        <FieldError id={`${uid}-image-error`} error={errors?.image} />
       </div>
       <KeyValueEditor
         label="Environment Variables"
@@ -459,9 +488,22 @@ interface StackFormProps {
   data: StackFormData;
   onChange: (data: Partial<StackFormData>) => void;
   errors?: Record<string, string>;
+  // Each new value expands the sections and items that hold an error.
+  revealKey?: number;
+  // Called after an MCP server or resource is removed, since item keys shift.
+  onRemoveItem?: (list: 'mcpServers' | 'resources') => void;
 }
 
-export function StackForm({ data, onChange, errors }: StackFormProps) {
+function errorItems(errors: Record<string, string> | undefined, list: string): Set<number> {
+  const items = new Set<number>();
+  for (const key of Object.keys(errors ?? {})) {
+    const match = new RegExp(`^${list}\\.(\\d+)\\.`).exec(key);
+    if (match) items.add(Number(match[1]));
+  }
+  return items;
+}
+
+export function StackForm({ data, onChange, errors, revealKey, onRemoveItem }: StackFormProps) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(['identity']),
   );
@@ -469,6 +511,21 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
   const [expandedResources, setExpandedResources] = useState<Set<number>>(new Set());
   const [showResourcePresets, setShowResourcePresets] = useState(false);
   const uid = useId();
+
+  const serverErrorItems = errorItems(errors, 'mcpServers');
+  const resourceErrorItems = errorItems(errors, 'resources');
+  const errorSections = new Set<string>();
+  if (errors?.name) errorSections.add('identity');
+  if (errors?.['gateway.auth.token']) errorSections.add('gateway');
+  if (serverErrorItems.size > 0) errorSections.add('servers');
+  if (resourceErrorItems.size > 0) errorSections.add('resources');
+  const [revealed, setRevealed] = useState<number | undefined>(undefined);
+  if (revealKey && revealKey !== revealed) {
+    setRevealed(revealKey);
+    setExpandedSections((prev) => new Set([...prev, ...errorSections]));
+    setExpandedServers((prev) => new Set([...prev, ...serverErrorItems]));
+    setExpandedResources((prev) => new Set([...prev, ...resourceErrorItems]));
+  }
 
   const toggleSection = useCallback((section: string) => {
     setExpandedSections((prev) => {
@@ -535,6 +592,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
   const removeServer = (idx: number) => {
     const servers = (data.mcpServers ?? []).filter((_, i) => i !== idx);
     onChange({ mcpServers: servers });
+    onRemoveItem?.('mcpServers');
     setExpandedServers((prev) => {
       const next = new Set<number>();
       prev.forEach((v) => {
@@ -564,6 +622,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
   const removeResource = (idx: number) => {
     const resources = (data.resources ?? []).filter((_, i) => i !== idx);
     onChange({ resources });
+    onRemoveItem?.('resources');
     setExpandedResources((prev) => {
       const next = new Set<number>();
       prev.forEach((v) => {
@@ -582,6 +641,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         icon={Layers}
         expanded={expandedSections.has('identity')}
         onToggle={() => toggleSection('identity')}
+        hasError={errorSections.has('identity')}
       >
         <div className="grid grid-cols-2 gap-3">
           <Field label="Name" required error={errors?.name} help="Kebab-case stack identifier">
@@ -592,6 +652,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
                 value={data.name}
                 onChange={(e) => onChange({ name: toKebabCase(e.target.value) })}
                 onBlur={(e) => onChange({ name: e.target.value.replace(/-+$/, '') })}
+                data-wizard-field="name"
                 placeholder="my-stack"
                 aria-describedby={describedBy}
                 aria-invalid={invalid}
@@ -617,6 +678,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         expanded={expandedSections.has('gateway')}
         onToggle={() => toggleSection('gateway')}
         badge={gatewayFieldCount > 0 ? `${gatewayFieldCount}` : undefined}
+        hasError={errorSections.has('gateway')}
       >
         <p className="text-3xs text-text-muted mb-2">Optional gateway configuration for the stack</p>
 
@@ -675,10 +737,14 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
                     onChange({ gateway: { ...data.gateway, auth: { ...data.gateway!.auth!, token: e.target.value } } })
                   }
                   placeholder="auth-token-value"
+                  data-wizard-field="gateway.auth.token"
+                  aria-invalid={errors?.['gateway.auth.token'] ? true : undefined}
+                  aria-describedby={errors?.['gateway.auth.token'] ? `${uid}-token-error` : undefined}
                   className={cn(
                     inputClass,
                     'flex-1',
                     data.gateway.auth.token.startsWith('${var:') && 'text-tertiary font-medium',
+                    errors?.['gateway.auth.token'] && 'border-status-error/50',
                   )}
                 />
                 <VariablesPopover
@@ -687,6 +753,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
                   }
                 />
               </div>
+              <FieldError id={`${uid}-token-error`} error={errors?.['gateway.auth.token']} />
             </div>
             {data.gateway.auth.type === 'header' && (
               <div>
@@ -1114,6 +1181,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         expanded={expandedSections.has('servers')}
         onToggle={() => toggleSection('servers')}
         badge={serverCount > 0 ? `${serverCount}` : undefined}
+        hasError={errorSections.has('servers')}
       >
         {serverCount === 0 && (
           <p className="text-3xs text-text-muted italic py-2">No MCP servers configured</p>
@@ -1128,12 +1196,16 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
                 expanded={expandedServers.has(i)}
                 onToggle={() => toggleServer(i)}
                 onRemove={() => removeServer(i)}
+                hasError={serverErrorItems.has(i)}
               />
               {expandedServers.has(i) && (
                 <div className="ml-2 mt-1 pl-3 border-l border-border/20">
                   <MCPServerForm
                     data={server}
                     onChange={(partial) => updateServer(i, partial)}
+                    errors={subErrors(errors, `mcpServers.${i}.`)}
+                    fieldPrefix={`mcpServers.${i}.`}
+                    revealKey={revealKey}
                   />
                 </div>
               )}
@@ -1157,6 +1229,7 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
         expanded={expandedSections.has('resources')}
         onToggle={() => toggleSection('resources')}
         badge={resourceCount > 0 ? `${resourceCount}` : undefined}
+        hasError={errorSections.has('resources')}
       >
         {resourceCount === 0 && !showResourcePresets && (
           <p className="text-3xs text-text-muted italic py-2">No resources configured</p>
@@ -1175,12 +1248,15 @@ export function StackForm({ data, onChange, errors }: StackFormProps) {
                 onToggle={() => toggleResource(i)}
                 onRemove={() => removeResource(i)}
                 iconColor="text-secondary"
+                hasError={resourceErrorItems.has(i)}
               />
               {expandedResources.has(i) && (
                 <div className="mt-1 border border-border/15 rounded-lg overflow-hidden">
                   <InlineResourceForm
                     data={resource}
                     onChange={(partial) => updateResource(i, partial)}
+                    errors={subErrors(errors, `resources.${i}.`)}
+                    fieldPrefix={`resources.${i}.`}
                   />
                 </div>
               )}
