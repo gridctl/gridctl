@@ -87,7 +87,7 @@ export function AuthPrompt() {
             This gateway was started with <code>gateway.auth</code> in its stack file. Enter that block's token value; if it references a stored variable, read it with <code>gridctl var get &lt;KEY&gt; --plain</code>.
           </p>
           <p>
-            The credential is kept in this browser for this origin until the gateway rejects it or you choose Forget credential in the main window's header.{' '}
+            The credential is kept in this browser for this origin until the gateway rejects it or you choose Forget credential in the More actions menu of the main window's header.{' '}
             <a
               href="https://github.com/gridctl/gridctl/blob/main/docs/config-schema.md#auth"
               target="_blank"

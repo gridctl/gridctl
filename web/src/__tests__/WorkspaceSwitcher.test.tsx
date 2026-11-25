@@ -1,6 +1,7 @@
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
+import switcherSource from '../components/shell/WorkspaceSwitcher.tsx?raw';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router';
 import { WorkspaceSwitcher } from '../components/shell/WorkspaceSwitcher';
 import { WORKSPACE_CONFIG } from '../types/workspace';
@@ -63,6 +64,42 @@ describe('WorkspaceSwitcher', () => {
       'aria-current',
       'page',
     );
+  });
+
+  it('always labels the active pill and labels the others only when the header has room', () => {
+    renderAt('/library');
+    for (const ws of WORKSPACE_CONFIG) {
+      const link = screen.getByRole('link', { name: ws.label });
+      expect(link).toHaveClass('min-h-8', 'min-w-8', 'justify-center');
+      const label = within(link).getByText(ws.label);
+      if (ws.id === 'library') {
+        expect(label).not.toHaveClass('hidden');
+        expect(link).toHaveClass('px-2.5');
+      } else {
+        expect(label).toHaveClass('hidden', '@[880px]/header:inline');
+        expect(link).toHaveClass('px-2', '@[880px]/header:px-2.5');
+      }
+    }
+    expect(switcherSource).not.toMatch(/1360px/);
+  });
+
+  it('scrolls the active pill into view when the workspace changes', () => {
+    const original = Element.prototype.scrollIntoView;
+    const calls: Element[] = [];
+    const spy = vi.fn(function (this: Element) {
+      calls.push(this);
+    });
+    Element.prototype.scrollIntoView = spy;
+    try {
+      renderAt('/stack');
+      expect(calls).toContain(screen.getByRole('link', { name: 'Stack' }));
+      calls.length = 0;
+      fireEvent.click(screen.getByRole('link', { name: 'Metrics' }));
+      expect(calls).toEqual([screen.getByRole('link', { name: 'Metrics' })]);
+      expect(spy).toHaveBeenLastCalledWith({ block: 'nearest', inline: 'nearest' });
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
   });
 
   it('links each pill to its workspace route', () => {

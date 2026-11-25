@@ -21,7 +21,7 @@ The declared stack is Stack. That label is already consistent.
 
 Pin drift toasts use "Pin drift". One toast covers every server, skill, and fragment newly drifted in a poll: "Pin drift detected on server github" for a single item, or "Pin drift detected on 1 server and 2 skills" for several. Findings toasts read "New findings on …" the same way. Per-pane section headers are unchanged.
 
-Creation wizard entry points use "Create new". The header "+" tooltip and the palette command use the same words.
+Creation wizard entry points use "Create new". The header's primary button (its accessible name and, from 1360 px, its visible label) and the palette command use the same words. "Reload Config" keeps its existing casing everywhere.
 
 ## Shell architecture
 
@@ -42,6 +42,7 @@ Creation wizard entry points use "Create new". The header "+" tooltip and the pa
 ├── <StatusBar>        connection · alerts · servers · sessions · tokens
 ├── <CommandPalette>   workspace-scoped via the command registry
 ├── <PreferencesDialog> theme, compact mode, and text size
+├── <ForgetCredentialDialog> confirms Forget credential
 ├── <ShortcutsPanel>   keyboard shortcuts (`?`)
 └── <ToastContainer>
 ```
@@ -76,13 +77,31 @@ AppShell owns the only in-shell `<main>`. A workspace root that used to
 render `<main>` is a `<section aria-labelledby>` with one `<h1>`. Give every
 `<aside>` a distinct `aria-label`.
 
-The workspace `nav` scrolls and the action cluster does not shrink, so
-Create new, Refresh, Reload Config, theme, Preferences, the palette, and Forget
-credential (while a credential is held) stay mounted when the window is
-narrow. The left group is `min-w-0 flex-1`; without that
-the nav has no bounded width and the pills stay clipped. Below `sm` the
-logo is shorter, the persistence label is visually hidden, and the
-decorative dividers drop.
+The header's action cluster is, left to right: the Persistence pill (while
+connected), Appearance, Preferences, the palette, Help, Create new, and More
+actions. Create new is the filled primary button, a 34 px square that gains
+its "Create new" label from 1360 px. Help (`components/shell/HeaderMenu.tsx`)
+is a menu with Keyboard shortcuts and Documentation. More actions holds
+Refresh, Reload Config, and, while a credential is held, Forget credential…
+below a separator. While a refresh or reload runs, the More actions trigger
+shows a spinning loader, is `aria-busy`, and the running item is disabled.
+Both menus follow the WAI-ARIA menu button pattern: opening focuses the first
+enabled item (or the item container when none is enabled), arrow keys wrap,
+Home and End jump, choosing an item closes the menu before running it, and
+Escape returns focus to the trigger.
+
+The workspace `nav` scrolls and the action cluster does not shrink, so every
+cluster control stays mounted when the window is narrow. The left group is
+`min-w-0 flex-1`; without that the nav has no bounded width and the pills stay
+clipped. The active pill is always labeled and is scrolled into view when the
+workspace changes. The other pills are labeled only when the left group is at
+least 880 px wide. That rule is a container query (`@container/header` on the
+left group, `@[880px]/header:` on the pills), not a viewport breakpoint,
+because the cluster's width varies with the Persistence label; all labels fit
+from about 1250 px. Every pill and cluster control is at least 32 by 32 px.
+The Persistence label is visually hidden below 1440 px and stays in the
+accessibility tree. Below `sm` the logo is shorter and the decorative
+dividers drop.
 
 AppShell's single column is `minmax(0, 1fr)`, not `1fr`: a bare `1fr` cannot
 shrink below the widest row's content, so a full status bar would lay the
@@ -118,9 +137,12 @@ AppShell. They are popout-friendly single-purpose pages and load on demand.
 `AuthBoundary` wraps the router in `routes.tsx`, covering both the shell and
 all six detached routes. During credential re-entry, existing content stays
 mounted and inert behind `AuthPrompt`; verified window-only storage notices
-remain visible after the prompt closes. Forget credential in the main window
-header, and Forget gateway credential in the command palette, clear both
-storage keys and open the prompt. Detached windows do not mount either
+remain visible after the prompt closes. Forget credential… in the main
+window header's More actions menu, and Forget gateway credential… in the
+command palette, open the same confirmation (`ForgetCredentialDialog`, mounted
+in AppShell because the header's `backdrop-blur` would trap it). Confirming
+clears both storage keys and opens the prompt; Cancel, Escape, or the backdrop
+leave the credential in place. Detached windows do not mount either
 control. A forget in the main window reaches them through the existing
 storage event.
 
@@ -177,10 +199,10 @@ workspaces. Reach for them before duplicating UI:
 | `FailedState` | `components/ui/` | Failed fetch with nothing loaded. Title is `<feature> unavailable`, with Retry when `onRetry` is set. Not a spinner or an empty collection |
 | `FailureBanner` | `components/ui/` | Failed refresh when data is already on screen: one alert row, with Retry when `onRetry` is set. `lastUpdated` adds a static "Last updated HH:MM:SS"; `className` overrides the default margins |
 | `refreshPhase` | `lib/refreshPhase.ts` | The single definition of the rule above. Maps `{ error, hasLoaded }` to `loading` (skeleton), `failed` (`FailedState`), `stale` (data plus `FailureBanner`), or `ready`. `hasLoaded` means a load completed for what is selected now |
-| `Popover` | `components/ui/` | Theme picker, telemetry pill, overlays menu, log level filter, log view options, and `SelectMenu` (the detached inspector's node menu and the detached Logs source menu). Escape and a programmatic close return focus to the trigger; an outside click does not |
+| `Popover` | `components/ui/` | Theme picker, telemetry pill, the header's Help and More actions menus (`HeaderMenu`), overlays menu, log level filter, log view options, the skill editor's validation messages, and `SelectMenu` (the detached inspector's node menu and the detached Logs source menu). Escape and a programmatic close return focus to the trigger; an outside click does not. The wizard's variables popover and variable-set selector do not use it: they portal their own dropdowns to `document.body` to escape the wizard's focus trap and own Escape and Tab |
 | `DetachedWindowFrame` | `components/detached/` | Every detached page renders through it. Owns the grain, header, footer, `document.title`, the window's single `ToastContainer`, the fullscreen toggle (warns when the browser refuses), and the disconnected banner. It fetches nothing: the page passes `connection` from its one `useSharedStatus` call and holds `lost` false while its own failure notice is showing. The editor popout omits the header, footer, and banner because the flush editor covers them |
 | `Field` | `components/ui/` | Label, control, error, then help. Owns the required marker and wires `htmlFor`, `aria-invalid`, and `aria-describedby`. Pass plain label text. A different sibling order keeps its wrapper and uses `useId` |
-| `IconButton` | `components/ui/` | Requires `tooltip` or `ariaLabel`, and renders `type="button"`. `title` alone is not an accessible name. `size="lg"` is a 44 px square, border included; the default size stays `md` |
+| `IconButton` | `components/ui/` | Requires `tooltip` or `ariaLabel`, and renders `type="button"`. `title` alone is not an accessible name. `size="lg"` is a 44 px square, border included; the default size stays `md`. `spinning` spins the glyph (never the button) and sets `aria-busy`. `hasPopup` and `expanded` render `aria-haspopup` and `aria-expanded`, and are absent when omitted |
 | `Switch` | `components/ui/` | The only `role="switch"` control. `BoolToggle` and the Connections link toggle render it. `label` is the accessible name |
 | `Badge` | `components/ui/` | Status badges keep the dot. `tone` (`neutral`, `primary`, `success`, `warning`) is a dot-free pill. Connections client badges use `tone` |
 | `PopoutButton` | `components/ui/` | Opens a detached window. `detached` switches the icon and reads "Detached. Click to focus". Call sites leave it enabled and focus that window |

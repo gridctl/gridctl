@@ -1,10 +1,24 @@
-import { RefreshCw, RotateCcw, Plus, Command, LogOut, SlidersHorizontal } from 'lucide-react';
+import {
+  CircleQuestionMark,
+  Command,
+  Ellipsis,
+  ExternalLink,
+  FileCog,
+  Keyboard,
+  Loader2,
+  LogOut,
+  Plus,
+  RefreshCw,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { Suspense, lazy, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
-import { cn } from '../../lib/cn';
 import { formatShortcut, MOD_KEY, SHIFT_KEY } from '../../lib/platform';
+import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
+import { ShortcutKeys } from '../ui/ShortcutKeys';
+import { HeaderMenu, type HeaderMenuItem } from '../shell/HeaderMenu';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { triggerReload, fetchStackPlan, fetchStackHealth } from '../../lib/api';
@@ -117,6 +131,55 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   // gate the persistence control, which is meaningless before the gateway is up.
   const isConnected = connectionStatus === 'connected';
 
+  const moreItems: HeaderMenuItem[] = [
+    {
+      key: 'refresh',
+      label: 'Refresh',
+      icon: RefreshCw,
+      hint: <ShortcutKeys keys={[MOD_KEY, SHIFT_KEY, 'R']} />,
+      onSelect: onRefresh,
+      disabled: isRefreshing,
+      spinning: isRefreshing,
+    },
+    {
+      key: 'reload',
+      label: 'Reload Config',
+      icon: FileCog,
+      onSelect: () => void handleReload(),
+      disabled: isReloading,
+      spinning: isReloading,
+    },
+    ...(credential
+      ? [
+          {
+            key: 'forget-credential',
+            label: 'Forget credential…',
+            icon: LogOut,
+            onSelect: () => useUIStore.getState().setForgetCredentialOpen(true),
+            separatorBefore: true,
+          },
+        ]
+      : []),
+  ];
+
+  const helpItems: HeaderMenuItem[] = [
+    {
+      key: 'shortcuts',
+      label: 'Keyboard shortcuts',
+      icon: Keyboard,
+      hint: <ShortcutKeys keys={['?']} />,
+      onSelect: () => useUIStore.getState().setShortcutsOpen(true),
+    },
+    {
+      key: 'docs',
+      label: 'Documentation',
+      icon: ExternalLink,
+      href: 'https://github.com/gridctl/gridctl/tree/main/docs',
+    },
+  ];
+
+  const busy = Boolean(isRefreshing) || isReloading;
+
   return (
     <header className="h-14 bg-surface/80 backdrop-blur-xl border-b border-border/50 flex items-center justify-between gap-3 px-3 md:gap-4 md:px-5 relative z-header">
       {/* Subtle gradient line at top */}
@@ -129,9 +192,12 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
           beside the wordmark. */}
       {/* min-w-0 flex-1: this group shrinks so the pill strip can scroll
           instead of pushing the action cluster past the viewport edge. */}
-      <div className="flex items-center gap-2 min-w-0 flex-1 md:gap-4">
+      {/* @container/header: workspace labels show when this group has room for
+          them. A container query, not a viewport breakpoint, because the
+          action cluster's width varies with the Persistence label. */}
+      <div className="@container/header flex items-center gap-2 min-w-0 flex-1 md:gap-4">
         {/* Brand Logo — inline so "ctl" follows the theme (readable on light).
-            Shorter below sm so one workspace pill stays visible at 390px. */}
+            Shorter below sm to leave the pill strip room on narrow headers. */}
         <LogoWordmark className="h-6 w-auto block shrink-0 sm:h-10" />
         <WorkspaceSwitcher />
       </div>
@@ -153,45 +219,30 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
           className="hover:text-primary hover:border-primary/30"
         />
         <div className="hidden sm:block w-px h-5 bg-border/50 mx-0.5" />
-        {credential && (
-          <IconButton
-            icon={LogOut}
-            onClick={() => useAuthStore.getState().forgetCredential()}
-            tooltip="Forget credential"
-            className="hover:text-primary hover:border-primary/30"
-          />
-        )}
         <IconButton
           icon={Command}
           onClick={toggleCommandPalette}
           tooltip={`Command Palette (${formatShortcut([MOD_KEY, 'K'])})`}
           className="hover:text-primary hover:border-primary/30"
         />
-        <IconButton
-          icon={Plus}
+        <HeaderMenu tooltip="Help" menuLabel="Help" icon={CircleQuestionMark} items={helpItems} />
+        <Button
+          variant="primary"
+          size="sm"
           onClick={() => useWizardStore.getState().open()}
-          tooltip="Create new"
-          className="hover:text-primary hover:border-primary/30"
-        />
-        <IconButton
-          icon={RefreshCw}
-          onClick={onRefresh}
-          disabled={isRefreshing}
-          className={cn(
-            isRefreshing && 'animate-spin',
-            'hover:text-primary hover:border-primary/30'
-          )}
-          tooltip={`Refresh (${formatShortcut([MOD_KEY, SHIFT_KEY, 'R'])})`}
-        />
-        <IconButton
-          icon={RotateCcw}
-          onClick={handleReload}
-          disabled={isReloading}
-          className={cn(
-            isReloading && 'animate-spin',
-            'hover:text-secondary hover:border-secondary/30'
-          )}
-          tooltip="Reload Config"
+          aria-label="Create new"
+          title="Create new"
+          className="h-[34px] min-w-[34px] px-0 min-[1360px]:px-3 shrink-0 hover:translate-y-0"
+        >
+          <Plus size={16} aria-hidden="true" />
+          <span className="hidden min-[1360px]:inline">Create new</span>
+        </Button>
+        <HeaderMenu
+          tooltip="More actions"
+          menuLabel="More actions"
+          icon={busy ? Loader2 : Ellipsis}
+          spinning={busy}
+          items={moreItems}
         />
       </div>
       <SpecDiffModal onApply={executeReload} onDismiss={releaseReload} />

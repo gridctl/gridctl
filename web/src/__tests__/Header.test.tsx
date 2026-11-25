@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { Header } from '../components/layout/Header';
 import { useStackStore } from '../stores/useStackStore';
@@ -8,6 +8,11 @@ import { useAuthStore } from '../stores/useAuthStore';
 import { showToast } from '../components/ui/Toast';
 import { fetchStackHealth, fetchStackPlan, triggerReload } from '../lib/api';
 import { useSpecStore } from '../stores/useSpecStore';
+import { useUIStore } from '../stores/useUIStore';
+import { useWizardStore } from '../stores/useWizardStore';
+import { ForgetCredentialDialog } from '../components/shell/ForgetCredentialDialog';
+import headerSource from '../components/layout/Header.tsx?raw';
+import headerMenuSource from '../components/shell/HeaderMenu.tsx?raw';
 import type { PlanDiff } from '../types';
 import type { MCPServerStatus } from '../types';
 
@@ -26,6 +31,15 @@ const SERVERS: MCPServerStatus[] = [
   { name: 'github', transport: 'http', initialized: true, healthy: true, toolCount: 2, tools: ['search', 'create'] },
   { name: 'gitlab', transport: 'http', initialized: true, healthy: true, toolCount: 1, tools: ['list'] },
 ];
+
+function renderWithDialog() {
+  return render(
+    <MemoryRouter initialEntries={['/stack']}>
+      <Header />
+      <ForgetCredentialDialog />
+    </MemoryRouter>,
+  );
+}
 
 function renderHeader() {
   return render(
@@ -47,8 +61,23 @@ const HEALTH = {
   dependencies: { status: 'resolved' as const },
 };
 
+function moreTrigger() {
+  return screen.getByRole('button', { name: 'More actions' });
+}
+
+function openMore() {
+  fireEvent.click(moreTrigger());
+  return screen.getByRole('menu', { name: 'More actions' });
+}
+
 function clickReload() {
-  fireEvent.click(screen.getByRole('button', { name: 'Reload Config' }));
+  if (!screen.queryByRole('menu', { name: 'More actions' })) openMore();
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Reload Config' }));
+}
+
+// The reload flow is idle once the More trigger stops reporting busy.
+async function waitForReloadIdle() {
+  await waitFor(() => expect(moreTrigger()).not.toHaveAttribute('aria-busy'));
 }
 
 beforeEach(() => {
@@ -66,6 +95,7 @@ beforeEach(() => {
     diffModalMode: 'apply',
   });
   useAuthStore.setState({ credential: null, authRequired: false, isAuthenticated: false });
+  useUIStore.setState({ forgetCredentialOpen: false });
   useStackStore.setState({
     gatewayInfo: { name: 'acme-stack', version: 'v9.9.9' },
     mcpServers: SERVERS,
@@ -97,6 +127,16 @@ describe('Header', () => {
     expect(screen.getByText(/Persistence:/)).toBeInTheDocument();
   });
 
+  it('sizes the persistence trigger as a 32 px target and hides its label below 1440 px', () => {
+    renderHeader();
+    const label = screen.getByText(/Persistence:/);
+    expect(label).toHaveClass('max-[1439px]:sr-only');
+    expect(label).not.toHaveClass('max-sm:sr-only');
+    const trigger = label.closest('button')!;
+    expect(trigger).toHaveClass('min-h-8', 'min-w-8', 'justify-center', 'px-3', 'max-sm:px-2');
+    expect(trigger).toHaveAttribute('title', 'Persistence: Off');
+  });
+
   it('hides the persistence toggle when disconnected', () => {
     useStackStore.setState({ connectionStatus: 'disconnected' });
     renderHeader();
@@ -106,19 +146,71 @@ describe('Header', () => {
   it('keeps header actions mounted and lets the workspace strip scroll', () => {
     renderHeader();
     const create = screen.getByRole('button', { name: 'Create new' });
-    expect(screen.getByRole('button', { name: 'Refresh (Ctrl+Shift+R)' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reload Config' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Command Palette (Ctrl+K)' })).toBeInTheDocument();
-    expect(create.closest('div')).toHaveClass('shrink-0');
+    expect(screen.getByRole('button', { name: 'Help' })).toBeInTheDocument();
+    expect(moreTrigger()).toBeInTheDocument();
+    expect(create.parentElement).toHaveClass('shrink-0');
     expect(screen.getByRole('navigation', { name: 'Workspaces' })).toHaveClass('overflow-x-auto');
   });
 
-  it('shows Mac chord labels in the header tooltips on macOS', () => {
+  it('moves Refresh, Reload Config, and Forget credential into the More actions menu', () => {
+    useAuthStore.setState({ credential: { mode: 'bearer', header: 'Authorization', token: 'held' } });
+    renderHeader();
+    expect(screen.queryByRole('button', { name: /^Refresh/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reload Config' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Forget credential/ })).not.toBeInTheDocument();
+    const trigger = moreTrigger();
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+    const menu = openMore();
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const items = within(menu).getAllByRole('menuitem');
+    expect(items.map((item) => item.textContent?.replace(/Ctrl|Shift|R$/g, '').trim())).toEqual([
+      'Refresh',
+      'Reload Config',
+      'Forget credential…',
+    ]);
+    expect(within(menu).getByRole('separator')).toBeInTheDocument();
+  });
+
+  it('puts the header cluster in order with Create new as the primary button', () => {
+    renderHeader();
+    const create = screen.getByRole('button', { name: 'Create new' });
+    expect(create).toHaveAttribute('title', 'Create new');
+    expect(create).toHaveClass('h-[34px]', 'min-w-[34px]', 'px-0', 'min-[1360px]:px-3');
+    expect(within(create).getByText('Create new')).toHaveClass('hidden', 'min-[1360px]:inline');
+    const cluster = create.parentElement!;
+    const names = Array.from(cluster.querySelectorAll('button'))
+      .filter((b) => b.parentElement === cluster || b.parentElement?.parentElement === cluster)
+      .map((b) => b.getAttribute('aria-label') ?? b.getAttribute('title'));
+    expect(names.slice(-5)).toEqual([
+      'Preferences',
+      'Command Palette (Ctrl+K)',
+      'Help',
+      'Create new',
+      'More actions',
+    ]);
+  });
+
+  it('opens the creation wizard from Create new', () => {
+    useWizardStore.setState({ isOpen: false });
+    renderHeader();
+    fireEvent.click(screen.getByRole('button', { name: 'Create new' }));
+    expect(useWizardStore.getState().isOpen).toBe(true);
+    act(() => {
+      useWizardStore.setState({ isOpen: false });
+    });
+  });
+
+  it('shows the Mac chord hint on the Refresh item on macOS', () => {
     const spy = vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel');
     try {
       renderHeader();
-      expect(screen.getByRole('button', { name: 'Refresh (⌘⇧R)' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Command Palette (⌘K)' })).toBeInTheDocument();
+      const menu = openMore();
+      const refresh = within(menu).getByRole('menuitem', { name: 'Refresh' });
+      expect(refresh).toHaveTextContent('⌘⇧R');
     } finally {
       spy.mockRestore();
     }
@@ -126,16 +218,106 @@ describe('Header', () => {
 
   it('offers Forget credential only while a credential is held', () => {
     renderHeader();
-    expect(screen.queryByRole('button', { name: 'Forget credential' })).not.toBeInTheDocument();
-    act(() => {
-      useAuthStore.setState({ credential: { mode: 'bearer', header: 'Authorization', token: 'not-rendered' } });
-    });
+    let menu = openMore();
+    expect(within(menu).queryByRole('menuitem', { name: /Forget credential/ })).not.toBeInTheDocument();
+    expect(within(menu).queryByRole('separator')).not.toBeInTheDocument();
     cleanup();
+    useAuthStore.setState({ credential: { mode: 'bearer', header: 'Authorization', token: 'not-rendered' } });
     renderHeader();
-    fireEvent.click(screen.getByRole('button', { name: 'Forget credential' }));
+    menu = openMore();
+    expect(within(menu).getByRole('menuitem', { name: 'Forget credential…' })).toBeInTheDocument();
+  });
+
+  it('confirms before forgetting the credential and returns focus to More actions', async () => {
+    useAuthStore.setState({ credential: { mode: 'bearer', header: 'Authorization', token: 'not-rendered' } });
+    renderWithDialog();
+    openMore();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Forget credential…' }));
+
+    let dialog = screen.getByRole('alertdialog', { name: 'Forget gateway credential?' });
+    expect(useAuthStore.getState().credential).not.toBeNull();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus());
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(useAuthStore.getState().credential).not.toBeNull();
+    expect(moreTrigger()).toHaveFocus();
+
+    openMore();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Forget credential…' }));
+    screen.getByRole('alertdialog', { name: 'Forget gateway credential?' });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(useAuthStore.getState().credential).not.toBeNull();
+    expect(moreTrigger()).toHaveFocus();
+
+    openMore();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Forget credential…' }));
+    dialog = screen.getByRole('alertdialog', { name: 'Forget gateway credential?' });
+    expect(screen.queryByText('not-rendered')).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Forget credential' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(useAuthStore.getState().credential).toBeNull();
     expect(useAuthStore.getState().authRequired).toBe(true);
+    expect(useUIStore.getState().forgetCredentialOpen).toBe(false);
     expect(screen.queryByText('not-rendered')).not.toBeInTheDocument();
+  });
+
+  it('spins the More trigger and disables Refresh while refreshing', () => {
+    const onRefresh = vi.fn();
+    render(
+      <MemoryRouter initialEntries={['/stack']}>
+        <Header onRefresh={onRefresh} isRefreshing />
+      </MemoryRouter>,
+    );
+    const trigger = moreTrigger();
+    expect(trigger).toHaveAttribute('aria-busy', 'true');
+    expect(trigger).not.toHaveClass('animate-spin');
+    expect(trigger.querySelector('svg')).toHaveClass('animate-spin');
+    openMore();
+    const refresh = screen.getByRole('menuitem', { name: 'Refresh' });
+    expect(refresh).toBeDisabled();
+    expect(refresh.querySelector('svg')).toHaveClass('animate-spin');
+    // Focus skips the disabled Refresh item.
+    expect(screen.getByRole('menuitem', { name: 'Reload Config' })).toHaveFocus();
+  });
+
+  it('calls onRefresh from the Refresh item and closes the menu', () => {
+    const onRefresh = vi.fn();
+    render(
+      <MemoryRouter initialEntries={['/stack']}>
+        <Header onRefresh={onRefresh} />
+      </MemoryRouter>,
+    );
+    expect(moreTrigger()).not.toHaveAttribute('aria-busy');
+    openMore();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Refresh' }));
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('opens Keyboard shortcuts and links Documentation from the Help menu', () => {
+    useUIStore.setState({ shortcutsOpen: false });
+    renderHeader();
+    const help = screen.getByRole('button', { name: 'Help' });
+    expect(help).toHaveAttribute('aria-haspopup', 'menu');
+    fireEvent.click(help);
+    const menu = screen.getByRole('menu', { name: 'Help' });
+    const docs = within(menu).getByRole('menuitem', { name: 'Documentation' });
+    expect(docs.tagName).toBe('A');
+    expect(docs).toHaveAttribute('href', 'https://github.com/gridctl/gridctl/tree/main/docs');
+    expect(docs).toHaveAttribute('target', '_blank');
+    expect(docs).toHaveAttribute('rel', 'noreferrer');
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Keyboard shortcuts' }));
+    expect(useUIStore.getState().shortcutsOpen).toBe(true);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    useUIStore.setState({ shortcutsOpen: false });
+  });
+
+  it('renders RefreshCw once and never RotateCcw', () => {
+    expect(headerSource).not.toMatch(/RotateCcw/);
+    expect(headerMenuSource).not.toMatch(/RotateCcw/);
+    expect(headerSource.match(/icon: RefreshCw\b|<RefreshCw\b/g)).toHaveLength(1);
   });
 
   it('toasts a failed reload and does not render a banner', async () => {
@@ -171,7 +353,7 @@ describe('Header', () => {
     expect(triggerReload).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Reload without preview' }));
     await waitFor(() => expect(triggerReload).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Reload Config' })).not.toBeDisabled());
+    await waitForReloadIdle();
     expect(triggerReload).toHaveBeenCalledTimes(1);
   });
 
@@ -180,7 +362,7 @@ describe('Header', () => {
     vi.mocked(fetchStackPlan).mockRejectedValue(abort);
     renderHeader();
     clickReload();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Reload Config' })).not.toBeDisabled());
+    await waitForReloadIdle();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(triggerReload).not.toHaveBeenCalled();
     expect(showToast).not.toHaveBeenCalled();
@@ -190,11 +372,13 @@ describe('Header', () => {
     let resolve!: (plan: PlanDiff) => void;
     vi.mocked(fetchStackPlan).mockReturnValue(new Promise((r) => { resolve = r; }));
     renderHeader();
-    const button = screen.getByRole('button', { name: 'Reload Config' });
-    fireEvent.click(button);
-    fireEvent.click(button);
+    clickReload();
+    expect(moreTrigger()).toHaveAttribute('aria-busy', 'true');
+    openMore();
+    const item = screen.getByRole('menuitem', { name: 'Reload Config' });
+    expect(item).toBeDisabled();
+    fireEvent.click(item);
     expect(fetchStackPlan).toHaveBeenCalledTimes(1);
-    expect(button).toBeDisabled();
     await act(async () => { resolve(EMPTY_PLAN); });
     await waitFor(() => expect(showToast).toHaveBeenCalledTimes(1));
     expect(triggerReload).toHaveBeenCalledTimes(1);
@@ -219,7 +403,7 @@ describe('Header', () => {
     expect(fetchStackPlan).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Reload Config' })).not.toBeDisabled());
+    await waitForReloadIdle();
     clickReload();
     expect(fetchStackPlan).toHaveBeenCalledTimes(2);
     expect(triggerReload).not.toHaveBeenCalled();
@@ -231,11 +415,11 @@ describe('Header', () => {
     clickReload();
     await screen.findByRole('alert');
     fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Reload Config' })).not.toBeDisabled());
+    await waitForReloadIdle();
     clickReload();
     await screen.findByRole('alert');
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Reload Config' })).not.toBeDisabled());
+    await waitForReloadIdle();
     clickReload();
     expect(fetchStackPlan).toHaveBeenCalledTimes(3);
     expect(triggerReload).not.toHaveBeenCalled();

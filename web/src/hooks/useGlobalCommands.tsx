@@ -326,11 +326,11 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
     registerCommands('auth-forget', [
       {
         id: 'auth:forget-credential',
-        label: 'Forget gateway credential',
+        label: 'Forget gateway credential…',
         section: 'global',
         icon: <LogOut size={14} />,
         keywords: ['auth', 'credential', 'token', 'sign out', 'logout', 'forget'],
-        onSelect: () => useAuthStore.getState().forgetCredential(),
+        onSelect: () => useUIStore.getState().setForgetCredentialOpen(true),
       },
     ]);
     return () => unregisterCommands('auth-forget');
