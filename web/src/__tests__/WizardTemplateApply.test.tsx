@@ -101,6 +101,22 @@ describe('CreationWizard template cards', () => {
     expect(screen.getByDisplayValue('mongo:7')).toBeInTheDocument();
   });
 
+  it('opens a picked card without the previous form errors', () => {
+    openOnTemplateStep('resource');
+    render(<CreationWizard />);
+
+    fireEvent.click(screen.getByText('Blank Resource'));
+    fireEvent.click(screen.getByRole('button', { name: /^Next/ }));
+    expect(useWizardStore.getState().currentStep).toBe('form');
+    expect(screen.getByRole('textbox', { name: /^Name/ })).toHaveAttribute('aria-invalid', 'true');
+
+    fireEvent.click(screen.getByText('Back'));
+    fireEvent.click(screen.getByText('Blank Resource'));
+
+    expect(useWizardStore.getState().currentStep).toBe('form');
+    expect(document.querySelector('[aria-invalid="true"]')).toBeNull();
+  });
+
   it('does not touch another type when an MCP server card is picked', () => {
     act(() => {
       useWizardStore.getState().updateFormData('resource', { name: 'kept', image: 'kept:1' });

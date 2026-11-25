@@ -218,14 +218,34 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
     [mcpServers, resources, skills, linkedClients, variables, packs],
   );
 
+  const [touched, setTouched] = useState<Set<string>>(() => new Set());
+  const [nextAttempted, setNextAttempted] = useState(false);
+  const [revealKey, setRevealKey] = useState(0);
+  const focusPendingRef = useRef(false);
+  const validationScope = `${isOpen}:${selectedType}`;
+  const [prevValidationScope, setPrevValidationScope] = useState(validationScope);
+  if (prevValidationScope !== validationScope) {
+    setPrevValidationScope(validationScope);
+    setTouched(new Set());
+    setNextAttempted(false);
+  }
+
+  // A loaded draft or an applied template is a fresh form even when its type
+  // matches the current one.
+  const resetValidation = useCallback(() => {
+    setTouched(new Set());
+    setNextAttempted(false);
+  }, []);
+
   const handleTemplateSelect = useCallback((templateId: string | null) => {
     const data = selectedType && templateId ? templateFormData(selectedType, templateId) : null;
     if (selectedType && templateId && data) {
       applyTemplate(selectedType as TemplateResourceType, templateId, data);
+      resetValidation();
       return;
     }
     setSelectedTemplate(templateId);
-  }, [selectedType, setSelectedTemplate, applyTemplate]);
+  }, [selectedType, setSelectedTemplate, applyTemplate, resetValidation]);
 
   // Catalog entries replace the mcp-server form through the same action
   // templates use, so the form, YAML preview, and review step work unchanged.
@@ -235,7 +255,8 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
       ...catalogEntryToFormData(entry, container),
     };
     applyTemplate('mcp-server', `catalog:${entry.name}`, data);
-  }, [applyTemplate]);
+    resetValidation();
+  }, [applyTemplate, resetValidation]);
 
   // Skill skips template step; secret, global-context, and client-link
   // close the wizard and open their own dedicated surfaces (vault panel,
@@ -375,24 +396,6 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
         return {};
     }
   }, [selectedType, formData, mcpServers, resources]);
-
-  const [touched, setTouched] = useState<Set<string>>(() => new Set());
-  const [nextAttempted, setNextAttempted] = useState(false);
-  const [revealKey, setRevealKey] = useState(0);
-  const focusPendingRef = useRef(false);
-  const validationScope = `${isOpen}:${selectedType}`;
-  const [prevValidationScope, setPrevValidationScope] = useState(validationScope);
-  if (prevValidationScope !== validationScope) {
-    setPrevValidationScope(validationScope);
-    setTouched(new Set());
-    setNextAttempted(false);
-  }
-
-  // A loaded draft is a fresh form even when its type matches the current one.
-  const resetValidation = useCallback(() => {
-    setTouched(new Set());
-    setNextAttempted(false);
-  }, []);
 
   const visibleErrors = useMemo<WizardErrors>(() => {
     if (nextAttempted) return formErrors;
@@ -988,7 +991,7 @@ function FormRenderer({
     );
   }
 
-  // Resource — full form
+  // Resource: full form
   if (resourceType === 'resource') {
     return (
       <div onBlur={validation.onFieldBlur}>
