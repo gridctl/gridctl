@@ -15,6 +15,7 @@ import {
 import { agentClientName, describeSyncResults } from './agentModel';
 import type { AgentProjectionStatus } from '../../../types';
 import { describeError, isCancellation } from '../../../lib/describeError';
+import { escapeNonPrintable } from '../../../lib/nonPrintable';
 
 interface AgentProjectionRowsProps {
   agentName: string;
@@ -307,6 +308,11 @@ function AgentDriftDialog({
             restores the client's copy from the canonical store instead.
           </p>
         )}
+        <p className="text-2xs text-text-muted" data-testid="drift-no-diff">
+          gridctl cannot show this diff in the UI yet. Compare the file at{' '}
+          <span className="font-mono break-all">{escapeNonPrintable(status.target)}</span> with the
+          canonical AGENT.md before choosing.
+        </p>
         <div className="flex items-center justify-end gap-2 flex-wrap">
           <button
             onClick={onClose}

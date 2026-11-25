@@ -274,6 +274,9 @@ function seed(pins: Record<string, ContextPin>) {
   usePinsStore.setState({ pins: {}, skillPins: {}, contextPins: pins });
 }
 
+// Diffs of thousands of lines can take longer than the 1s findBy default under coverage.
+const LARGE_RENDER_TIMEOUT = 5000;
+
 const lines = (n: number, last: string) =>
   Array.from({ length: n }, (_, i) => (i === n - 1 ? last : `line-${i}`)).join('\n');
 
@@ -521,7 +524,9 @@ describe('context pin detail review', () => {
     vi.spyOn(api, 'approveContextPin').mockRejectedValue(new HTTPError(409, 'content changed'));
     seed({ style: pin('drift') });
     renderContext('/pins?kind=context&fragment=style');
-    expect(await screen.findByText(/Full current document \(\d+ lines\)/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Full current document \(\d+ lines\)/, undefined, { timeout: LARGE_RENDER_TIMEOUT }),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
     await waitFor(() => expect(fetchDiff).toHaveBeenCalledTimes(2));
     expect(await screen.findByText('Loading diff…')).toBeInTheDocument();
@@ -535,7 +540,9 @@ describe('context pin detail review', () => {
     );
     seed({ style: pin('drift') });
     renderContext('/pins?kind=context&fragment=style');
-    expect(await screen.findByText('style (too large to align)')).toBeInTheDocument();
+    expect(
+      await screen.findByText('style (too large to align)', undefined, { timeout: LARGE_RENDER_TIMEOUT }),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/lines changed/)).not.toBeInTheDocument();
     expect(screen.getByText(/too large to compare line by line/)).toBeInTheDocument();
     expect(await screen.findByText('Full current document (501 lines)')).toBeInTheDocument();

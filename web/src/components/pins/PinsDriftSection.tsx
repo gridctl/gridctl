@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { usePinsStore } from '../../stores/usePinsStore';
+import { useStackStore } from '../../stores/useStackStore';
+import { TOOL_NAME_DELIMITER } from '../../lib/constants';
 import {
   approveServerPins,
   fetchPinsDiff,
@@ -325,13 +327,13 @@ export function DriftSection({ serverName }: { serverName: string }) {
           ))}
 
           {diff.new_tools.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 text-2xs text-text-muted">
-              <Plus size={11} className="text-status-running" />
-              <span>New tools (pinned on approve):</span>
+            <div className="space-y-1.5">
+              <p className="flex items-center gap-1.5 text-2xs text-text-muted">
+                <Plus size={11} className="text-status-running" />
+                New tools (pinned on approve)
+              </p>
               {diff.new_tools.map((n) => (
-                <span key={n} className="font-mono text-text-secondary">
-                  {escapeNonPrintable(n)}
-                </span>
+                <NewToolCard key={n} serverName={serverName} name={n} />
               ))}
             </div>
           )}
@@ -694,6 +696,47 @@ function SchemaDiffBlock({
           newSchema={newSchema}
           onClose={() => setExpanded(false)}
         />
+      )}
+    </div>
+  );
+}
+
+// NewToolCard shows what approving will pin for a tool the server added.
+// The pins diff carries only the name, so the definition comes from the
+// polled tool catalog, read through a selector so the card fills in when the
+// catalog arrives. That content is not bound to the diff's live hash and has
+// no scan findings, so it is labeled as catalog content, not verified.
+function NewToolCard({ serverName, name }: { serverName: string; name: string }) {
+  const key = serverName + TOOL_NAME_DELIMITER + name;
+  const tool = useStackStore((s) => s.toolCatalog.find((t) => t.name === key));
+  const shownName = escapeNonPrintable(name);
+  return (
+    <div className="rounded-md border border-border/40 bg-background/60 px-3 py-2 space-y-1.5">
+      <div className="text-xs font-mono text-text-primary">{shownName}</div>
+      {tool ? (
+        <>
+          <p className="text-3xs text-text-muted">Live definition from the tool catalog</p>
+          <p className="text-2xs text-text-secondary whitespace-pre-wrap break-words">
+            {tool.description ? (
+              escapeNonPrintable(tool.description)
+            ) : (
+              <em className="text-text-muted">no description</em>
+            )}
+          </p>
+          <SchemaBlock
+            label="New input schema"
+            toolName={shownName}
+            schema={tool.inputSchema ? JSON.stringify(tool.inputSchema) : ''}
+          />
+          {tool.outputSchema && (
+            <SchemaBlock label="New output schema" toolName={shownName} schema={JSON.stringify(tool.outputSchema)} />
+          )}
+        </>
+      ) : (
+        <p className="text-2xs text-text-muted">
+          Definition not available from the tool catalog. Re-verify to refresh, or run{' '}
+          <code className="font-mono">gridctl pins diff {serverName}</code>.
+        </p>
       )}
     </div>
   );

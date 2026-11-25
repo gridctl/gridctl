@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { PackUpdateDialog } from '../components/registry/packs/PackUpdateDialog';
 
@@ -16,7 +16,7 @@ vi.mock('../lib/api', async () => {
 
 vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
 
-import { previewPack, addPack, HTTPError } from '../lib/api';
+import { previewPack, addPack, HTTPError, PackFindingsError } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 
 const mockPreview = vi.mocked(previewPack);
@@ -276,5 +276,106 @@ describe('PackUpdateDialog held hooks', () => {
       expect(showToast).toHaveBeenCalledWith('warning', 'Updated team-pack; 1 hook held for pin approval'),
     );
     expect(showToast).not.toHaveBeenCalledWith('success', 'Updated team-pack from its origin');
+  });
+});
+
+describe('PackUpdateDialog security findings', () => {
+  beforeEach(() => {
+    mockPreview.mockReset();
+    mockAdd.mockReset();
+  });
+
+  const flaggedPreview = {
+    ...resolved,
+    skills: [
+      {
+        kind: 'skill',
+        name: 'deploy-helper',
+        blocking: true,
+        source: 'upstream',
+        findings: [
+          {
+            stepId: 'SKILL.md:line-12',
+            pattern: 'curl.*\\|\\s*sh',
+            description: 'piped shell download',
+            severity: 'danger',
+          },
+          { stepId: 'SKILL.md:line-30', pattern: 'sudo\\s', description: 'uses sudo', severity: 'warning' },
+        ],
+      },
+    ],
+  };
+
+  it('shows each finding under its resource with severity classes before trust', async () => {
+    mockPreview.mockResolvedValueOnce(flaggedPreview);
+    renderDialog();
+
+    const list = await screen.findByLabelText('Security findings on skill/deploy-helper');
+    const items = within(list).getAllByRole('listitem');
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent('piped shell download');
+    expect(items[0]).toHaveTextContent('SKILL.md:line-12');
+    expect(items[0]).toHaveClass('text-status-error');
+    expect(items[1]).toHaveTextContent('uses sudo');
+    expect(items[1]).toHaveTextContent('SKILL.md:line-30');
+    expect(items[1]).toHaveClass('text-status-pending');
+    // The regex source is never rendered as if it were matched content.
+    expect(list).not.toHaveTextContent('curl');
+    expect(screen.getByText('skill/deploy-helper')).toBeInTheDocument();
+    expect(screen.getByText('from upstream')).toBeInTheDocument();
+    expect(screen.getByText('blocks import')).toBeInTheDocument();
+
+    const update = screen.getByRole('button', { name: /update from origin/i });
+    expect(update).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect(update).toBeEnabled();
+  });
+
+  it('shows the server findings in detail after a 409 and clears the trust checkbox', async () => {
+    mockPreview.mockResolvedValueOnce(resolved);
+    mockAdd.mockRejectedValueOnce(
+      new PackFindingsError('Security findings', 'team-pack', [
+        {
+          kind: 'agent',
+          name: 'reviewer',
+          blocking: true,
+          findings: [{ stepId: 'AGENT.md:line-3', description: 'hidden instruction', severity: 'danger' }],
+        },
+      ]),
+    );
+    renderDialog();
+
+    const update = await screen.findByRole('button', { name: /update from origin/i });
+    await waitFor(() => expect(update).toBeEnabled());
+    fireEvent.click(update);
+
+    const list = await screen.findByLabelText('Security findings on agent/reviewer');
+    expect(list).toHaveTextContent('hidden instruction');
+    expect(list).toHaveTextContent('AGENT.md:line-3');
+    expect(within(list).getByRole('listitem')).toHaveClass('text-status-error');
+    expect(screen.getByRole('checkbox')).not.toBeChecked();
+    expect(update).toBeDisabled();
+  });
+
+  it('renders hidden characters in a finding description as visible escapes', async () => {
+    mockPreview.mockResolvedValueOnce({
+      ...resolved,
+      rules: [
+        {
+          kind: 'rule',
+          name: 'style',
+          findings: [{ stepId: 'rule.md:line-1', description: 'hidden\u200bpayload\u202e', severity: 'warning' }],
+        },
+      ],
+    });
+    renderDialog();
+
+    const list = await screen.findByLabelText('Security findings on rule/style');
+    expect(list).toHaveTextContent('hidden\\u200bpayload\\u202e');
+    expect(document.body.textContent).not.toContain('\u200b');
+    expect(document.body.textContent).not.toContain('\u202e');
+    // Non-blocking findings keep the explanatory sentence instead of a checkbox.
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByText(/do not block the update/)).toBeInTheDocument();
   });
 });

@@ -11,7 +11,8 @@ import { escapeNonPrintable, shortPinHash } from '../../../lib/nonPrintable';
 import { formatRelativeTime } from '../../../lib/time';
 import { FindingsList } from '../../pins/PinFindings';
 import { credentialRefusalText, splitEvidence } from '../../pins/pinApproval';
-import { approveBlock, classifyUnifiedDiff, pathExplanation, provenanceLabel, type UnifiedLine } from './proposalModel';
+import { UnifiedDiffView } from '../../ui/UnifiedDiffView';
+import { approveBlock, pathExplanation, provenanceLabel } from './proposalModel';
 import type { Proposal } from '../../../types';
 
 interface ProposalDetailPanelProps {
@@ -76,7 +77,7 @@ export function ProposalDetailPanel({ proposal, onClose, onChanged }: ProposalDe
           <h3 className="text-3xs uppercase tracking-[0.18em] text-text-muted">
             Diff{shown.files && shown.files.length > 0 ? ` (${shown.files.map(escapeNonPrintable).join(', ')})` : ''}
           </h3>
-          <UnifiedDiffView diff={shown.diff} />
+          <UnifiedDiffView diff={shown.diff} ariaLabel="Proposal diff" />
         </section>
         {(shown.findings?.length ?? 0) > 0 && (
           <section className="space-y-1.5">
@@ -146,39 +147,6 @@ function ProposalSummary({ proposal, refreshed, failed }: { proposal: Proposal; 
         </p>
       )}
     </section>
-  );
-}
-
-// UnifiedDiffView renders the stored diff verbatim, one classified line at a
-// time. Each line is escaped after splitting so hidden characters show.
-function UnifiedDiffView({ diff }: { diff: string }) {
-  const lines = classifyUnifiedDiff(diff);
-  return (
-    <div className="rounded border border-border/40 bg-background/60 overflow-x-auto max-h-96 overflow-y-auto scrollbar-dark">
-      <pre className="text-2xs font-mono leading-relaxed p-2 whitespace-pre-wrap break-words" aria-label="Proposal diff">
-        {lines.map((line, i) => (
-          <UnifiedDiffLine key={i} line={line} />
-        ))}
-      </pre>
-    </div>
-  );
-}
-
-function UnifiedDiffLine({ line }: { line: UnifiedLine }) {
-  return (
-    <span
-      data-kind={line.kind}
-      className={cn(
-        'block px-1',
-        line.kind === 'added' && 'bg-status-running/10 text-status-running',
-        line.kind === 'removed' && 'bg-status-error/10 text-status-error',
-        line.kind === 'context' && 'text-text-secondary',
-        line.kind === 'hunk' && 'text-primary',
-        (line.kind === 'header' || line.kind === 'note') && 'text-text-muted',
-      )}
-    >
-      {escapeNonPrintable(line.text) || ' '}
-    </span>
   );
 }
 

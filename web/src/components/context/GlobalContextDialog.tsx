@@ -38,6 +38,10 @@ import { MarkdownPreview } from '../registry/MarkdownPreview';
 import { applyMarkdownAction, type MarkdownAction } from '../../lib/markdownEdit';
 import { useContextStore } from '../../stores/useContextStore';
 import { describeError, isCancellation } from '../../lib/describeError';
+import { escapeNonPrintable } from '../../lib/nonPrintable';
+import { contextDriftCliHints } from '../../lib/contextDriftHints';
+import { useLoadedEvidence, type LoadedEvidence } from '../../hooks/useLoadedEvidence';
+import { UnifiedDiffView } from '../ui/UnifiedDiffView';
 import {
   adoptGlobalContext,
   deleteContextFragment,
@@ -1066,22 +1070,10 @@ function DriftResolveDialog({
   onClose: () => void;
   onResolved: (doc: ContextDoc | null) => void;
 }) {
-  const [diff, setDiff] = useState<string | null>(null);
+  const fetchDiff = useCallback(() => fetchGlobalContextDiff(slug), [slug]);
+  const evidence = useLoadedEvidence(slug, fetchDiff);
+  const ready = evidence.status === 'ready';
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchGlobalContextDiff(slug)
-      .then((d) => {
-        if (!cancelled) setDiff(d);
-      })
-      .catch((err) => {
-        if (!cancelled) setDiff(err instanceof Error ? err.message : 'Diff unavailable');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [slug]);
 
   const handleAdopt = useCallback(async () => {
     setBusy(true);
@@ -1121,9 +1113,11 @@ function DriftResolveDialog({
           edit to make it the new canon, or overwrite the client to restore the canon. A
           timestamped backup precedes every write.
         </p>
-        <pre className="text-2xs font-mono bg-background/60 border border-border/30 rounded-lg p-3 overflow-x-auto max-h-72 overflow-y-auto scrollbar-dark whitespace-pre">
-          {diff ?? 'Loading diff…'}
-        </pre>
+        <DriftDiffEvidence
+          evidence={evidence}
+          ariaLabel={`Diff for ${name}`}
+          cliHints={contextDriftCliHints(slug, 'single-file')}
+        />
         <div className="flex items-center justify-end gap-2">
           <button
             onClick={onClose}
@@ -1134,7 +1128,8 @@ function DriftResolveDialog({
           </button>
           <button
             onClick={() => void handleAdopt()}
-            disabled={busy}
+            disabled={busy || !ready}
+            title={ready ? undefined : EVIDENCE_GATE_TITLE}
             className="px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 border border-primary/25 rounded-lg hover:bg-primary/15 transition-colors disabled:opacity-50"
           >
             Adopt into canon
@@ -1143,7 +1138,8 @@ function DriftResolveDialog({
             variant="outline-danger"
             size="sm"
             onClick={() => void handleOverwrite()}
-            disabled={busy}
+            disabled={busy || !ready}
+            title={ready ? undefined : EVIDENCE_GATE_TITLE}
           >
             Overwrite client
           </Button>
@@ -1184,30 +1180,19 @@ function FragmentDriftResolveDialog({
   const [selected, setSelected] = useState<string | null>(
     multiFile ? (initialFragment ?? drifted[0]?.name ?? null) : null,
   );
-  // Diff text keyed by its request, so switching fragments derives back to
-  // the loading state instead of flashing the previous fragment's diff.
-  const diffKey = `${client.slug}:${multiFile ? (selected ?? '') : ''}`;
-  const [diffState, setDiffState] = useState<{ key: string; text: string } | null>(null);
+  // The diff is keyed by its request, so switching fragments derives back to
+  // loading (actions gated) instead of showing the previous fragment's diff.
+  // A multi-file client with nothing selected has no request: idle, not loading.
+  const diffKey = multiFile && !selected ? null : `${client.slug}:${multiFile ? (selected ?? '') : ''}`;
+  const fetchDiff = useCallback(
+    () => fetchGlobalContextDiff(client.slug, multiFile ? (selected ?? undefined) : undefined),
+    [client.slug, multiFile, selected],
+  );
+  const evidence = useLoadedEvidence(diffKey, fetchDiff);
+  const ready = evidence.status === 'ready';
+  const gateTitle = evidence.status === 'idle' ? IDLE_GATE_TITLE : EVIDENCE_GATE_TITLE;
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (multiFile && !selected) return;
-    fetchGlobalContextDiff(client.slug, multiFile ? (selected ?? undefined) : undefined)
-      .then((d) => {
-        if (!cancelled) setDiffState({ key: diffKey, text: d });
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setDiffState({ key: diffKey, text: err instanceof Error ? err.message : 'Diff unavailable' });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [client.slug, multiFile, selected, diffKey]);
-
-  const diff = diffState?.key === diffKey ? diffState.text : null;
+  const driftCase = !multiFile ? 'compiled' : identity ? 'multi-file-identity' : 'multi-file-lossy';
 
   const run = useCallback(
     async (fn: () => Promise<unknown>, okMessage: string) => {
@@ -1289,9 +1274,11 @@ function FragmentDriftResolveDialog({
               canon. A timestamped backup precedes every write.
             </p>
           )}
-          <pre className="text-2xs font-mono bg-background/60 border border-border/30 rounded-lg p-3 overflow-x-auto max-h-72 overflow-y-auto scrollbar-dark whitespace-pre">
-            {diff ?? 'Loading diff…'}
-          </pre>
+          <DriftDiffEvidence
+            evidence={evidence}
+            ariaLabel={multiFile ? `Diff for ${selected ?? 'fragment'} in ${client.name}` : `Diff for ${client.name}`}
+            cliHints={contextDriftCliHints(client.slug, driftCase, selected)}
+          />
           {multiFile ? (
             <div className="flex items-center justify-end gap-2">
               <Button type="button" size="sm" variant="ghost" onClick={onClose} disabled={busy}>
@@ -1302,7 +1289,8 @@ function FragmentDriftResolveDialog({
                   type="button"
                   size="sm"
                   variant="primary"
-                  disabled={busy}
+                  disabled={busy || !ready}
+                  title={ready ? undefined : gateTitle}
                   onClick={() =>
                     void run(
                       () => adoptGlobalContext(client.slug, { fragment: selected }),
@@ -1317,7 +1305,8 @@ function FragmentDriftResolveDialog({
                 type="button"
                 size="sm"
                 variant="outline-danger"
-                disabled={busy}
+                disabled={busy || !ready}
+                title={ready ? undefined : gateTitle}
                 onClick={handleOverwrite}
               >
                 Force overwrite
@@ -1327,6 +1316,7 @@ function FragmentDriftResolveDialog({
             <CompiledCaptureActions
               fragmentNames={fragmentNames}
               busy={busy}
+              evidenceReady={ready}
               onCapture={(into) =>
                 void run(
                   () => adoptGlobalContext(client.slug, { into }),
@@ -1356,12 +1346,14 @@ function FragmentDriftResolveDialog({
 function CompiledCaptureActions({
   fragmentNames,
   busy,
+  evidenceReady,
   onCapture,
   onOverwrite,
   onClose,
 }: {
   fragmentNames: string[];
   busy: boolean;
+  evidenceReady: boolean;
   onCapture: (into: string) => void;
   onOverwrite: () => void;
   onClose: () => void;
@@ -1424,7 +1416,8 @@ function CompiledCaptureActions({
           type="button"
           size="sm"
           variant="primary"
-          disabled={busy || !valid}
+          disabled={busy || !valid || !evidenceReady}
+          title={evidenceReady ? undefined : EVIDENCE_GATE_TITLE}
           onClick={() => onCapture(target)}
         >
           {valid ? `Capture into ${target}` : 'Capture'}
@@ -1433,7 +1426,8 @@ function CompiledCaptureActions({
           type="button"
           size="sm"
           variant="outline-danger"
-          disabled={busy}
+          disabled={busy || !evidenceReady}
+          title={evidenceReady ? undefined : EVIDENCE_GATE_TITLE}
           onClick={onOverwrite}
         >
           Force overwrite
@@ -1441,6 +1435,61 @@ function CompiledCaptureActions({
       </div>
     </div>
   );
+}
+
+const EVIDENCE_GATE_TITLE = 'Review the diff before choosing';
+const IDLE_GATE_TITLE = 'Select a drifted fragment first';
+
+/**
+ * The evidence block of a drift dialog. A failed load is an alert outside
+ * the diff with Retry and the CLI route for this case; its message is never
+ * rendered as diff text.
+ */
+function DriftDiffEvidence({
+  evidence,
+  ariaLabel,
+  cliHints,
+}: {
+  evidence: LoadedEvidence & { retry: () => void };
+  ariaLabel: string;
+  cliHints: string[];
+}) {
+  switch (evidence.status) {
+    case 'idle':
+      return <p className="text-2xs text-text-muted">Select a drifted fragment to review its diff.</p>;
+    case 'loading':
+      return <p className="text-2xs text-text-muted">Loading diff…</p>;
+    case 'error':
+      return (
+        <div
+          role="alert"
+          className="rounded-lg border border-status-error/30 bg-status-error/10 p-3 text-2xs text-status-error space-y-2"
+        >
+          <p>Diff failed to load: {escapeNonPrintable(evidence.message)}</p>
+          <p className="text-text-secondary">
+            Or resolve it from a terminal:{' '}
+            {cliHints.map((cmd, i) => (
+              <span key={cmd}>
+                {i > 0 && (i === cliHints.length - 1 ? (cliHints.length > 2 ? ', or ' : ' or ') : ', ')}
+                <code className="font-mono">{cmd}</code>
+              </span>
+            ))}
+            .
+          </p>
+          <Button type="button" size="sm" variant="secondary" onClick={evidence.retry}>
+            Retry
+          </Button>
+        </div>
+      );
+    case 'ready':
+      return evidence.text === '' ? (
+        <p className="text-2xs text-text-muted">
+          No line-level differences between the canonical content and this file.
+        </p>
+      ) : (
+        <UnifiedDiffView diff={evidence.text} ariaLabel={ariaLabel} maxHeightClass="max-h-72" />
+      );
+  }
 }
 
 // Mirrors the backend's fragment-name rule so a bad name fails in the

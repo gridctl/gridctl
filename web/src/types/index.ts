@@ -416,6 +416,7 @@ export interface Tool {
   // InputSchema is now a raw JSON object to preserve full JSON Schema
   // from MCP servers without loss (supports JSON Schema draft 2020-12)
   inputSchema: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
   annotations?: ToolAnnotations;
 }
 

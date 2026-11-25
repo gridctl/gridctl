@@ -192,6 +192,17 @@ function HookProjectionRows({
           <p className="text-xs">
             {hookClientName(drift.client)} was edited after gridctl wrote it. Force replaces the gridctl groups after a backup.
           </p>
+          <p className="text-2xs text-text-muted" data-testid="drift-no-diff">
+            gridctl cannot show this diff in the UI yet. Compare the file at{' '}
+            <span className="font-mono break-all">{escapeNonPrintable(drift.target)}</span>
+            {drift.script_dir ? (
+              <>
+                {' '}and the scripts in{' '}
+                <span className="font-mono break-all">{escapeNonPrintable(drift.script_dir)}</span>
+              </>
+            ) : null}{' '}
+            with the hook's canonical definition before choosing.
+          </p>
           <div className="flex gap-2">
             <Button
               size="sm"

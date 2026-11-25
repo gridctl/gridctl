@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { GlobalContextDialog } from '../components/context/GlobalContextDialog';
 import { useContextStore } from '../stores/useContextStore';
 import type { ContextDoc, ContextFragment } from '../lib/api';
@@ -660,7 +660,9 @@ describe('fragment-level drift review', () => {
     await waitFor(() => {
       expect(fetchGlobalContextDiff).toHaveBeenCalledWith('claude-code', '00-default');
     });
-    fireEvent.click(await screen.findByText('Adopt 00-default'));
+    const adopt = await screen.findByText('Adopt 00-default');
+    await waitFor(() => expect(adopt).toBeEnabled());
+    fireEvent.click(adopt);
     await waitFor(() => {
       expect(adoptGlobalContext).toHaveBeenCalledWith('claude-code', { fragment: '00-default' });
     });
@@ -687,7 +689,9 @@ describe('fragment-level drift review', () => {
 
     fireEvent.click(screen.getByText('Review'));
     await screen.findByText(/receives one assembled document/);
-    fireEvent.click(screen.getByText('Capture into 00-default'));
+    const capture = screen.getByText('Capture into 00-default');
+    await waitFor(() => expect(capture).toBeEnabled());
+    fireEvent.click(capture);
 
     await waitFor(() => {
       expect(adoptGlobalContext).toHaveBeenCalledWith('opencode', { into: '00-default' });
@@ -705,7 +709,9 @@ describe('fragment-level drift review', () => {
     fireEvent.change(screen.getByLabelText('New capture fragment name'), {
       target: { value: 'captured-notes' },
     });
-    fireEvent.click(screen.getByText('Capture into captured-notes'));
+    const capture = screen.getByText('Capture into captured-notes');
+    await waitFor(() => expect(capture).toBeEnabled());
+    fireEvent.click(capture);
 
     await waitFor(() => {
       expect(adoptGlobalContext).toHaveBeenCalledWith('opencode', { into: 'captured-notes' });
@@ -820,5 +826,146 @@ describe('fragment load failures', () => {
     expect(alert).toHaveTextContent('Load fragments failed: offline.');
     expect(screen.queryByText('10-style')).not.toBeInTheDocument();
     expect(screen.getByText('00-default')).toBeInTheDocument();
+  });
+});
+
+const GATE_TITLE = 'Review the diff before choosing';
+
+describe('fragment drift review evidence gate', () => {
+  async function openFragmentReview(client: ContextDoc['clients'][number]) {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(client));
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    const expand = await screen.findByLabelText(`Expand ${client.name} fragments`);
+    fireEvent.click(expand);
+    const list = screen.getByLabelText(`${client.name} fragments`);
+    fireEvent.click(within(list).getAllByText('Review')[0]);
+    await screen.findByText(/was edited/);
+  }
+
+  async function openCompiledReview() {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(compiledClient));
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    fireEvent.click(await screen.findByText('Review'));
+    await screen.findByText(/receives one assembled document/);
+  }
+
+  it('gates Adopt and Force overwrite on the identity target until the diff loads', async () => {
+    const d = deferred<string>();
+    vi.mocked(fetchGlobalContextDiff).mockReturnValue(d.promise);
+    await openFragmentReview(identityClient);
+
+    expect(screen.getByText('Loading diff…')).toBeInTheDocument();
+    const adopt = screen.getByRole('button', { name: 'Adopt 00-default' });
+    const overwrite = screen.getByRole('button', { name: 'Force overwrite' });
+    expect(adopt).toBeDisabled();
+    expect(adopt).toHaveAttribute('title', GATE_TITLE);
+    expect(overwrite).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+
+    await act(async () => d.resolve('@@ -1 +1 @@\n-a\n+b\n'));
+    await waitFor(() => expect(adopt).toBeEnabled());
+    expect(overwrite).toBeEnabled();
+    expect(screen.getByLabelText('Diff for 00-default in Claude Code')).toBeInTheDocument();
+  });
+
+  it('gates Force overwrite on a lossy target until the diff loads', async () => {
+    const d = deferred<string>();
+    vi.mocked(fetchGlobalContextDiff).mockReturnValue(d.promise);
+    await openFragmentReview(lossyClient);
+
+    const overwrite = screen.getByRole('button', { name: 'Force overwrite' });
+    expect(overwrite).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+    await act(async () => d.resolve('@@ -1 +1 @@\n-a\n+b\n'));
+    await waitFor(() => expect(overwrite).toBeEnabled());
+  });
+
+  it('gates Capture and its overwrite on a compiled target without trapping Cancel', async () => {
+    const d = deferred<string>();
+    vi.mocked(fetchGlobalContextDiff).mockReturnValue(d.promise);
+    await openCompiledReview();
+
+    const capture = screen.getByRole('button', { name: 'Capture into 00-default' });
+    const overwrite = screen.getByRole('button', { name: 'Force overwrite' });
+    expect(capture).toBeDisabled();
+    expect(capture).toHaveAttribute('title', GATE_TITLE);
+    expect(overwrite).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+
+    await act(async () => d.resolve('@@ -1 +1 @@\n-a\n+b\n'));
+    await waitFor(() => expect(capture).toBeEnabled());
+    expect(overwrite).toBeEnabled();
+  });
+
+  it('shows an identity failure as an alert naming the fragment-scoped adopt, and Retry recovers', async () => {
+    vi.mocked(fetchGlobalContextDiff)
+      .mockRejectedValueOnce(new Error('rules dir unreadable'))
+      .mockResolvedValueOnce('@@ -1 +1 @@\n-a\n+b\n');
+    await openFragmentReview(identityClient);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('rules dir unreadable');
+    expect(alert).toHaveTextContent('gridctl ctx diff claude-code 00-default');
+    expect(alert).toHaveTextContent('gridctl ctx adopt claude-code 00-default');
+    expect(alert).toHaveTextContent('gridctl ctx sync claude-code --force');
+    expect(screen.queryByLabelText('Diff for 00-default in Claude Code')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Adopt 00-default' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Force overwrite' })).toBeDisabled();
+
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Adopt 00-default' })).toBeEnabled());
+    expect(fetchGlobalContextDiff).toHaveBeenCalledTimes(2);
+    expect(fetchGlobalContextDiff).toHaveBeenLastCalledWith('claude-code', '00-default');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('names no adopt command when a lossy render fails to load', async () => {
+    vi.mocked(fetchGlobalContextDiff).mockRejectedValue(new Error('denied'));
+    await openFragmentReview(lossyClient);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('gridctl ctx diff vscode 00-default');
+    expect(alert).toHaveTextContent('gridctl ctx sync vscode --force');
+    expect(alert).not.toHaveTextContent(/ctx adopt/);
+    expect(screen.getByRole('button', { name: 'Force overwrite' })).toBeDisabled();
+  });
+
+  it('names the --into capture when a compiled diff fails to load', async () => {
+    vi.mocked(fetchGlobalContextDiff).mockRejectedValue(new Error('denied'));
+    await openCompiledReview();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('gridctl ctx diff opencode');
+    expect(alert).toHaveTextContent('gridctl ctx adopt opencode --into <fragment>');
+    expect(alert).toHaveTextContent('gridctl ctx sync opencode --force');
+    expect(screen.getByRole('button', { name: 'Capture into 00-default' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+  });
+
+  it('returns to loading and gates the actions when another fragment is selected', async () => {
+    const twoDrift = {
+      ...identityClient,
+      fragments: [
+        { name: '00-default', state: 'drifted' as const },
+        { name: '10-style', state: 'drifted' as const },
+      ],
+    };
+    const second = deferred<string>();
+    vi.mocked(fetchGlobalContextDiff).mockImplementation((_slug, fragment) =>
+      fragment === '10-style' ? second.promise : Promise.resolve('@@ -1 +1 @@\n-a\n+b\n'),
+    );
+    await openFragmentReview(twoDrift);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Adopt 00-default' })).toBeEnabled());
+
+    const picker = screen.getByLabelText('Drifted fragments');
+    fireEvent.click(within(picker).getByText('10-style'));
+    const adopt = screen.getByRole('button', { name: 'Adopt 10-style' });
+    expect(adopt).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Force overwrite' })).toBeDisabled();
+    expect(screen.getByText('Loading diff…')).toBeInTheDocument();
+
+    await act(async () => second.resolve('@@ -1 +1 @@\n-c\n+d\n'));
+    await waitFor(() => expect(adopt).toBeEnabled());
+    expect(fetchGlobalContextDiff).toHaveBeenLastCalledWith('claude-code', '10-style');
   });
 });

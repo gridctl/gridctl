@@ -3660,10 +3660,20 @@ export interface PackRemoveDoc {
   kept?: string[];
 }
 
+export interface PackFinding {
+  stepId?: string;
+  pattern?: string;
+  description?: string;
+  severity?: string;
+}
+
 export interface PackPreviewResource {
   kind: string;
   name: string;
-  findings?: { description?: string; pattern?: string; line?: number; severity?: string }[];
+  /** skills.SecurityFinding on the wire: stepId locates the hit (for
+   *  example SKILL.md:line-12), pattern is the scanner's regex source, and
+   *  severity is warning or danger. */
+  findings?: PackFinding[];
   /** True when the findings would block an untrusted import (the exact
    *  importer gate); non-blocking findings stay visible without forcing
    *  a trust grant. */

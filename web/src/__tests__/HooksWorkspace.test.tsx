@@ -264,4 +264,22 @@ describe('HooksWorkspace load failures', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.getByText('Loading hooks…')).toBeInTheDocument();
   });
+
+  it('says no diff is available in drift review and names the files to compare', async () => {
+    vi.mocked(fetchHookProjectionStatus).mockResolvedValue([{ ...inSync, state: 'drifted' }]);
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect block-force-push' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Projection' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review drift' }));
+
+    const review = screen.getByRole('dialog', { name: 'Drift review' });
+    const notice = screen.getByTestId('drift-no-diff');
+    expect(review).toContainElement(notice);
+    expect(notice).toHaveTextContent('cannot show this diff in the UI yet');
+    expect(notice).toHaveTextContent('/tmp/demo/.claude/settings.json');
+    expect(notice).toHaveTextContent('/tmp/demo/.gridctl/hooks/block-force-push');
+    expect(screen.getByRole('button', { name: 'Force sync' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeEnabled();
+  });
 });

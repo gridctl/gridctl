@@ -320,6 +320,39 @@ describe('AgentProjectionRows', () => {
   });
 });
 
+describe('agent projection drift notice', () => {
+  function renderRows(statuses: AgentProjectionStatus[]) {
+    return render(
+      <MemoryRouter>
+        <AgentProjectionRows agentName="code-reviewer" statuses={statuses} onRefresh={() => {}} />
+      </MemoryRouter>,
+    );
+  }
+
+  it('names the target to compare on an identity drift, with the buttons unchanged', () => {
+    const identityDrifted = { ...identityInSync, state: 'drifted' as const };
+    renderRows([identityDrifted]);
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+
+    const notice = screen.getByTestId('drift-no-diff');
+    expect(notice).toHaveTextContent('cannot show this diff in the UI yet');
+    expect(notice).toHaveTextContent(identityInSync.target);
+    expect(notice).toHaveTextContent('AGENT.md');
+    expect(screen.getByRole('button', { name: 'Adopt into canon' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+    expect(screen.getAllByRole('button', { name: 'Unsync' }).length).toBeGreaterThan(0);
+  });
+
+  it('names the target to compare on a lossy drift, with the buttons unchanged', () => {
+    renderRows([identityInSync, lossyDrifted]);
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+
+    expect(screen.getByTestId('drift-no-diff')).toHaveTextContent(lossyDrifted.target);
+    expect(screen.getByRole('button', { name: 'Adopt Claude Code copy' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Adopt into canon' })).not.toBeInTheDocument();
+  });
+});
+
 describe('AgentEditor', () => {
   it('confirms before discarding unsaved edits', async () => {
     vi.mocked(fetchRegistryAgent).mockResolvedValue({

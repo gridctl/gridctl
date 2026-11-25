@@ -16,6 +16,7 @@ import {
   type PackPreviewResource,
 } from '../../../lib/api';
 import { describeApplyDoc } from '../../registry/packs/packModel';
+import { PackFindings } from '../../registry/packs/PackFindings';
 import { AuthCard } from '../AuthCard';
 import { useAuthCard } from '../useAuthCard';
 import {
@@ -26,7 +27,6 @@ import {
   shouldOpenAuthCard,
 } from '../../../lib/gitAuthErrors';
 import { describeError, isCancellation } from '../../../lib/describeError';
-import { escapeNonPrintable } from '../../../lib/nonPrintable';
 
 type PackStep = 'source' | 'review' | 'done';
 
@@ -368,20 +368,9 @@ export function PackImportWizard() {
             <p className="flex items-center gap-1.5 text-xs text-status-pending font-medium">
               <AlertTriangle size={13} aria-hidden="true" /> Security findings
             </p>
-            <ul className="text-2xs text-text-muted space-y-1.5" aria-live="polite">
-              {flagged.map((r) => (
-                <li key={`${r.kind}:${r.name}`}>
-                  <span className="font-mono text-text-secondary">
-                    {r.kind}/{r.name}
-                  </span>
-                  {(r.findings ?? []).map((f, i) => (
-                    <p key={i} className="ml-3">
-                      {escapeNonPrintable(f.description ?? f.pattern ?? 'flagged content')}
-                    </p>
-                  ))}
-                </li>
-              ))}
-            </ul>
+            <div aria-live="polite">
+              <PackFindings resources={flagged} />
+            </div>
             {needsTrust ? (
               <label htmlFor={trustId} className="flex items-start gap-2 cursor-pointer text-xs text-text-secondary">
                 <input
