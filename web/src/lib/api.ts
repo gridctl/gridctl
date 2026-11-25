@@ -117,8 +117,9 @@ function buildHeaders(extra?: Record<string, string>): Record<string, string> {
 
 // === Generic Fetch Wrapper ===
 
-async function fetchJSON<T>(endpoint: string): Promise<T> {
+async function fetchJSON<T>(endpoint: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${endpoint}`, {
+    ...init,
     headers: buildHeaders(),
   });
 
@@ -139,8 +140,8 @@ async function fetchJSON<T>(endpoint: string): Promise<T> {
  * Fetch gateway status including all MCP server statuses
  * GET /api/status
  */
-export async function fetchStatus(): Promise<GatewayStatus> {
-  return fetchJSON<GatewayStatus>('/api/status');
+export async function fetchStatus(signal?: AbortSignal): Promise<GatewayStatus> {
+  return fetchJSON<GatewayStatus>('/api/status', signal ? { signal } : undefined);
 }
 
 export async function fetchSecurityReport(): Promise<SecurityReport> {

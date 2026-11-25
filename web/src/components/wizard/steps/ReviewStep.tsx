@@ -19,6 +19,44 @@ import type { ValidationIssue, ExecutionReport } from '../../../types';
 import type { MCPServerFormData } from '../../../lib/yaml-builder';
 import { describeError, isCancellation } from '../../../lib/describeError';
 import { useStackStore } from '../../../stores/useStackStore';
+import { useWizardStore } from '../../../stores/useWizardStore';
+
+type ServerKind = 'source' | 'container' | 'connect';
+
+// Status line while registration is polled, and the matching failure phase.
+const pollingStatus: Record<ServerKind, string> = {
+  source: 'Building image, starting container, and connecting server...',
+  container: 'Starting container and connecting server...',
+  connect: 'Connecting server...',
+};
+const pollingPhase: Record<ServerKind, string> = {
+  source: 'Building image, starting container, or connecting server',
+  container: 'Starting container or connecting server',
+  connect: 'Connecting server',
+};
+
+function serverKind(server?: MCPServerFormData): ServerKind {
+  if (!server) return 'container';
+  if (server.source || server.serverType === 'source') return 'source';
+  return server.serverType === 'container' ? 'container' : 'connect';
+}
+
+/** Resolves after `ms`, or as soon as `signal` aborts. */
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const done = () => {
+      window.clearTimeout(timer);
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = window.setTimeout(done, ms);
+    signal.addEventListener('abort', done);
+  });
+}
 
 /** Top-level `name:` of a server or resource fragment, with quotes and a trailing comment removed. */
 function topLevelName(yaml: string): string {
@@ -92,13 +130,27 @@ export function ReviewStep({
     error: string;
   }>({ key: '', resolution: null, error: '' });
   const [buildState, setBuildState] = useState<'idle' | 'waiting' | 'pending' | 'failed' | 'complete'>('idle');
-  const [appendedResourceName, setAppendedResourceName] = useState('');
   const [deployError, setDeployError] = useState('');
   const [deployIssues, setDeployIssues] = useState<ValidationIssue[]>([]);
   const [failurePhase, setFailurePhase] = useState('');
   const resolutionErrorRef = useRef<HTMLParagraphElement>(null);
   const deployErrorRef = useRef<HTMLDivElement>(null);
   const validateGeneration = useRef(0);
+  const deployRun = useRef<AbortController | null>(null);
+  const appendedResource = useWizardStore((s) => s.appendedResource);
+  const appendInFlight = useWizardStore((s) => s.appendInFlight);
+  const setAppendedResource = useWizardStore((s) => s.setAppendedResource);
+  const setAppendInFlight = useWizardStore((s) => s.setAppendInFlight);
+  const appendedMatches = appendedResource?.resourceType === resourceType &&
+    appendedResource?.yaml === yaml;
+  const appendedName = appendedMatches && appendedResource ? appendedResource.name : '';
+  // The wizard renders Review with empty YAML until its debounce fills it in,
+  // so the notice waits for YAML to avoid flashing on reopen.
+  const previouslyAppendedName = appendedResource && !appendedMatches &&
+    appendedResource.resourceType === resourceType && yaml.trim()
+    ? appendedResource.name
+    : '';
+  const kind = serverKind(server);
   const mcpServers = useStackStore((s) => s.mcpServers);
   const stackResources = useStackStore((s) => s.resources);
   const pythonSource = server?.source &&
@@ -167,6 +219,10 @@ export function ReviewStep({
     else if (resolutionError) resolutionErrorRef.current?.focus();
   }, [resolutionError, deployError]);
 
+  // Aborts the controller in the ref rather than setting an "unmounted" flag:
+  // StrictMode runs this cleanup once at mount, when the ref is still empty.
+  useEffect(() => () => deployRun.current?.abort(), []);
+
   const errorCount = issues.filter((i) => i.severity === 'error').length;
   const warningCount = issues.filter((i) => i.severity === 'warning').length;
   const hasErrors = errorCount > 0;
@@ -174,7 +230,7 @@ export function ReviewStep({
   // Advisory only: the store lists what the gateway reports, and the append
   // response stays the authority. Skipped after an append, when the name is
   // expected to be present and "Check deployment" must stay usable.
-  const deployName = isStackFragmentType(resourceType) && !appendedResourceName ? topLevelName(yaml) : '';
+  const deployName = isStackFragmentType(resourceType) && !appendedName ? topLevelName(yaml) : '';
   const nameConflict = Boolean(deployName) && [
     ...(mcpServers ?? []),
     ...(stackResources ?? []),
@@ -207,53 +263,83 @@ export function ReviewStep({
   };
 
   const handleDeploy = async () => {
+    // Only the store flag protects a Review step that mounted after another
+    // instance started an append; local state cannot.
+    if (!appendedName && useWizardStore.getState().appendInFlight) return;
+    deployRun.current?.abort();
+    const controller = new AbortController();
+    deployRun.current = controller;
+    const { signal } = controller;
+    const sentYaml = yaml;
+    const sentType = resourceType;
+    const phase = pollingPhase[kind];
     setDeploying(true);
     setBuildState('waiting');
     setDeployError('');
     setDeployIssues([]);
     setFailurePhase('');
-    let activePhase = appendedResourceName
-      ? 'Building image, starting container, or connecting server'
-      : 'Updating stack';
+    let activePhase = appendedName ? phase : 'Updating stack';
+    let appending = false;
     try {
-      let deployedName = appendedResourceName;
+      let deployedName = appendedName;
       if (!deployedName) {
-        const result = await appendToStack(yaml, resourceType);
-        if (resourceType !== 'mcp-server') {
+        appending = true;
+        setAppendInFlight(true);
+        let result: Awaited<ReturnType<typeof appendToStack>>;
+        try {
+          result = await appendToStack(sentYaml, sentType);
+        } finally {
+          setAppendInFlight(false);
+        }
+        appending = false;
+        // Recorded even after an abort: the server now has this YAML, and a
+        // later Review step must offer "Check deployment" instead of a
+        // duplicate append.
+        if (sentType === 'mcp-server') {
+          setAppendedResource({ resourceType: sentType, name: result.resourceName, yaml: sentYaml });
+        }
+        if (signal.aborted || sentType !== 'mcp-server') {
           showToast('success', `${result.resourceType} '${result.resourceName}' added to stack`);
-          onDeploy?.();
+          if (!signal.aborted) onDeploy?.();
           return;
         }
         deployedName = result.resourceName;
-        setAppendedResourceName(deployedName);
       }
-      activePhase = 'Building image, starting container, or connecting server';
+      activePhase = phase;
       for (let attempt = 0; attempt < 300; attempt += 1) {
-        const status = await fetchStatus();
+        const status = await fetchStatus(signal);
+        if (signal.aborted) return;
         const deployed = status['mcp-servers']?.find((item) => item.name === deployedName);
         if (deployed?.registrationFailed || deployed?.healthy === false) {
           activePhase = 'Connecting server';
           throw new Error(deployed.healthError || 'Server registration failed');
         }
         if (deployed?.initialized) {
+          setAppendedResource(null);
           showToast('success', `${deployedName} deployed${currentResolution?.cached ? ' with a reused image' : currentResolution ? ' with a built image' : ''}`);
           setBuildState('complete');
           onDeploy?.();
           return;
         }
-        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        await sleep(1000, signal);
+        if (signal.aborted) return;
       }
       setBuildState('pending');
       showToast('warning', `${deployedName} was added to the stack; deployment is still in progress`);
     } catch (err) {
-      setBuildState('failed');
       const message = err instanceof Error ? err.message : 'Deploy failed';
+      if (signal.aborted) {
+        // The append itself was not cancelled, so its failure is still news.
+        if (appending) showToast('error', message);
+        return;
+      }
+      setBuildState('failed');
       setFailurePhase(activePhase);
       setDeployError(message);
       setDeployIssues(err instanceof StackAppendError ? err.issues : []);
       showToast('error', message);
     } finally {
-      setDeploying(false);
+      if (!signal.aborted) setDeploying(false);
     }
   };
 
@@ -301,6 +387,20 @@ export function ReviewStep({
       setDeploying(false);
     }
   };
+
+  const statusLine = resourceType !== 'mcp-server'
+    ? ''
+    : appendInFlight
+      ? 'Updating stack...'
+      : buildState === 'waiting'
+        ? pollingStatus[kind]
+        : buildState === 'pending'
+          ? 'Deployment is still in progress'
+          : buildState === 'complete'
+            ? 'Connected'
+            : '';
+  const showLogsLink = resourceType === 'mcp-server' && !appendInFlight &&
+    (buildState === 'waiting' || buildState === 'pending' || buildState === 'failed');
 
   return (
     <div className="space-y-6">
@@ -424,13 +524,36 @@ export function ReviewStep({
         </div>
       </div>
 
-      {resourceType !== 'stack' && deployError && (
-        <div ref={deployErrorRef} tabIndex={-1} className="space-y-2 p-4 rounded-xl border border-status-error/20 bg-status-error/5" role="alert">
-          <div className="flex items-start gap-2 text-xs text-status-error">
-            <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
-            <span>{failurePhase ? `${failurePhase} failed: ${deployError}` : deployError}</span>
+      {(resourceType === 'mcp-server' || resourceType === 'resource') && (
+        <div
+          role="group"
+          aria-label="Deployment status"
+          className={cn(statusLine || deployError || showLogsLink ? 'space-y-2 rounded-xl border border-border/30 p-4' : '')}
+        >
+          <div aria-live="polite">
+            {statusLine && (
+              <span
+                className={cn(
+                  'text-xs',
+                  buildState === 'pending' ? 'text-status-pending' : buildState === 'complete' ? 'text-status-running' : 'text-primary',
+                )}
+              >
+                {statusLine}
+              </span>
+            )}
           </div>
-          {deployIssues.length > 0 && <IssueList issues={deployIssues} />}
+          {deployError && (
+            <div ref={deployErrorRef} tabIndex={-1} className="space-y-2 p-4 rounded-xl border border-status-error/20 bg-status-error/5" role="alert">
+              <p className="flex items-start gap-2 text-xs text-status-error">
+                <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+                <span>{failurePhase ? `${failurePhase} failed: ${deployError}` : deployError}</span>
+              </p>
+              {deployIssues.length > 0 && <IssueList issues={deployIssues} />}
+            </div>
+          )}
+          {showLogsLink && (
+            <a href={`/logs?source=${encodeURIComponent(appendedName || resourceName)}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">View filtered logs <ExternalLink size={11} /></a>
+          )}
         </div>
       )}
 
@@ -439,9 +562,6 @@ export function ReviewStep({
           <div className="flex items-center justify-between gap-3">
             <span className="text-xs font-medium text-text-primary">Python container build</span>
             {resolutionPending && <span className="text-3xs text-primary">Resolving package/ref...</span>}
-            {buildState === 'waiting' && <span className="text-3xs text-primary">Building image, starting container, and connecting server...</span>}
-            {buildState === 'pending' && <span className="text-3xs text-status-pending">Deployment is still in progress</span>}
-            {buildState === 'complete' && <span className="text-3xs text-status-running">Connected</span>}
           </div>
           {resolutionError && (
             <p ref={resolutionErrorRef} tabIndex={-1} className="text-xs text-status-error" role="alert">
@@ -463,9 +583,6 @@ export function ReviewStep({
           <ol className="grid grid-cols-2 gap-1 text-3xs text-text-muted" aria-label="Build phases">
             {['Resolving package/ref', 'Cloning/preparing context', 'Generating Dockerfile', 'Building image', 'Starting container', 'Connecting server'].map((phase) => <li key={phase}>{phase}</li>)}
           </ol>
-          {(buildState === 'waiting' || buildState === 'pending' || buildState === 'failed') && (
-            <a href={`/logs?source=${encodeURIComponent(appendedResourceName || resourceName)}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">View filtered logs <ExternalLink size={11} /></a>
-          )}
         </div>
       )}
 
@@ -481,6 +598,12 @@ export function ReviewStep({
           <summary className="cursor-pointer px-4 py-3 text-xs font-medium text-text-secondary">Generated Dockerfile</summary>
           <pre className="overflow-x-auto border-t border-border/20 p-4 text-2xs text-text-secondary"><code>{currentResolution.generatedFile.content}</code></pre>
         </details>
+      )}
+
+      {previouslyAppendedName && (
+        <p className="text-xs text-text-secondary">
+          {previouslyAppendedName} was already added to the stack from this wizard. Deploying again adds another server, so its name must differ.
+        </p>
       )}
 
       {/* Output Actions */}
@@ -509,11 +632,11 @@ export function ReviewStep({
             variant="primary"
             size="sm"
             onClick={handleDeploy}
-            disabled={hasErrors || validating || deploying || nameConflict || Boolean(pythonSource && (!currentResolution || resolutionError))}
+            disabled={hasErrors || validating || deploying || appendInFlight || nameConflict || Boolean(pythonSource && (!currentResolution || resolutionError))}
             className="ml-auto"
           >
-            {deploying ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
-            {deploying ? 'Checking...' : appendedResourceName ? 'Check deployment' : 'Deploy'}
+            {deploying || appendInFlight ? <Loader2 size={14} className="animate-spin" /> : <Rocket size={14} />}
+            {appendInFlight ? 'Adding to stack...' : deploying ? 'Checking...' : appendedName ? 'Check deployment' : 'Deploy'}
           </Button>
         )}
       </div>

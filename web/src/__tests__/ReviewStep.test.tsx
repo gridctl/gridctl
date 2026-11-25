@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { ReviewStep } from '../components/wizard/steps/ReviewStep';
 import { appendToStack, fetchStatus, initializeStack, resolvePythonSource, saveStack, StackAlreadyActiveError, StackAppendError, validateStackResource, validateStackSpec } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 import { useStackStore } from '../stores/useStackStore';
+import { useWizardStore } from '../stores/useWizardStore';
+import type { MCPServerFormData } from '../lib/yaml-builder';
 
 vi.mock('../lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api')>();
@@ -33,6 +35,13 @@ vi.mock('../components/ui/Toast', () => ({
 }));
 
 const YAML = 'version: "1"\nname: daily\n';
+
+// ReviewStep reads the appended record and in-flight flag from the wizard
+// store, so a run in one test must not leak into the next.
+beforeEach(() => {
+  useWizardStore.getState().reset();
+  useWizardStore.getState().setAppendInFlight(false);
+});
 
 describe('ReviewStep handleSaveAndLoad', () => {
   let onDeploy: () => void;
@@ -483,5 +492,189 @@ describe('ReviewStep validation and deploy failures', () => {
     });
     expect(screen.getByText('Spec is valid')).toBeInTheDocument();
     expect(screen.queryByText('imagee')).not.toBeInTheDocument();
+  });
+});
+
+describe('ReviewStep deploy lifecycle', () => {
+  const GITHUB = 'name: github\nimage: alpine\n';
+  const appended = { success: true, resourceType: 'mcp-server', resourceName: 'github' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    useStackStore.setState({ mcpServers: [], resources: [] });
+    vi.mocked(validateStackResource).mockResolvedValue({ valid: true, errorCount: 0, warningCount: 0, issues: [] });
+  });
+
+  function region() {
+    return within(screen.getByRole('group', { name: 'Deployment status' }));
+  }
+
+  async function clickDeploy(name = 'Deploy') {
+    const deploy = await screen.findByRole('button', { name });
+    await waitFor(() => expect(deploy).not.toBeDisabled());
+    fireEvent.click(deploy);
+  }
+
+  it('stops polling after unmount and offers Check deployment on remount', async () => {
+    const onDeploy = vi.fn();
+    vi.mocked(appendToStack).mockResolvedValue(appended);
+    vi.mocked(fetchStatus).mockResolvedValue({ 'mcp-servers': [] } as never);
+    const first = render(<ReviewStep yaml={GITHUB} resourceType="mcp-server" resourceName="github" onDeploy={onDeploy} />);
+    await clickDeploy();
+    await waitFor(() => expect(fetchStatus).toHaveBeenCalledTimes(1));
+    first.unmount();
+    vi.mocked(fetchStatus).mockResolvedValue({ 'mcp-servers': [{ name: 'github', initialized: true }] } as never);
+
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(fetchStatus).toHaveBeenCalledTimes(1);
+    expect(onDeploy).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalledWith('success', expect.anything());
+
+    render(<ReviewStep yaml={GITHUB} resourceType="mcp-server" resourceName="github" onDeploy={onDeploy} />);
+    await clickDeploy('Check deployment');
+    await waitFor(() => expect(onDeploy).toHaveBeenCalledTimes(1));
+    expect(appendToStack).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes an abort signal to the status poll', async () => {
+    vi.mocked(appendToStack).mockResolvedValue(appended);
+    vi.mocked(fetchStatus).mockResolvedValue({ 'mcp-servers': [] } as never);
+    const view = render(<ReviewStep yaml={GITHUB} resourceType="mcp-server" resourceName="github" />);
+    await clickDeploy();
+    await waitFor(() => expect(fetchStatus).toHaveBeenCalledTimes(1));
+    const signal = vi.mocked(fetchStatus).mock.calls[0][0] as AbortSignal;
+    expect(signal.aborted).toBe(false);
+    view.unmount();
+    expect(signal.aborted).toBe(true);
+  });
+
+  it('shows Deploy and the already-added notice for changed YAML, and no notice while YAML is empty', async () => {
+    useWizardStore.getState().setAppendedResource({ resourceType: 'mcp-server', name: 'github', yaml: GITHUB });
+    const view = render(<ReviewStep yaml={'name: github-2\nimage: alpine\n'} resourceType="mcp-server" resourceName="github-2" />);
+    expect(await screen.findByRole('button', { name: 'Deploy' })).toBeInTheDocument();
+    expect(screen.getByText('github was already added to the stack from this wizard. Deploying again adds another server, so its name must differ.')).toBeInTheDocument();
+
+    view.rerender(<ReviewStep yaml="" resourceType="mcp-server" resourceName="github-2" />);
+    expect(screen.queryByText(/was already added to the stack/)).not.toBeInTheDocument();
+
+    view.rerender(<ReviewStep yaml={GITHUB} resourceType="mcp-server" resourceName="github" />);
+    expect(await screen.findByRole('button', { name: 'Check deployment' })).toBeInTheDocument();
+    expect(screen.queryByText(/was already added to the stack/)).not.toBeInTheDocument();
+  });
+
+  const sourceServer: MCPServerFormData = { name: 'github', serverType: 'source', source: { type: 'git', url: 'https://github.com/example/srv.git', dockerfile: 'Dockerfile' } };
+  it.each<[string, MCPServerFormData | undefined, string, string]>([
+    ['container', { name: 'github', serverType: 'container', image: 'alpine' }, 'Starting container and connecting server...', 'Starting container or connecting server'],
+    ['no server data', undefined, 'Starting container and connecting server...', 'Starting container or connecting server'],
+    ['source', sourceServer, 'Building image, starting container, and connecting server...', 'Building image, starting container, or connecting server'],
+    ['external', { name: 'github', serverType: 'external', url: 'https://example.com/mcp' } as MCPServerFormData, 'Connecting server...', 'Connecting server'],
+    ['local', { name: 'github', serverType: 'local', command: ['srv'] }, 'Connecting server...', 'Connecting server'],
+    ['ssh', { name: 'github', serverType: 'ssh', command: ['srv'] }, 'Connecting server...', 'Connecting server'],
+    ['openapi', { name: 'github', serverType: 'openapi' }, 'Connecting server...', 'Connecting server'],
+  ])('shows the %s status line, then a persistent alert and logs link on failure', async (_label, server, line, phase) => {
+    vi.mocked(appendToStack).mockResolvedValue(appended);
+    vi.mocked(fetchStatus)
+      .mockResolvedValueOnce({ 'mcp-servers': [] } as never)
+      .mockResolvedValue({ 'mcp-servers': [{ name: 'github', initialized: false, registrationFailed: true, healthError: 'boom' }] } as never);
+    render(<ReviewStep yaml={GITHUB} resourceType="mcp-server" resourceName="github" server={server} />);
+    await clickDeploy();
+
+    await waitFor(() => expect(region().getByText(line)).toBeInTheDocument());
+    expect(region().getByRole('link', { name: /View filtered logs/ })).toHaveAttribute('href', '/logs?source=github');
+
+    const alert = await region().findByRole('alert', {}, { timeout: 2500 });
+    expect(alert).toHaveTextContent('Connecting server failed: boom');
+    expect(region().getByRole('link', { name: /View filtered logs/ })).toHaveAttribute('href', '/logs?source=github');
+    expect(region().queryByText(line)).not.toBeInTheDocument();
+
+    // A status request that fails names the polling phase for this kind.
+    cleanup();
+    vi.mocked(fetchStatus).mockReset().mockRejectedValue(new Error('gateway down'));
+    render(<ReviewStep yaml={GITHUB} resourceType="mcp-server" resourceName="github" server={server} />);
+    await clickDeploy('Check deployment');
+    expect(await region().findByRole('alert')).toHaveTextContent(`${phase} failed: gateway down`);
+  });
+
+  it('reports a deployment still in progress after the attempt limit', async () => {
+    vi.mocked(appendToStack).mockResolvedValue(appended);
+    vi.mocked(fetchStatus).mockResolvedValue({ 'mcp-servers': [] } as never);
+    render(<ReviewStep yaml={GITHUB} resourceType="mcp-server" resourceName="github" server={{ name: 'github', serverType: 'local', command: ['srv'] }} />);
+    const deploy = await screen.findByRole('button', { name: 'Deploy' });
+    await waitFor(() => expect(deploy).not.toBeDisabled());
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      fireEvent.click(deploy);
+      await act(async () => { await vi.advanceTimersByTimeAsync(301_000); });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(fetchStatus).toHaveBeenCalledTimes(300);
+    expect(region().getByText('Deployment is still in progress')).toBeInTheDocument();
+    expect(region().getByRole('link', { name: /View filtered logs/ })).toBeInTheDocument();
+    expect(useWizardStore.getState().appendedResource?.name).toBe('github');
+    expect(screen.getByRole('button', { name: 'Check deployment' })).toBeInTheDocument();
+  });
+
+  it('clears the record after a successful deploy', async () => {
+    vi.mocked(appendToStack).mockResolvedValue(appended);
+    vi.mocked(fetchStatus).mockResolvedValue({ 'mcp-servers': [{ name: 'github', initialized: true }] } as never);
+    const onDeploy = vi.fn(() => {
+      expect(useWizardStore.getState().appendedResource).toBeNull();
+    });
+    render(<ReviewStep yaml={GITHUB} resourceType="mcp-server" resourceName="github" onDeploy={onDeploy} />);
+    await clickDeploy();
+    await waitFor(() => expect(onDeploy).toHaveBeenCalledTimes(1));
+    expect(useWizardStore.getState().appendedResource).toBeNull();
+    expect(region().getByText('Connected')).toBeInTheDocument();
+  });
+
+  it('keeps the append in flight across a remount and never appends twice', async () => {
+    let resolveAppend: (value: typeof appended) => void = () => {};
+    vi.mocked(appendToStack).mockImplementation(() => new Promise((resolve) => { resolveAppend = resolve; }));
+    vi.mocked(fetchStatus).mockResolvedValue({ 'mcp-servers': [] } as never);
+    const first = render(<ReviewStep yaml={GITHUB} resourceType="mcp-server" resourceName="github" />);
+    await clickDeploy();
+    await waitFor(() => expect(region().getByText('Updating stack...')).toBeInTheDocument());
+    first.unmount();
+
+    render(<ReviewStep yaml={GITHUB} resourceType="mcp-server" resourceName="github" />);
+    const busy = await screen.findByRole('button', { name: 'Adding to stack...' });
+    await waitFor(() => expect(screen.queryByText('Validating spec...')).not.toBeInTheDocument());
+    expect(busy).toBeDisabled();
+    fireEvent.click(busy);
+    expect(appendToStack).toHaveBeenCalledTimes(1);
+
+    await act(async () => { resolveAppend(appended); });
+    expect(useWizardStore.getState().appendInFlight).toBe(false);
+    expect(useWizardStore.getState().appendedResource).toEqual({ resourceType: 'mcp-server', name: 'github', yaml: GITHUB });
+    expect(await screen.findByRole('button', { name: 'Check deployment' })).not.toBeDisabled();
+    // The aborted run reports the append once and does not poll.
+    expect(showToast).toHaveBeenCalledWith('success', "mcp-server 'github' added to stack");
+    expect(fetchStatus).not.toHaveBeenCalled();
+    expect(appendToStack).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a failed append once when the run was aborted', async () => {
+    let rejectAppend: (err: Error) => void = () => {};
+    vi.mocked(appendToStack).mockImplementation(() => new Promise((_resolve, reject) => { rejectAppend = reject; }));
+    const first = render(<ReviewStep yaml={GITHUB} resourceType="mcp-server" resourceName="github" />);
+    await clickDeploy();
+    first.unmount();
+    await act(async () => { rejectAppend(new Error('append refused')); });
+    expect(showToast).toHaveBeenCalledTimes(1);
+    expect(showToast).toHaveBeenCalledWith('error', 'append refused');
+    expect(useWizardStore.getState().appendInFlight).toBe(false);
+    expect(useWizardStore.getState().appendedResource).toBeNull();
+  });
+
+  it('shows a rejected resource append in the status region', async () => {
+    vi.mocked(appendToStack).mockRejectedValue(new Error('disk full'));
+    render(<ReviewStep yaml={'name: db\nimage: postgres\n'} resourceType="resource" resourceName="db" />);
+    await clickDeploy();
+    const alert = await region().findByRole('alert');
+    expect(alert).toHaveTextContent('Updating stack failed: disk full');
+    expect(region().queryByRole('link', { name: /View filtered logs/ })).not.toBeInTheDocument();
+    expect(useWizardStore.getState().appendedResource).toBeNull();
   });
 });

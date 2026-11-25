@@ -1176,7 +1176,9 @@ path requires an explicit host path, container path, mount mode, and command
 that uses the container path before the wizard enables selection. After the
 wizard appends a server to the active stack, review polls registration for up
 to five minutes. It reports unresolved deployment as pending rather than
-success and links to server-filtered logs for detailed build phases. Attached
+success and links to server-filtered logs for detailed build phases. Leaving
+the review step stops that poll, and returning to review with the same YAML
+offers `Check deployment` instead of appending the server again. Attached
 and detached server sidebars both show `Python container`, the declared package
 or Git pin, resolved artifact or commit, and the actual versioned image.
 

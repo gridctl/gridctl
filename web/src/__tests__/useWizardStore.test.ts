@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isWizardDirty, useWizardStore, type WizardDraft } from '../stores/useWizardStore';
 
 function draft(overrides: Partial<WizardDraft> = {}): WizardDraft {
@@ -113,6 +113,72 @@ describe('isWizardDirty', () => {
     expect(isWizardDirty(useWizardStore.getState())).toBe(false);
     useWizardStore.setState({ yamlContent: 'name: x\n' });
     expect(isWizardDirty(useWizardStore.getState())).toBe(true);
+  });
+});
+
+describe('appendedResource', () => {
+  const record = { resourceType: 'mcp-server', name: 'github', yaml: 'name: github\nimage: alpine\n' };
+
+  beforeEach(() => {
+    useWizardStore.getState().reset();
+    useWizardStore.getState().setAppendInFlight(false);
+  });
+
+  it('is cleared by reset', () => {
+    useWizardStore.getState().setAppendedResource(record);
+    useWizardStore.getState().reset();
+    expect(useWizardStore.getState().appendedResource).toBeNull();
+  });
+
+  it('is cleared by loadDraft', () => {
+    useWizardStore.getState().setAppendedResource(record);
+    useWizardStore.getState().loadDraft(draft());
+    expect(useWizardStore.getState().appendedResource).toBeNull();
+  });
+
+  it('is kept by close', () => {
+    useWizardStore.getState().setAppendedResource(record);
+    useWizardStore.getState().close();
+    expect(useWizardStore.getState().appendedResource).toEqual(record);
+  });
+
+  it('persists the record but never the in-flight flag', () => {
+    useWizardStore.getState().setAppendInFlight(true);
+    useWizardStore.getState().setAppendedResource(record);
+    useWizardStore.getState().close();
+    const saved = JSON.parse(sessionStorage.getItem('gridctl-wizard-state') ?? '{}');
+    expect(saved.appendedResource).toEqual(record);
+    expect('appendInFlight' in saved).toBe(false);
+  });
+});
+
+describe('appendedResource session restore', () => {
+  afterEach(() => {
+    sessionStorage.clear();
+    vi.resetModules();
+  });
+
+  async function loadWith(appendedResource: unknown) {
+    sessionStorage.setItem('gridctl-wizard-state', JSON.stringify({ isOpen: true, currentStep: 'review', appendedResource }));
+    vi.resetModules();
+    const mod = await import('../stores/useWizardStore');
+    return mod.useWizardStore.getState();
+  }
+
+  it('restores a well-formed record', async () => {
+    const record = { resourceType: 'mcp-server', name: 'github', yaml: 'name: github\n' };
+    const state = await loadWith(record);
+    expect(state.appendedResource).toEqual(record);
+    expect(state.appendInFlight).toBe(false);
+  });
+
+  it.each([
+    ['null', null],
+    ['a string', 'github'],
+    ['a missing field', { resourceType: 'mcp-server', name: 'github' }],
+    ['a non-string field', { resourceType: 'mcp-server', name: 1, yaml: 'name: x\n' }],
+  ])('treats %s as no record', async (_label, value) => {
+    expect((await loadWith(value)).appendedResource).toBeNull();
   });
 });
 
