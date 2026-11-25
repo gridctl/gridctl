@@ -129,6 +129,9 @@ function fixtureBody(path) {
     case '/api/skills/sources': return [];
     case '/api/telemetry/inventory': return [];
     case '/api/limits': return fixture.limits;
+    case '/api/project/agents/status': return [];
+    case '/api/project/wiring/status': return [];
+    case '/api/hook-pins': return {};
     default:
       unknownEndpoints.add(path);
       return {};
@@ -387,8 +390,113 @@ try {
   check(wide.header === wide.inner && wide.main === wide.inner, `wide grid child: header is ${wide.header} px and main is ${wide.main} px in a ${wide.inner} px window`, wide);
   await quiet.close();
 
+  // Header labels and target sizes. The typical fixture has no telemetry
+  // block, so the Persistence pill reads "Persistence: Off".
+  async function loadHeader(path, width) {
+    fixture = FIXTURES.typical;
+    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    page.on('pageerror', (error) => failures.push(`header ${path}@${width}: ${error.message}`));
+    page.on('response', (response) => {
+      const p = new URL(response.url()).pathname;
+      if (p.startsWith('/api/') && response.status() >= 400) failures.push(`header ${path}@${width}: ${response.status()} ${p}`);
+    });
+    await page.goto(`${origin}${path}`);
+    await page.locator('main + footer').getByText('MCP servers').waitFor();
+    await page.locator('header button[title="Persistence: Off"]').waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await page.waitForTimeout(200);
+    return page;
+  }
+
+  function measureHeader() {
+    const rect = (el) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
+    };
+    // sr-only leaves a 1 px box; display:none leaves none.
+    const textShown = (el) => Boolean(el) && el.getClientRects().length > 0 && el.getBoundingClientRect().width > 1;
+    const header = document.querySelector('header');
+    const nav = header.querySelector('nav[aria-label="Workspaces"]');
+    const more = header.querySelector('button[aria-label="More actions"]');
+    const cluster = more.closest('.shrink-0');
+    const persistence = header.querySelector('button[title^="Persistence:"]');
+    const create = header.querySelector('button[aria-label="Create new"]');
+    return {
+      inner: innerWidth,
+      header: rect(header),
+      nav: { rect: rect(nav), scrollWidth: nav.scrollWidth, clientWidth: nav.clientWidth },
+      links: [...nav.querySelectorAll('a')].map((a) => ({
+        name: a.getAttribute('aria-label'),
+        rect: rect(a),
+        labeled: textShown(a.querySelector('span')),
+      })),
+      controls: [...cluster.querySelectorAll('button')].map((b) => ({ name: b.getAttribute('aria-label') || b.getAttribute('title'), rect: rect(b) })),
+      more: rect(more),
+      persistence: rect(persistence),
+      persistenceText: textShown(persistence.querySelector('span')),
+      create: rect(create),
+      createText: textShown(create.querySelector('span')),
+    };
+  }
+
+  const near = (a, b) => Math.abs(a - b) <= 1;
+  const big = (r) => r.width >= 32 - EPS && r.height >= 32 - EPS;
+  const headerSummary = [];
+
+  {
+    const page = await loadHeader('/stack', 1280);
+    const h = await page.evaluate(measureHeader);
+    const where = 'header at 1280 px';
+    check(h.links.length === 9 && h.links.every((l) => l.labeled), `${where}: not every workspace label is visible`, h.links);
+    check(h.nav.scrollWidth <= h.nav.clientWidth, `${where}: the workspace nav overflows`, h.nav);
+    for (const l of h.links) check(big(l.rect), `${where}: pill ${l.name} is under 32 by 32 px`, l);
+    check(h.controls.length === 7, `${where}: expected seven cluster controls`, h.controls);
+    for (const c of h.controls) check(big(c.rect), `${where}: control ${c.name} is under 32 by 32 px`, c);
+    check(near(h.persistence.width, 38), `${where}: Persistence trigger is ${h.persistence.width} px wide`, h.persistence);
+    check(near(h.create.width, 34) && near(h.create.height, 34), `${where}: Create new is ${h.create.width} by ${h.create.height} px`, h.create);
+    check(h.header.right <= 1280 + EPS && h.more.right <= 1280 + EPS, `${where}: header or More actions ends past the window`, { header: h.header, more: h.more });
+    headerSummary.push('1280 all labels');
+    await page.close();
+  }
+
+  {
+    const page = await loadHeader('/connections', 1100);
+    const h = await page.evaluate(measureHeader);
+    const where = 'header at 1100 px on /connections';
+    const labeled = h.links.filter((l) => l.labeled).map((l) => l.name);
+    check(labeled.length === 1 && labeled[0] === 'Connections', `${where}: labeled pills are ${labeled.join(', ')}`, h.links);
+    for (const l of h.links.filter((x) => x.name !== 'Connections')) check(big(l.rect), `${where}: pill ${l.name} is under 32 by 32 px`, l);
+    for (const c of h.controls) check(c.rect.left >= -EPS && c.rect.right <= h.inner + EPS, `${where}: control ${c.name} is outside the window`, c);
+    const active = h.links.find((l) => l.name === 'Connections');
+    check(active.rect.left >= h.nav.rect.left - EPS && active.rect.right <= h.nav.rect.right + EPS, `${where}: the Connections pill is not fully inside the nav`, { active, nav: h.nav });
+    headerSummary.push('1100 active only');
+    await page.close();
+  }
+
+  for (const width of [1024, 768, 390]) {
+    const page = await loadHeader('/stack', width);
+    const h = await page.evaluate(measureHeader);
+    const where = `header at ${width} px`;
+    check(h.header.width <= h.inner + EPS, `${where}: header is ${h.header.width} px wide`, h.header);
+    check(h.controls.length === 7, `${where}: expected seven cluster controls`, h.controls);
+    for (const c of h.controls) check(c.rect.left >= -EPS && c.rect.right <= h.inner + EPS, `${where}: control ${c.name} is outside the window`, c);
+    headerSummary.push(`${width} fits`);
+    await page.close();
+  }
+
+  for (const [width, labeledText] of [[1440, true], [1300, false]]) {
+    const page = await loadHeader('/stack', width);
+    const h = await page.evaluate(measureHeader);
+    const where = `header at ${width} px`;
+    check(h.links.every((l) => l.labeled), `${where}: not every workspace label is visible`, h.links);
+    check(h.createText === labeledText, `${where}: Create new text visible is ${h.createText}`, h.create);
+    check(h.persistenceText === labeledText, `${where}: Persistence text visible is ${h.persistenceText}`, h.persistence);
+    headerSummary.push(`${width} ${labeledText ? 'labeled' : 'icon'} actions`);
+    await page.close();
+  }
+
   assert.deepEqual(failures, []);
-  console.log(`Shell layout browser acceptance passed: ${summary.join('; ')}; quiet bar has one divider.${unknownEndpoints.size ? ` Unlisted endpoints answered empty: ${[...unknownEndpoints].join(', ')}.` : ''}`);
+  console.log(`Shell layout browser acceptance passed: ${summary.join('; ')}; quiet bar has one divider; header ${headerSummary.join(', ')}.${unknownEndpoints.size ? ` Unlisted endpoints answered empty: ${[...unknownEndpoints].join(', ')}.` : ''}`);
 } finally {
   await browser?.close();
   await server_.close();
