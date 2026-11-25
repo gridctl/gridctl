@@ -1,8 +1,10 @@
 import { CheckCircle2, GitBranch, Lock, LockOpen, ShieldAlert } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import type { ContextPin, ServerPins, SkillPin } from '../../lib/api';
-import { countServerAlertFindings, countSkillAlertFindings, contextHasAlertFindings } from '../../stores/usePinsStore';
+import type { HookPin } from '../../types';
+import { countServerAlertFindings, countSkillAlertFindings, contextHasAlertFindings, countHookAlertFindings } from '../../stores/usePinsStore';
 import { formatRelativeTime } from '../../lib/time';
+import { escapeNonPrintable } from '../../lib/nonPrintable';
 import { pinStatusMeta } from './pinStatus';
 import { listNavProps, listNavRowProps } from '../../hooks/useListNav';
 
@@ -10,7 +12,7 @@ import { listNavProps, listNavRowProps } from '../../hooks/useListNav';
 // Left rail: kind toggle + attention toggle + server or skill rows
 // ---------------------------------------------------------------------------
 
-export type PinsKind = 'server' | 'skill' | 'context';
+export type PinsKind = 'server' | 'skill' | 'context' | 'hook';
 
 interface PinsRailProps {
   compact: boolean;
@@ -22,6 +24,8 @@ interface PinsRailProps {
   skillEntries: Array<[string, SkillPin]>;
   /** Context fragment rows; rendered when kind=context. */
   contextEntries?: Array<[string, ContextPin]>;
+  /** Hook rows; rendered when kind=hook. */
+  hookEntries?: Array<[string, HookPin]>;
   /** Total pinned items of the active kind before filtering. */
   totalCount: number;
   activeName: string;
@@ -39,6 +43,7 @@ export function PinsRail({
   entries,
   skillEntries,
   contextEntries = [],
+  hookEntries = [],
   totalCount,
   activeName,
   onSelect,
@@ -47,8 +52,14 @@ export function PinsRail({
   isOutsideFilter,
 }: PinsRailProps) {
   const visibleCount =
-    kind === 'server' ? entries.length : kind === 'skill' ? skillEntries.length : contextEntries.length;
-  const noun = kind === 'server' ? 'server' : kind === 'skill' ? 'skill' : 'fragment';
+    kind === 'server'
+      ? entries.length
+      : kind === 'skill'
+        ? skillEntries.length
+        : kind === 'context'
+          ? contextEntries.length
+          : hookEntries.length;
+  const noun = kind === 'server' ? 'server' : kind === 'skill' ? 'skill' : kind === 'context' ? 'fragment' : 'hook';
   return (
     <aside aria-label="Pins rail" className="h-full flex flex-col bg-surface border-r border-border-subtle">
       <div
@@ -58,7 +69,7 @@ export function PinsRail({
         )}
       >
         <div className="flex items-center gap-1" role="group" aria-label="Pin kind">
-          {(['server', 'skill', 'context'] as const).map((k) => (
+          {(['server', 'skill', 'context', 'hook'] as const).map((k) => (
             <button
               key={k}
               onClick={() => onKindChange(k)}
@@ -70,7 +81,7 @@ export function PinsRail({
                   : 'bg-background/60 text-text-muted border-border/40 hover:text-text-secondary hover:border-border/60',
               )}
             >
-              {k === 'server' ? 'Servers' : k === 'skill' ? 'Skills' : 'Context'}
+              {k === 'server' ? 'Servers' : k === 'skill' ? 'Skills' : k === 'context' ? 'Context' : 'Hooks'}
             </button>
           ))}
         </div>
@@ -164,6 +175,22 @@ export function PinsRail({
             />
           ))}
 
+        {kind === 'hook' &&
+          hookEntries.map(([name, pin]) => (
+            <RailRow
+              key={name}
+              name={name}
+              status={pin.status}
+              findingCount={countHookAlertFindings(pin)}
+              secondary={`${pin.source === 'git' && pin.origin?.repo ? escapeNonPrintable(pin.origin.repo) : 'local'}${
+                pin.last_verified_at ? ` · verified ${formatRelativeTime(new Date(pin.last_verified_at))}` : ''
+              }`}
+              active={name === activeName}
+              outside={isOutsideFilter(name)}
+              onSelect={onSelect}
+            />
+          ))}
+
         {attentionOnly && visibleCount === 0 && (
           <div className="px-3 py-6 text-center space-y-2">
             <CheckCircle2 size={16} className="mx-auto text-status-running/70" />
@@ -222,7 +249,7 @@ function RailRow({
           {status === 'drift' ? <LockOpen size={11} /> : <Lock size={11} />}
         </span>
         <span className={cn('flex-1 min-w-0 text-xs font-mono truncate', active && 'text-primary')}>
-          {name}
+          {escapeNonPrintable(name)}
         </span>
         {findingCount > 0 && (
           <span

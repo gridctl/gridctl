@@ -1,11 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
 import { HooksWorkspace } from '../components/registry/hooks/HooksWorkspace';
+import { usePinsStore } from '../stores/usePinsStore';
 import type { PinFinding } from '../lib/api';
 import type { HookPinDiff, HookProjectionStatus, RegistryHook, RegistryHookList } from '../types';
+
+vi.mock('../components/ui/Toast', async () => {
+  const actual = await vi.importActual<typeof import('../components/ui/Toast')>('../components/ui/Toast');
+  return { ...actual, showToast: vi.fn() };
+});
 
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
@@ -18,12 +24,15 @@ vi.mock('../lib/api', async () => {
     unsyncHookProjections: vi.fn(),
     fetchHookPinDiff: vi.fn(),
     approveHookPin: vi.fn(),
+    fetchHookPins: vi.fn(),
   };
 });
 
+import { showToast } from '../components/ui/Toast';
 import {
   approveHookPin,
   fetchHookPinDiff,
+  fetchHookPins,
   fetchHookProjectionStatus,
   fetchRegistryHook,
   fetchRegistryHooks,
@@ -90,15 +99,31 @@ const diff: HookPinDiff = {
   }],
 };
 
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname + location.search}</div>;
+}
+
 function renderWorkspace() {
   return render(
     <MemoryRouter initialEntries={['/library?kind=hook']}>
       <CommandRegistryProvider>
         <HooksWorkspace onKindChange={() => {}} />
+        <Routes>
+          <Route path="*" element={<LocationProbe />} />
+        </Routes>
       </CommandRegistryProvider>
     </MemoryRouter>,
   );
 }
+
+const pinnedDiff: HookPinDiff = {
+  ...diff,
+  status: 'pinned',
+  new_document: diff.old_document,
+  modified_files: [],
+  findings: [],
+};
 
 beforeEach(() => {
   cleanup();
@@ -113,6 +138,8 @@ beforeEach(() => {
     { hook: 'block-force-push', client: 'claude-code', action: 'copied' },
   ]);
   vi.mocked(approveHookPin).mockResolvedValue(undefined);
+  vi.mocked(fetchHookPins).mockResolvedValue({});
+  usePinsStore.setState({ hookPins: null, hookPinsError: null });
 });
 
 describe('HooksWorkspace', () => {
@@ -151,6 +178,111 @@ describe('HooksWorkspace', () => {
     await waitFor(() => {
       expect(approveHookPin).toHaveBeenCalledWith('block-force-push', 'abc123', 'reviewed the script');
     });
+  });
+
+  async function openPinTab() {
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect block-force-push' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Pin' }));
+    return screen.findByLabelText('Approve reason');
+  }
+
+  it('reloads the review and the store after approve without reselecting', async () => {
+    vi.mocked(fetchHookPinDiff).mockResolvedValueOnce(diff).mockResolvedValue(pinnedDiff);
+    const refreshed = {
+      'block-force-push': {
+        status: 'pinned' as const,
+        definition_hash: 'h',
+        pinned_at: '2026-01-01T00:00:00Z',
+        last_verified_at: '2026-01-01T00:00:00Z',
+      },
+    };
+    vi.mocked(fetchHookPins).mockResolvedValue(refreshed);
+    renderWorkspace();
+    fireEvent.change(await openPinTab(), { target: { value: 'reviewed' } });
+    expect(screen.getByText('drift')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    expect(await screen.findByText('pinned')).toBeInTheDocument();
+    expect(screen.getByText('hook.json unchanged')).toBeInTheDocument();
+    expect(fetchHookPinDiff).toHaveBeenCalledTimes(2);
+    expect(approveHookPin).toHaveBeenCalledWith('block-force-push', 'abc123', 'reviewed');
+    expect(vi.mocked(approveHookPin).mock.calls[0]).toHaveLength(3);
+    expect(vi.mocked(fetchHookPins).mock.invocationCallOrder[0]).toBeGreaterThan(
+      vi.mocked(approveHookPin).mock.invocationCallOrder[0],
+    );
+    expect(usePinsStore.getState().hookPins).toEqual(refreshed);
+    expect(screen.queryByLabelText('Evidence references, one per line')).not.toBeInTheDocument();
+    expect(document.getElementById('pins-approve-button')).toBeNull();
+    expect(showToast).toHaveBeenCalledWith('success', 'Hook pin approved');
+  });
+
+  it('keeps the approve a success when the store refresh fails', async () => {
+    vi.mocked(fetchHookPins).mockRejectedValue(new Error('list down'));
+    renderWorkspace();
+    fireEvent.change(await openPinTab(), { target: { value: 'reviewed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(fetchHookPins).toHaveBeenCalled());
+    expect(showToast).toHaveBeenCalledWith('success', 'Hook pin approved');
+    expect(showToast).not.toHaveBeenCalledWith('error', expect.anything(), expect.anything());
+  });
+
+  it('reloads the diff after a 409 conflict', async () => {
+    vi.mocked(approveHookPin).mockRejectedValue(new HTTPError(409, 'hook content changed since review'));
+    renderWorkspace();
+    fireEvent.change(await openPinTab(), { target: { value: 'reviewed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(fetchHookPinDiff).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(showToast).mock.calls.some(([kind, msg]) => kind === 'error' && /Reloading the diff/.test(String(msg)))).toBe(true);
+  });
+
+  it('shows the refusal text on a 400 and keeps the reason without reloading', async () => {
+    vi.mocked(approveHookPin).mockRejectedValue(new HTTPError(400, 'reason contains a control character'));
+    renderWorkspace();
+    const reason = await openPinTab();
+    fireEvent.change(reason, { target: { value: 'reviewed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('error', 'reason contains a control character', {
+        detail: 'reason contains a control character',
+      }),
+    );
+    expect(fetchHookPinDiff).toHaveBeenCalledTimes(1);
+    expect(reason).toHaveValue('reviewed');
+  });
+
+  it('shows a Pin drift chip that opens the Pins review without selecting the card', async () => {
+    renderWorkspace();
+    const chip = await screen.findByRole('button', { name: 'Review pin drift for block-force-push' });
+    expect(chip).toHaveTextContent('Pin drift');
+    expect(screen.getAllByRole('button', { name: 'Inspect block-force-push' })).toHaveLength(1);
+    fireEvent.click(chip);
+    expect(screen.getByTestId('location')).toHaveTextContent(
+      '/pins?kind=hook&hook=block-force-push&view=drift',
+    );
+    expect(fetchRegistryHook).not.toHaveBeenCalled();
+  });
+
+  it('prefers the store pin status over the list row for the chip', async () => {
+    usePinsStore.setState({
+      hookPins: {
+        'block-force-push': {
+          status: 'pinned',
+          definition_hash: 'h',
+          pinned_at: '',
+          last_verified_at: '',
+        },
+      },
+    });
+    renderWorkspace();
+    expect(await screen.findByRole('button', { name: 'Inspect block-force-push' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Review pin drift/ })).not.toBeInTheDocument();
+  });
+
+  it('shows no chip for a pinned hook', async () => {
+    vi.mocked(fetchRegistryHooks).mockResolvedValue({ ...list, hooks: [{ ...block, pin_status: 'pinned' }] });
+    renderWorkspace();
+    expect(await screen.findByRole('button', { name: 'Inspect block-force-push' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Review pin drift/ })).not.toBeInTheDocument();
   });
 
   it('shows a target chip per projection and covered clients via their target', async () => {

@@ -11,6 +11,8 @@ import {
   skillHasAlertFindings,
   countSkillAlertFindings,
   contextHasAlertFindings,
+  hookHasAlertFindings,
+  countHookAlertFindings,
   usePinsStore,
 } from '../../stores/usePinsStore';
 import {
@@ -24,6 +26,7 @@ import {
   type SkillPin,
   type ContextPin,
 } from '../../lib/api';
+import type { HookPin } from '../../types';
 import { useListNav } from '../../hooks/useListNav';
 import { useUIStore } from '../../stores/useUIStore';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
@@ -31,6 +34,7 @@ import { PinsRail, type PinsKind } from '../pins/PinsRail';
 import { PinsServerDetail, TOOLS_SECTION_ID } from '../pins/PinsServerDetail';
 import { PinsSkillDetail } from '../pins/PinsSkillDetail';
 import { PinsContextDetail } from '../pins/PinsContextDetail';
+import { PinsHookDetail } from '../pins/PinsHookDetail';
 import { DRIFT_SECTION_ID } from '../pins/PinsDriftSection';
 import { usePinsCommands } from '../pins/usePinsCommands';
 import { showToast } from '../ui/Toast';
@@ -62,11 +66,14 @@ export function PinsWorkspace() {
   const skillPinsError = usePinsStore((s) => s.skillPinsError);
   const contextPins = usePinsStore((s) => s.contextPins);
   const contextPinsError = usePinsStore((s) => s.contextPinsError);
+  const hookPins = usePinsStore((s) => s.hookPins);
+  const hookPinsError = usePinsStore((s) => s.hookPinsError);
 
   // skill and context are explicit. Anything else, including a hand-edited
   // URL, stays the server kind so pre-kind URLs keep landing on servers.
   const kindParam = searchParams.get('kind');
-  const kind: PinsKind = kindParam === 'skill' || kindParam === 'context' ? kindParam : 'server';
+  const kind: PinsKind =
+    kindParam === 'skill' || kindParam === 'context' || kindParam === 'hook' ? kindParam : 'server';
 
   // Drifted servers first, then alphabetical, for a stable rail order that
   // surfaces what needs attention.
@@ -110,6 +117,16 @@ export function PinsWorkspace() {
     });
   }, [contextPins]);
 
+  const hookEntries = useMemo(() => {
+    if (!hookPins) return [];
+    return Object.entries(hookPins).sort(([aName, a], [bName, b]) => {
+      const aDrift = a.status === 'drift' ? 0 : 1;
+      const bDrift = b.status === 'drift' ? 0 : 1;
+      if (aDrift !== bDrift) return aDrift - bDrift;
+      return aName.localeCompare(bName);
+    });
+  }, [hookPins]);
+
   const updateParams = useCallback(
     (mutate: (p: URLSearchParams) => void) => {
       setSearchParams(
@@ -127,7 +144,9 @@ export function PinsWorkspace() {
   const serverParam = searchParams.get('server') ?? '';
   const skillParam = searchParams.get('skill') ?? '';
   const fragmentParam = searchParams.get('fragment') ?? '';
-  const selectedParam = kind === 'server' ? serverParam : kind === 'skill' ? skillParam : fragmentParam;
+  const hookParam = searchParams.get('hook') ?? '';
+  const selectedParam =
+    kind === 'server' ? serverParam : kind === 'skill' ? skillParam : kind === 'context' ? fragmentParam : hookParam;
   const viewParam = searchParams.get('view');
   const view: PinsView | null = PINS_VIEWS.includes(viewParam as PinsView)
     ? (viewParam as PinsView)
@@ -147,14 +166,30 @@ export function PinsWorkspace() {
     ([, pin]: [string, ContextPin]) => pin.status === 'drift' || contextHasAlertFindings(pin),
     [],
   );
+  const hookNeedsAttention = useCallback(
+    ([, pin]: [string, HookPin]) => pin.status === 'drift' || hookHasAlertFindings(pin),
+    [],
+  );
   const attentionDefault = useMemo(
     () =>
       kind === 'server'
         ? entries.some(needsAttention)
         : kind === 'skill'
           ? skillEntries.some(skillNeedsAttention)
-          : contextEntries.some(contextNeedsAttention),
-    [kind, entries, needsAttention, skillEntries, skillNeedsAttention, contextEntries, contextNeedsAttention],
+          : kind === 'context'
+            ? contextEntries.some(contextNeedsAttention)
+            : hookEntries.some(hookNeedsAttention),
+    [
+      kind,
+      entries,
+      needsAttention,
+      skillEntries,
+      skillNeedsAttention,
+      contextEntries,
+      contextNeedsAttention,
+      hookEntries,
+      hookNeedsAttention,
+    ],
   );
   // Only the two self-produced values are honored; anything else (a
   // hand-edited URL) falls through to the pref/default instead of silently
@@ -184,8 +219,19 @@ export function PinsWorkspace() {
     return contextEntries.filter((e) => contextNeedsAttention(e) || e[0] === fragmentParam);
   }, [contextEntries, attentionOnly, contextNeedsAttention, fragmentParam]);
 
+  const visibleHookEntries = useMemo(() => {
+    if (!attentionOnly) return hookEntries;
+    return hookEntries.filter((e) => hookNeedsAttention(e) || e[0] === hookParam);
+  }, [hookEntries, attentionOnly, hookNeedsAttention, hookParam]);
+
   const activeVisible =
-    kind === 'server' ? visibleEntries : kind === 'skill' ? visibleSkillEntries : visibleContextEntries;
+    kind === 'server'
+      ? visibleEntries
+      : kind === 'skill'
+        ? visibleSkillEntries
+        : kind === 'context'
+          ? visibleContextEntries
+          : visibleHookEntries;
 
   // A named selection that is not pinned resolves to nothing rather than the
   // first row, so a stale link never mounts another item's Approve under it.
@@ -216,8 +262,16 @@ export function PinsWorkspace() {
         : null,
     [kind, visibleContextEntries, activeName],
   );
+  const activeHookPin = useMemo(
+    () =>
+      kind === 'hook'
+        ? (visibleHookEntries.find(([name]) => name === activeName)?.[1] ?? null)
+        : null,
+    [kind, visibleHookEntries, activeName],
+  );
 
-  const selectionParamName = kind === 'server' ? 'server' : kind === 'skill' ? 'skill' : 'fragment';
+  const selectionParamName =
+    kind === 'server' ? 'server' : kind === 'skill' ? 'skill' : kind === 'context' ? 'fragment' : 'hook';
 
   const applySelection = useCallback(
     (name: string) => {
@@ -264,7 +318,8 @@ export function PinsWorkspace() {
 
   // null means the first poll for the active kind has not landed yet; both
   // endpoints return an empty object (not an error) when pinning is quiet.
-  const activeMap = kind === 'server' ? pins : kind === 'skill' ? skillPins : contextPins;
+  const activeMap =
+    kind === 'server' ? pins : kind === 'skill' ? skillPins : kind === 'context' ? contextPins : hookPins;
 
   // The name a reset in this workspace is removing. The reset handlers update
   // the store before deleting the param, possibly in separate renders, so the
@@ -397,8 +452,11 @@ export function PinsWorkspace() {
     if (!view || !activeName) return;
     // A drifted skill's or fragment's findings render inside the drift
     // section; scrolling to the pinned content would sail straight past them.
+    // The hook review renders findings inside that section whether or not
+    // the hook is drifted.
     const id =
       view === 'drift' ||
+      (view === 'findings' && kind === 'hook') ||
       (view === 'findings' &&
         ((kind === 'skill' && activeSkillDrifted) || (kind === 'context' && activeContextDrifted)))
         ? DRIFT_SECTION_ID
@@ -425,8 +483,16 @@ export function PinsWorkspace() {
     toggleFindingsOnly,
   });
 
-  const activeError = kind === 'server' ? pinsError : kind === 'skill' ? skillPinsError : contextPinsError;
-  const activeCount = kind === 'server' ? entries.length : kind === 'skill' ? skillEntries.length : contextEntries.length;
+  const activeError =
+    kind === 'server' ? pinsError : kind === 'skill' ? skillPinsError : kind === 'context' ? contextPinsError : hookPinsError;
+  const activeCount =
+    kind === 'server'
+      ? entries.length
+      : kind === 'skill'
+        ? skillEntries.length
+        : kind === 'context'
+          ? contextEntries.length
+          : hookEntries.length;
 
   return (
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
@@ -441,6 +507,7 @@ export function PinsWorkspace() {
             entries={visibleEntries}
             skillEntries={visibleSkillEntries}
             contextEntries={visibleContextEntries}
+            hookEntries={visibleHookEntries}
             totalCount={activeCount}
             activeName={activeName}
             onSelect={applySelection}
@@ -452,7 +519,9 @@ export function PinsWorkspace() {
                 ? !entries.filter(needsAttention).some(([n]) => n === name)
                 : kind === 'skill'
                   ? !skillEntries.filter(skillNeedsAttention).some(([n]) => n === name)
-                  : !contextEntries.filter(contextNeedsAttention).some(([n]) => n === name))
+                  : kind === 'context'
+                    ? !contextEntries.filter(contextNeedsAttention).some(([n]) => n === name)
+                    : !hookEntries.filter(hookNeedsAttention).some(([n]) => n === name))
             }
           />
         }
@@ -474,7 +543,9 @@ export function PinsWorkspace() {
                 ? headerTally(entries)
                 : kind === 'skill'
                   ? skillHeaderTally(skillEntries)
-                  : `${contextEntries.length} ${contextEntries.length === 1 ? 'fragment' : 'fragments'} pinned`}
+                  : kind === 'context'
+                    ? `${contextEntries.length} ${contextEntries.length === 1 ? 'fragment' : 'fragments'} pinned`
+                    : hookHeaderTally(hookEntries)}
             </div>
           </header>
 
@@ -517,6 +588,14 @@ export function PinsWorkspace() {
                       description="Library skills are pinned automatically when the daemon first observes them. Add a skill to the Library and it appears here after the next refresh."
                       className="flex-1"
                     />
+                  ) : kind === 'hook' ? (
+                    <EmptyState
+                      icon={Pin}
+                      tone="primary"
+                      title="No hooks pinned yet"
+                      description="Hooks are pinned when a pack that carries them is imported. Import a pack with hooks and they appear here after the next refresh."
+                      className="flex-1"
+                    />
                   ) : (
                     <EmptyState
                       icon={Pin}
@@ -555,6 +634,9 @@ export function PinsWorkspace() {
                         onReset={handleResetContext}
                       />
                     )}
+                    {kind === 'hook' && activeHookPin && (
+                      <PinsHookDetail key={activeName} name={activeName} pin={activeHookPin} />
+                    )}
                   </>
                 )}
               </>
@@ -582,6 +664,15 @@ function skillHeaderTally(entries: Array<[string, SkillPin]>): string {
   const drifted = entries.filter(([, pin]) => pin.status === 'drift').length;
   const withFindings = entries.filter(([, pin]) => countSkillAlertFindings(pin) > 0).length;
   const parts = [`${entries.length} ${entries.length === 1 ? 'skill' : 'skills'} pinned`];
+  if (drifted > 0) parts.push(`${drifted} drifted`);
+  if (withFindings > 0) parts.push(`${withFindings} with findings`);
+  return parts.join(' · ');
+}
+
+function hookHeaderTally(entries: Array<[string, HookPin]>): string {
+  const drifted = entries.filter(([, pin]) => pin.status === 'drift').length;
+  const withFindings = entries.filter(([, pin]) => countHookAlertFindings(pin) > 0).length;
+  const parts = [`${entries.length} ${entries.length === 1 ? 'hook' : 'hooks'} pinned`];
   if (drifted > 0) parts.push(`${drifted} drifted`);
   if (withFindings > 0) parts.push(`${withFindings} with findings`);
   return parts.join(' · ');
