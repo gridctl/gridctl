@@ -359,9 +359,10 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
   };
 
   const handleDeploy = useCallback(() => {
+    reset();
     close();
     onDeploy?.();
-  }, [close, onDeploy]);
+  }, [reset, close, onDeploy]);
 
   const formErrors = useMemo<WizardErrors>(() => {
     const ctx = {
@@ -593,7 +594,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
           ) : showPreviewPanel ? (
             <PanelGroup orientation="horizontal" className="h-full" resizeTargetMinimumSize={{ coarse: 24, fine: 16 }}>
               {/* Form Panel */}
-              <Panel defaultSize={55} minSize={40}>
+              <Panel defaultSize="55%" minSize="40%">
                 <div className="flex flex-col h-full">
                   <div className="flex-1 overflow-y-auto scrollbar-dark px-6 py-4">
                     {renderStepContent(
@@ -623,7 +624,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
               <PanelResizeHandle className="w-px bg-border/30 hover:bg-primary/30 transition-colors" />
 
               {/* Preview Panel */}
-              <Panel defaultSize={45} minSize={30}>
+              <Panel defaultSize="45%" minSize="30%">
                 <YAMLPreview yaml={expertMode ? yamlContent : generatedYaml} resourceType={selectedType ?? 'stack'} />
               </Panel>
             </PanelGroup>
