@@ -1614,7 +1614,7 @@ Lists saved wizard drafts, newest first.
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8180/api/wizard/drafts
 ```
 
-**Response:** JSON array of `{id, name, resourceType, formData, createdAt, updatedAt}`.
+**Response:** JSON array of `{id, name, resourceType, formData, yaml, createdAt, updatedAt}`. `yaml` is optional: the YAML text of a draft saved in YAML mode. It is omitted for drafts saved in Form mode and for drafts saved before the field existed.
 
 #### `POST /api/wizard/drafts`
 
@@ -1628,6 +1628,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   -d '{"name": "GitHub MCP", "resourceType": "mcp-server", "formData": {}}' \
   http://localhost:8180/api/wizard/drafts
 ```
+
+The body may include an optional `yaml` string, the YAML text of a draft saved in YAML mode; it is stored and returned unchanged.
 
 **Response:** `201 Created` with the draft object (server-generated `id`).
 

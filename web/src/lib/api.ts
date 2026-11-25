@@ -1953,6 +1953,8 @@ export interface WizardDraft {
   name: string;
   resourceType: string;
   formData: Record<string, unknown>;
+  // YAML text of a draft saved in YAML mode.
+  yaml?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -1973,6 +1975,7 @@ export async function saveWizardDraft(draft: {
   name: string;
   resourceType: string;
   formData: Record<string, unknown>;
+  yaml?: string;
 }): Promise<WizardDraft> {
   return mutateJSON<WizardDraft>('/api/wizard/drafts', 'POST', draft);
 }
