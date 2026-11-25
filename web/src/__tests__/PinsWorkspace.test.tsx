@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useEffect } from 'react';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter } from 'react-router';
 import { CommandRegistryProvider, useCommandRegistry } from '../hooks/useCommandRegistry';
 import { PinsWorkspace } from '../components/workspaces/PinsWorkspace';
 import { requestGatewayPoll } from '../hooks/usePolling';
 import { usePinsStore } from '../stores/usePinsStore';
+import { useStackStore } from '../stores/useStackStore';
 import { useUIStore } from '../stores/useUIStore';
 import * as api from '../lib/api';
 import type { PinsDiff, ServerPins } from '../lib/api';
@@ -90,6 +91,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  useStackStore.setState({ toolCatalog: [] });
   usePinsStore.setState({ pins: null, skillPins: null, pinsError: null, skillPinsError: null });
   useUIStore.setState({ pinsPrefs: { attentionOnly: null, findingsOnly: false } });
   vi.restoreAllMocks();
@@ -873,5 +875,71 @@ describe('PinsWorkspace', () => {
         'pins:reset',
       ]),
     );
+  });
+});
+
+describe('new tools in server drift', () => {
+  it('shows the catalog description and input schema for a new tool', async () => {
+    useStackStore.setState({
+      toolCatalog: [
+        {
+          name: 'zapier__brand_new_tool',
+          description: 'Sends mail\u200b on your behalf',
+          inputSchema: { type: 'object', properties: { to: { type: 'string' } } },
+          outputSchema: { type: 'object', properties: { id: { type: 'string' } } },
+        },
+        // A same-suffix tool on another server must not match.
+        { name: 'other__brand_new_tool', description: 'wrong server', inputSchema: {} },
+      ],
+    });
+    renderWorkspace();
+
+    expect(await screen.findByText('New tools (pinned on approve)')).toBeInTheDocument();
+    expect(screen.getByText('Live definition from the tool catalog')).toBeInTheDocument();
+    expect(screen.getByText('Sends mail\\u200b on your behalf')).toBeInTheDocument();
+    expect(screen.queryByText('wrong server')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New input schema' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('"to": {')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New output schema' })).toBeInTheDocument();
+    expect(screen.getByText('"id": {')).toBeInTheDocument();
+    expect(screen.queryByText(/Definition not available/)).not.toBeInTheDocument();
+  });
+
+  it('says the definition is not available when the catalog lacks the tool', async () => {
+    renderWorkspace();
+
+    expect(await screen.findByText('brand_new_tool')).toBeInTheDocument();
+    expect(screen.getByText(/Definition not available from the tool catalog/)).toBeInTheDocument();
+    expect(screen.getByText('gridctl pins diff zapier')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /approve 3 changes/i })).toBeEnabled();
+  });
+
+  it('fills in a new tool card when the catalog arrives after the diff', async () => {
+    renderWorkspace();
+    expect(await screen.findByText(/Definition not available/)).toBeInTheDocument();
+
+    act(() => {
+      useStackStore.setState({
+        toolCatalog: [{ name: 'zapier__brand_new_tool', description: 'late arrival', inputSchema: {} }],
+      });
+    });
+    expect(await screen.findByText('late arrival')).toBeInTheDocument();
+    expect(screen.queryByText(/Definition not available/)).not.toBeInTheDocument();
+  });
+
+  it('opens the confirmation for five new tools and no modified tools', async () => {
+    const approve = vi.spyOn(api, 'approveServerPins').mockResolvedValue(undefined);
+    vi.spyOn(api, 'fetchPinsDiff').mockResolvedValue({
+      ...zapierDiff,
+      modified_tools: [],
+      new_tools: ['t1', 't2', 't3', 't4', 't5'],
+      removed_tools: [],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: /approve 5 changes/i }));
+    expect(approve).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('alertdialog', { name: /approve 5 changes on zapier/i });
+    expect(dialog).toHaveTextContent('5 new');
   });
 });
