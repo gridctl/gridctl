@@ -3282,7 +3282,7 @@ Removes a fragment after writing a backup. Returns `{ "name", "backup" }`.
 
 ### Skill Sources
 
-Manage imported skill sources, git or local directory. The lockfile and origin sidecars hold import auth. `skills.yaml` is read by the list endpoint for auto-update display only, and it does not decorate a local source unless `repo` matches. Mirrors `gridctl skill *` operations for the Library workspace. The import wizard still accepts git URLs only. A local directory uses this endpoint or the CLI.
+Manage imported skill sources, git or local directory. The lockfile and origin sidecars hold import auth. `skills.yaml` is read by the list endpoint for auto-update display only, and it does not decorate a local source unless `repo` matches. Mirrors `gridctl skill *` operations for the Library workspace. The import wizard accepts a Git URL or an absolute directory on the daemon host and sends either to this endpoint; a local directory takes no ref or path.
 
 Auth for private repos accepts an optional `auth` object on mutating endpoints:
 
