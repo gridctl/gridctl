@@ -746,7 +746,8 @@ function walkInput(input: unknown, rebuilt: unknown, path: string, lost: Set<str
     for (const [key, value] of Object.entries(input)) {
       const child = joinPath(path, key);
       if (!isMapping(rebuilt) || !(key in rebuilt)) {
-        lost.add(child);
+        // A key with no value (a blank form row builds as `env:`) carries nothing to lose.
+        if (value !== null && value !== undefined) lost.add(child);
       } else {
         walkInput(value, rebuilt[key], child, lost);
       }
@@ -805,6 +806,11 @@ export function yamlToFormWithLoss(
   const merged = { ...current, ...parsedData };
   try {
     const input: unknown = parseYAML(yaml);
+    // Unedited builder output keeps the current form data as is, so a field
+    // the parser infers (an external server with no URL reads as container)
+    // cannot change or drop what the form holds.
+    const unedited: unknown = parseYAML(buildYAML({ type: parsed.type, data: current } as unknown as WizardFormData));
+    if (structurallyEqual(input, unedited)) return { data: current, lostKeys: [] };
     const rebuilt: unknown = parseYAML(buildYAML({ type: parsed.type, data: merged } as unknown as WizardFormData));
     const bare: unknown = parseYAML(buildYAML(parsed));
     const lost = new Set<string>();

@@ -210,6 +210,39 @@ describe('yamlToFormWithLoss', () => {
     expect(check(stack, 'stack', stackForm).lostKeys).toEqual([]);
   });
 
+  describe('blank form rows', () => {
+    const cases: [string, 'mcp-server' | 'resource', Record<string, unknown>][] = [
+      ['a blank env row', 'mcp-server', { ...containerForm, env: { '': '' } }],
+      ['a blank build_args row', 'mcp-server', { ...sourceForm, buildArgs: { '': '' } }],
+      ['a blank tools item', 'mcp-server', { ...containerForm, tools: [''] }],
+      ['a blank volumes item', 'mcp-server', { ...containerForm, volumes: [''] }],
+      ['a blank source extras item', 'mcp-server', { ...sourceForm, source: { ...sourceForm.source, extras: [''] } }],
+      ['a blank resource env row', 'resource', { name: 'db', image: 'postgres:16', env: { '': '' } }],
+      ['a blank resource ports item', 'resource', { name: 'db', image: 'postgres:16', ports: [''] }],
+    ];
+
+    it.each(cases)('reports nothing for unedited YAML with %s', (_label, type, form) => {
+      const yaml = buildYAML({ type, data: form } as never);
+      expect(check(yaml, type, form).lostKeys).toEqual([]);
+    });
+
+    it.each(cases)('reports nothing for a name edit with %s', (_label, type, form) => {
+      const name = String(form.name);
+      const yaml = buildYAML({ type, data: form } as never).replace(`name: ${name}`, 'name: renamed');
+      const result = check(yaml, type, form);
+      expect(result.lostKeys).toEqual([]);
+      expect(result.data.name).toBe('renamed');
+    });
+  });
+
+  it('keeps an unedited external form with auth and no URL', () => {
+    const form: MCPServerFormData = { name: 'a', serverType: 'external', auth: { type: 'bearer', token: 't' } };
+    const result = check(serverYAML(form), 'mcp-server', form);
+    expect(result.lostKeys).toEqual([]);
+    expect(result.data.serverType).toBe('external');
+    expect(result.data.auth).toEqual(form.auth);
+  });
+
   it('returns a parse error unchanged', () => {
     const result = yamlToFormWithLoss('name: [unclosed', 'stack', { name: '' });
     expect('error' in result).toBe(true);
