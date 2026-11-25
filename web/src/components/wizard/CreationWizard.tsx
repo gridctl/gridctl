@@ -176,6 +176,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
     setYamlError,
     openapiOperationStats,
     importInProgress,
+    appendInFlight,
     reset,
   } = useWizardStore();
   const titleId = useId();
@@ -558,9 +559,10 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
             <button
               type="button"
               onClick={requestReset}
+              disabled={appendInFlight}
               title="Start over"
               aria-label="Start over"
-              className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors text-text-muted hover:text-text-secondary"
+              className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors text-text-muted hover:text-text-secondary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
             >
               <RotateCcw size={14} />
             </button>
@@ -655,7 +657,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
         <div className="flex items-center justify-between px-6 py-3 border-t border-border/30 flex-shrink-0">
           <div>
             {currentStepIdx > 0 && (
-              <Button variant="ghost" size="sm" onClick={goBack}>
+              <Button variant="ghost" size="sm" onClick={goBack} disabled={appendInFlight}>
                 <ArrowLeft size={14} />
                 Back
               </Button>
