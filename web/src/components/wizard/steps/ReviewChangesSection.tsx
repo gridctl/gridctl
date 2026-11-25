@@ -11,6 +11,7 @@ type FragmentType = 'mcp-server' | 'resource';
 interface PreviewState {
   key: string;
   preview: StackAppendPreview | null;
+  status: number;
   message: string;
   issues: string[];
 }
@@ -88,7 +89,7 @@ function StackFileDiff({ preview, resourceType }: { preview: StackAppendPreview;
           Deploy re-serializes the whole file, so blank lines and indentation elsewhere can change. Comments and key order are kept.
         </p>
       )}
-      <div className="max-h-64 overflow-auto rounded border border-border/40 bg-background/60 scrollbar-dark" aria-label="Stack file diff">
+      <div role="region" tabIndex={0} className="max-h-64 overflow-auto rounded border border-border/40 bg-background/60 scrollbar-dark focus-visible:-outline-offset-2" aria-label="Stack file diff">
         <pre className="text-2xs font-mono leading-relaxed p-2 whitespace-pre-wrap">
           {shown.map((hunk, h) => (
             <Fragment key={h}>
@@ -108,12 +109,18 @@ function StackFileDiff({ preview, resourceType }: { preview: StackAppendPreview;
 /**
  * States what Deploy writes for a server or resource, from a server-computed
  * preview of the append. `ready` is true once the step's own validation has
- * finished with no errors.
+ * finished with no errors. `appendedName` is set when this exact YAML was
+ * already appended, so Deploy only checks status and no preview is requested.
  */
-export function DeployChangesSection({ yaml, resourceType, ready }: { yaml: string; resourceType: FragmentType; ready: boolean }) {
+export function DeployChangesSection({ yaml, resourceType, ready, appendedName = '' }: {
+  yaml: string;
+  resourceType: FragmentType;
+  ready: boolean;
+  appendedName?: string;
+}) {
   const key = `${resourceType}\n${yaml}`;
-  const fetchable = ready && yaml.trim().length > 0;
-  const [state, setState] = useState<PreviewState>({ key: '', preview: null, message: '', issues: [] });
+  const fetchable = ready && !appendedName && yaml.trim().length > 0;
+  const [state, setState] = useState<PreviewState>({ key: '', preview: null, status: 0, message: '', issues: [] });
 
   useEffect(() => {
     if (!fetchable) return;
@@ -121,13 +128,14 @@ export function DeployChangesSection({ yaml, resourceType, ready }: { yaml: stri
     previewStackAppend(yaml, resourceType)
       .then((preview) => {
         if (!active) return;
-        setState({ key, preview, message: '', issues: [] });
+        setState({ key, preview, status: 0, message: '', issues: [] });
       })
       .catch((err) => {
         if (!active) return;
-        const issues = err instanceof HTTPError && err.status === 422 && err.errors?.length ? err.errors : [];
+        const status = err instanceof HTTPError ? err.status : 0;
+        const issues = err instanceof HTTPError && err.errors?.length ? err.errors : [];
         const message = err instanceof Error && err.message ? err.message : 'Preview failed';
-        setState({ key, preview: null, message, issues });
+        setState({ key, preview: null, status, message, issues });
       });
     return () => { active = false; };
   }, [fetchable, key, yaml, resourceType]);
@@ -136,6 +144,16 @@ export function DeployChangesSection({ yaml, resourceType, ready }: { yaml: stri
   const pending = fetchable && !current;
   const preview = current?.preview ?? null;
   const noun = resourceType === 'mcp-server' ? 'server' : 'resource';
+
+  if (appendedName) {
+    return (
+      <SectionCard label="What Deploy changes">
+        <p className="text-text-secondary">
+          {appendedName} is already in the stack file. Check deployment reads its status and writes nothing.
+        </p>
+      </SectionCard>
+    );
+  }
 
   return (
     <SectionCard label="What Deploy changes">
@@ -166,7 +184,11 @@ export function DeployChangesSection({ yaml, resourceType, ready }: { yaml: stri
           <p className="text-text-secondary">Deploy adds this {noun} to the active stack file.</p>
           {current && current.issues.length > 0 && (
             <div className="space-y-1 text-status-error">
-              <p>The stack file would be invalid after this change:</p>
+              <p>
+                {current.status === 422
+                  ? 'The stack file would be invalid after this change:'
+                  : `Could not preview the change: ${current.message.replace(/\.$/, '')}.`}
+              </p>
               <ul className="list-disc pl-5 space-y-0.5">
                 {current.issues.map((issue, i) => <li key={i} className="break-words">{issue}</li>)}
               </ul>

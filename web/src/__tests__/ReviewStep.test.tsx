@@ -749,7 +749,8 @@ describe('ReviewStep states what the primary action changes', () => {
     expect(group).toHaveTextContent('Deploy adds the server fetch-renamed to mcp-servers in /home/me/stacks/stack.yaml.');
     expect(group).toHaveTextContent('tries to start the server');
     expect(group).toHaveTextContent('3 lines added, 1 existing line rewritten');
-    const diff = deployGroup().getByLabelText('Stack file diff');
+    const diff = deployGroup().getByRole('region', { name: 'Stack file diff' });
+    expect(diff).toHaveAttribute('tabindex', '0');
     expect(diff.textContent).toContain('+   - name: fetch-renamed');
     expect(diff.textContent).toContain('+     image: alpine');
     expect(diff.textContent).toContain('- mcp-servers: []');
@@ -859,6 +860,93 @@ describe('ReviewStep states what the primary action changes', () => {
     await waitFor(() => expect(onDeploy).toHaveBeenCalledTimes(1));
     expect(showToast).toHaveBeenCalledWith('success', "resource 'db' added to stack");
     expect(showToast).toHaveBeenCalledWith('warning', 'Use Reload Config to start it.');
+  });
+
+  it('states the server is already appended and requests no preview', async () => {
+    useWizardStore.getState().setAppendedResource({ resourceType: 'mcp-server', name: 'fetch-renamed', yaml: SERVER });
+    vi.mocked(previewStackAppend).mockRejectedValue(new HTTPError(422, 'stack validation failed after append', {
+      errors: ['mcp-servers[1].name: duplicate name'],
+    }));
+    render(<ReviewStep yaml={SERVER} resourceType="mcp-server" resourceName="fetch" />);
+    expect(await screen.findByRole('button', { name: 'Check deployment' })).toBeInTheDocument();
+    await screen.findByText('Ready to deploy');
+    const group = screen.getByRole('group', { name: 'What Deploy changes' });
+    expect(group).toHaveTextContent('fetch-renamed is already in the stack file. Check deployment reads its status and writes nothing.');
+    expect(group).not.toHaveTextContent('would be invalid');
+    expect(group).not.toHaveTextContent('Deploy adds');
+    expect(previewStackAppend).not.toHaveBeenCalled();
+  });
+
+  it('lists 400 strict-decode issues under the preview failure sentence', async () => {
+    vi.mocked(previewStackAppend).mockRejectedValue(new HTTPError(400, 'The YAML was rejected', {
+      errors: ['mcp-servers[0].imagee: unknown field "imagee"'],
+    }));
+    render(<ReviewStep yaml={SERVER} resourceType="mcp-server" resourceName="fetch" />);
+    const group = screen.getByRole('group', { name: 'What Deploy changes' });
+    expect(await within(group).findByText('mcp-servers[0].imagee: unknown field "imagee"')).toBeInTheDocument();
+    expect(group).toHaveTextContent('Could not preview the change: The YAML was rejected.');
+    expect(group).not.toHaveTextContent('would be invalid');
+  });
+
+  it('describes an oversized stack file without a diff for a server and a resource', async () => {
+    const big = (tag: string) => Array.from({ length: 600 }, (_, i) => `${tag}${i}`).join('\n') + '\n';
+    vi.mocked(previewStackAppend).mockResolvedValue(preview({ before: big('a'), after: big('b') }));
+    const view = render(<ReviewStep yaml={SERVER} resourceType="mcp-server" resourceName="fetch" />);
+    let group = screen.getByRole('group', { name: 'What Deploy changes' });
+    await within(group).findByText(/too large to diff/);
+    expect(group).toHaveTextContent('The stack file is too large to diff here. Deploy adds the block shown under Exact server YAML and re-serializes the rest of the file.');
+    expect(within(group).queryByRole('region', { name: 'Stack file diff' })).not.toBeInTheDocument();
+    view.unmount();
+
+    vi.mocked(previewStackAppend).mockResolvedValue(preview({ resourceType: 'resource', resourceName: 'db', before: big('a'), after: big('b') }));
+    render(<ReviewStep yaml={'name: db\nimage: postgres\n'} resourceType="resource" resourceName="db" />);
+    group = screen.getByRole('group', { name: 'What Deploy changes' });
+    await within(group).findByText(/too large to diff/);
+    expect(group).toHaveTextContent('Deploy adds the block shown in the YAML preview and re-serializes the rest of the file.');
+    expect(within(group).queryByRole('region', { name: 'Stack file diff' })).not.toBeInTheDocument();
+  });
+
+  it('accepts a one-line difference for a stack file without a trailing newline', async () => {
+    vi.mocked(previewStackAppend).mockResolvedValue(preview({
+      before: 'name: s\nmcp-servers:\n  - name: a',
+      after: 'name: s\nmcp-servers:\n  - name: a\n  - name: fetch-renamed\n',
+    }));
+    render(<ReviewStep yaml={SERVER} resourceType="mcp-server" resourceName="fetch" />);
+    const group = screen.getByRole('group', { name: 'What Deploy changes' });
+    await within(group).findByText(/2 lines added/);
+    expect(group).not.toHaveTextContent('rewritten');
+  });
+
+  it('separates distant hunks and shows old and new line numbers', async () => {
+    const lines = 'a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n';
+    vi.mocked(previewStackAppend).mockResolvedValue(preview({ before: lines, after: `top\n${lines.replace(/\n$/, '')}\nbottom\n` }));
+    render(<ReviewStep yaml={SERVER} resourceType="mcp-server" resourceName="fetch" />);
+    const group = screen.getByRole('group', { name: 'What Deploy changes' });
+    await within(group).findByText(/2 lines added/);
+    const diff = within(group).getByRole('region', { name: 'Stack file diff' });
+    expect(within(diff).getByText('...')).toBeInTheDocument();
+    expect(diff.textContent).toContain('1+ top');
+    expect(diff.textContent).toContain('1011  j');
+    expect(diff.textContent).toContain('12+ bottom');
+    expect(diff.textContent).not.toContain('  e');
+    expect(group).not.toHaveTextContent('Diff truncated');
+  });
+
+  it('truncates a diff longer than 2000 lines', async () => {
+    const after = Array.from({ length: 2001 }, (_, i) => `l${i}`).join('\n') + '\n';
+    vi.mocked(previewStackAppend).mockResolvedValue(preview({ before: '', after }));
+    render(<ReviewStep yaml={SERVER} resourceType="mcp-server" resourceName="fetch" />);
+    const group = screen.getByRole('group', { name: 'What Deploy changes' });
+    expect(await within(group).findByText('Diff truncated at 2000 lines.')).toBeInTheDocument();
+  });
+
+  it('says the gateway tries to start a watched resource', async () => {
+    vi.mocked(previewStackAppend).mockResolvedValue(preview({ resourceType: 'resource', resourceName: 'db' }));
+    render(<ReviewStep yaml={'name: db\nimage: postgres\n'} resourceType="resource" resourceName="db" />);
+    const group = screen.getByRole('group', { name: 'What Deploy changes' });
+    await within(group).findByText(/tries to start the resource/);
+    expect(group).toHaveTextContent('Deploy adds the resource db to resources in /home/me/stacks/stack.yaml.');
+    expect(group).not.toHaveTextContent('Review waits');
   });
 
   it('describes Save & Load for a named stack against the active stack', async () => {

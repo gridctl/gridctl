@@ -1588,8 +1588,9 @@ export async function appendToStack(
  * path, and whether a file watcher will apply the write.
  * POST /api/stack/append/preview
  *
- * A 422 post-append validation failure carries its issues on HTTPError.errors
- * as "<field>: <message>" lines.
+ * A 422 post-append validation failure, or a 400 strict-decode failure of the
+ * stack file or snippet, carries its issues on HTTPError.errors as
+ * "<field>: <message>" lines.
  */
 export async function previewStackAppend(yaml: string, resourceType: string): Promise<StackAppendPreview> {
   const endpoint = '/api/stack/append/preview';
@@ -1602,12 +1603,13 @@ export async function previewStackAppend(yaml: string, resourceType: string): Pr
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     const validation = data?.validation;
-    const errors = response.status === 422 && hasIssueList(validation)
-      ? validation.issues.map((issue) => `${issue.field}: ${issue.message}`)
-      : undefined;
+    const issues = response.status === 422 && hasIssueList(validation)
+      ? validation.issues
+      : response.status === 400 && hasIssueList(data) ? data.issues : undefined;
+    const errors = issues?.map((issue) => `${issue.field}: ${issue.message}`);
     const message = typeof data?.error === 'string' && data.error
       ? data.error
-      : `POST ${endpoint} failed: ${response.status}`;
+      : errors?.length ? 'The YAML was rejected' : `POST ${endpoint} failed: ${response.status}`;
     throw new HTTPError(response.status, message, { errors });
   }
 

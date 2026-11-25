@@ -125,6 +125,18 @@ describe('previewStackAppend', () => {
     }));
   });
 
+  it('maps a 400 ValidationResult body to HTTPError.errors', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(unknownField, 400)));
+
+    const err = await previewStackAppend('name: x\nimagee: y\n', 'mcp-server').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HTTPError);
+    expect(err).toEqual(expect.objectContaining({
+      status: 400,
+      message: 'The YAML was rejected',
+      errors: ['imagee: unknown field "imagee" (line 4)'],
+    }));
+  });
+
   it('rejects another failure with the server error and no issues', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ error: 'No stack file configured' }, 503)));
 

@@ -622,7 +622,7 @@ export function ReviewStep({
       )}
 
       {isStackFragmentType(resourceType) && (
-        <DeployChangesSection yaml={yaml} resourceType={resourceType} ready={!validating && !hasErrors} />
+        <DeployChangesSection yaml={yaml} resourceType={resourceType} ready={!validating && !hasErrors} appendedName={appendedName} />
       )}
       {resourceType === 'stack' && <SaveLoadChangesSection yaml={yaml} activeStack={activeStack} />}
 
