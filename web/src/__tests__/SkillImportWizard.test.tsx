@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { MemoryRouter } from 'react-router';
 import { BrowseStep } from '../components/wizard/steps/BrowseStep';
 import { SkillImportWizard } from '../components/wizard/steps/SkillImportWizard';
 import type { SkillPreview } from '../types';
 import { addSkillSource, previewSkillSource } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
+import { useWizardStore } from '../stores/useWizardStore';
 
 // Mock API calls
 vi.mock('../lib/api', async (importOriginal) => ({
@@ -50,7 +52,7 @@ function makePreview(overrides?: Partial<SkillPreview>): SkillPreview {
 
 describe('SkillImportWizard', () => {
   it('renders step indicator with 4 steps', () => {
-    render(<SkillImportWizard />);
+    render(<MemoryRouter><SkillImportWizard /></MemoryRouter>);
     expect(screen.getByText('Add Source')).toBeInTheDocument();
     expect(screen.getByText('Browse & Select')).toBeInTheDocument();
     expect(screen.getByText('Configure')).toBeInTheDocument();
@@ -58,19 +60,19 @@ describe('SkillImportWizard', () => {
   });
 
   it('starts on the Add Source step', () => {
-    render(<SkillImportWizard />);
+    render(<MemoryRouter><SkillImportWizard /></MemoryRouter>);
     expect(screen.getByText('Import from Git')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('https://github.com/owner/repo')).toBeInTheDocument();
   });
 
   it('shows optional ref and path fields', () => {
-    render(<SkillImportWizard />);
+    render(<MemoryRouter><SkillImportWizard /></MemoryRouter>);
     expect(screen.getByPlaceholderText('main, v1.0, ^1.2')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('skills/')).toBeInTheDocument();
   });
 
   it('renders Scan for Skills button', () => {
-    render(<SkillImportWizard />);
+    render(<MemoryRouter><SkillImportWizard /></MemoryRouter>);
     expect(screen.getByText('Scan for Skills')).toBeInTheDocument();
   });
 });
@@ -275,7 +277,7 @@ describe('SkillImportWizard install failures', () => {
   });
 
   async function scanToBrowse() {
-    render(<SkillImportWizard />);
+    render(<MemoryRouter><SkillImportWizard /></MemoryRouter>);
     fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repo'), { target: { value: REPO } });
     fireEvent.click(screen.getByText('Scan for Skills'));
     return screen.findByRole('button', { name: /Install 1 Skill/ });
@@ -337,7 +339,7 @@ describe('SkillImportWizard install failures', () => {
     vi.mocked(addSkillSource)
       .mockRejectedValueOnce(new Error('clone failed'))
       .mockRejectedValueOnce(new Error('still failing'));
-    render(<SkillImportWizard />);
+    render(<MemoryRouter><SkillImportWizard /></MemoryRouter>);
     fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repo'), { target: { value: REPO } });
     fireEvent.click(screen.getByText('Scan for Skills'));
     fireEvent.click(await screen.findByRole('button', { name: /Next/ }));
@@ -393,7 +395,7 @@ describe('SkillImportWizard activation and trust', () => {
 
   async function scan(preview: unknown) {
     vi.mocked(previewSkillSource).mockResolvedValue(preview as never);
-    render(<SkillImportWizard />);
+    render(<MemoryRouter><SkillImportWizard /></MemoryRouter>);
     fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repo'), { target: { value: REPO } });
     fireEvent.click(screen.getByText('Scan for Skills'));
     await screen.findByText(/found$/);
@@ -567,5 +569,96 @@ describe('BrowseStep scan badge and keyboard preview', () => {
     expect(screen.getByText('second body')).toBeInTheDocument();
     expect(second).toHaveAttribute('aria-current', 'true');
     expect(screen.getByRole('button', { name: 'Preview first-skill' })).not.toHaveAttribute('aria-current');
+  });
+});
+
+describe('SkillImportWizard result actions', () => {
+  const REPO = 'https://github.com/owner/repo';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useWizardStore.getState().reset();
+    useWizardStore.setState({ isOpen: true, selectedType: 'skill', currentStep: 'form' });
+    vi.mocked(previewSkillSource).mockResolvedValue({ skills: [makePreview()] } as never);
+  });
+
+  async function install() {
+    render(<MemoryRouter><SkillImportWizard /></MemoryRouter>);
+    fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repo'), { target: { value: REPO } });
+    fireEvent.click(screen.getByText('Scan for Skills'));
+    fireEvent.click(await screen.findByRole('button', { name: /Install 1 Skill/ }));
+  }
+
+  it('focuses the result heading and offers library actions after an import', async () => {
+    vi.mocked(addSkillSource).mockResolvedValueOnce({ imported: [{ name: 'test-skill' }] } as never);
+    await install();
+    const heading = await screen.findByRole('heading', { name: 'Import Complete' });
+    await waitFor(() => expect(heading).toHaveFocus());
+    expect(screen.getByRole('button', { name: 'View in Library' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Import another' })).toBeInTheDocument();
+  });
+
+  it('returns to Add Source with an empty URL on Import another', async () => {
+    vi.mocked(addSkillSource).mockResolvedValueOnce({ imported: [{ name: 'test-skill' }] } as never);
+    await install();
+    fireEvent.click(await screen.findByRole('button', { name: 'Import another' }));
+    expect(screen.getByText('Import from Git')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('https://github.com/owner/repo')).toHaveValue('');
+  });
+
+  it('resets and closes the wizard on View in Library', async () => {
+    vi.mocked(addSkillSource).mockResolvedValueOnce({ imported: [{ name: 'test-skill' }] } as never);
+    await install();
+    fireEvent.click(await screen.findByRole('button', { name: 'View in Library' }));
+    const state = useWizardStore.getState();
+    expect(state.isOpen).toBe(false);
+    expect(state.currentStep).toBe('type');
+    expect(state.selectedType).toBeNull();
+  });
+
+  it('offers Back to selection when nothing was imported', async () => {
+    vi.mocked(addSkillSource).mockResolvedValueOnce({
+      imported: [],
+      skipped: [{ name: 'test-skill', reason: 'exists' }],
+    } as never);
+    await install();
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to selection' }));
+    expect(await screen.findByRole('button', { name: /Install 1 Skill/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View in Library' })).not.toBeInTheDocument();
+  });
+
+  it('focuses the current indicator item when the import request fails', async () => {
+    vi.mocked(addSkillSource).mockRejectedValueOnce(new Error('clone failed'));
+    await install();
+    await screen.findByRole('alert');
+    const current = document.querySelector('[aria-current="step"]');
+    await waitFor(() => expect(current).toHaveFocus());
+    expect(document.body).not.toHaveFocus();
+  });
+
+  it('resets the store when the wizard closes after a finished import', async () => {
+    vi.mocked(addSkillSource).mockResolvedValueOnce({ imported: [{ name: 'test-skill' }] } as never);
+    const { unmount } = render(<MemoryRouter><SkillImportWizard /></MemoryRouter>);
+    fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repo'), { target: { value: REPO } });
+    fireEvent.click(screen.getByText('Scan for Skills'));
+    fireEvent.click(await screen.findByRole('button', { name: /Install 1 Skill/ }));
+    await screen.findByRole('heading', { name: 'Import Complete' });
+    useWizardStore.getState().close();
+    unmount();
+    expect(useWizardStore.getState().selectedType).toBeNull();
+    expect(useWizardStore.getState().currentStep).toBe('type');
+  });
+
+  it('keeps a draft loaded while open after a finished import', async () => {
+    vi.mocked(addSkillSource).mockResolvedValueOnce({ imported: [{ name: 'test-skill' }] } as never);
+    const { unmount } = render(<MemoryRouter><SkillImportWizard /></MemoryRouter>);
+    fireEvent.change(screen.getByPlaceholderText('https://github.com/owner/repo'), { target: { value: REPO } });
+    fireEvent.click(screen.getByText('Scan for Skills'));
+    fireEvent.click(await screen.findByRole('button', { name: /Install 1 Skill/ }));
+    await screen.findByRole('heading', { name: 'Import Complete' });
+    useWizardStore.setState({ selectedType: 'stack', currentStep: 'form' });
+    unmount();
+    expect(useWizardStore.getState().selectedType).toBe('stack');
+    expect(useWizardStore.getState().currentStep).toBe('form');
   });
 });

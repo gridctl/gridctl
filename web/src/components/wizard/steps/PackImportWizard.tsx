@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Loader2, Package, ShieldAlert } from 'lucide-react';
 import { cn } from '../../../lib/cn';
@@ -41,6 +41,7 @@ type PackStep = 'source' | 'review' | 'done';
 export function PackImportWizard() {
   const navigate = useNavigate();
   const close = useWizardStore((s) => s.close);
+  const reset = useWizardStore((s) => s.reset);
   const setImportInProgress = useWizardStore((s) => s.setImportInProgress);
   const trustId = useId();
 
@@ -74,6 +75,19 @@ export function PackImportWizard() {
   }, [inProgress, setImportInProgress]);
   useEffect(() => () => setImportInProgress(false), [setImportInProgress]);
   useBeforeUnloadGuard(inProgress);
+
+  // A finished import leaves nothing to resume, so closing the wizard by any
+  // path resets the store. The isOpen check keeps a draft loaded from the
+  // header (which also unmounts this component) intact.
+  const finishedRef = useRef(false);
+  useEffect(() => {
+    finishedRef.current = step === 'done';
+  }, [step]);
+  useEffect(() => () => {
+    if (finishedRef.current && !useWizardStore.getState().isOpen) {
+      useWizardStore.getState().reset();
+    }
+  }, []);
 
   /**
    * Route a clone failure to the one remedy that fits it. Shared by preview
@@ -185,18 +199,20 @@ export function PackImportWizard() {
 
   const goToPack = useCallback(
     (packName: string) => {
+      reset();
       close();
       navigate(`/library?kind=pack&selected=${encodeURIComponent(packName)}`);
     },
-    [close, navigate],
+    [reset, close, navigate],
   );
 
   const goToHeldHook = useCallback(
     (hookName: string) => {
+      reset();
       close();
       navigate(hookPinsUrl(hookName, 'drift'));
     },
-    [close, navigate],
+    [reset, close, navigate],
   );
 
   const handleApplyNow = useCallback(async () => {
