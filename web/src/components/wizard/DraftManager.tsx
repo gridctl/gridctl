@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Save, FolderOpen, Trash2, Clock, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { useWizardStore, type WizardDraft } from '../../stores/useWizardStore';
+import { isWizardDirty, useWizardStore, type WizardDraft } from '../../stores/useWizardStore';
 import { fetchWizardDrafts, saveWizardDraft, deleteWizardDraft } from '../../lib/api';
 import { showToast } from '../ui/Toast';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
@@ -12,14 +12,25 @@ interface DraftManagerProps {
 }
 
 export function DraftManager({ className }: DraftManagerProps) {
-  const { drafts, setDrafts, setDraftsLoading, draftsLoading, loadDraft, selectedType, formData } =
-    useWizardStore();
+  const {
+    drafts,
+    setDrafts,
+    setDraftsLoading,
+    draftsLoading,
+    loadDraft,
+    selectedType,
+    formData,
+    expertMode,
+    yamlContent,
+    importInProgress,
+  } = useWizardStore();
   const [showList, setShowList] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [showSave, setShowSave] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<WizardDraft | null>(null);
+  const [pendingLoad, setPendingLoad] = useState<WizardDraft | null>(null);
 
   const refreshDrafts = useCallback(async () => {
     setDraftsLoading(true);
@@ -46,6 +57,7 @@ export function DraftManager({ className }: DraftManagerProps) {
         name: saveName.trim(),
         resourceType: selectedType,
         formData: currentData,
+        ...(expertMode ? { yaml: yamlContent } : {}),
       });
       showToast('success', `Draft "${saveName}" saved`);
       setSaveName('');
@@ -77,10 +89,18 @@ export function DraftManager({ className }: DraftManagerProps) {
     }
   };
 
-  const handleLoad = (draft: WizardDraft) => {
+  const applyLoad = (draft: WizardDraft) => {
     loadDraft(draft);
     setShowList(false);
     showToast('success', `Loaded draft "${draft.name}"`);
+  };
+
+  const handleLoad = (draft: WizardDraft) => {
+    if (importInProgress || isWizardDirty(useWizardStore.getState())) {
+      setPendingLoad(draft);
+      return;
+    }
+    applyLoad(draft);
   };
 
   const formatDate = (dateStr: string) => {
@@ -236,6 +256,25 @@ export function DraftManager({ className }: DraftManagerProps) {
           </p>
         }
         confirmLabel={`Delete "${pendingDelete?.name ?? ''}"`}
+        variant="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={pendingLoad !== null}
+        onClose={() => setPendingLoad(null)}
+        onConfirm={() => {
+          const draft = pendingLoad;
+          setPendingLoad(null);
+          if (draft) applyLoad(draft);
+        }}
+        title="Load draft?"
+        message={
+          <p>
+            Loading <span className="font-mono text-primary">{pendingLoad?.name}</span> replaces the
+            current form, any YAML edits, and any import in progress.
+          </p>
+        }
+        confirmLabel={`Load "${pendingLoad?.name ?? ''}"`}
         variant="danger"
       />
     </div>

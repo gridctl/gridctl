@@ -1,4 +1,4 @@
-import { useState, useCallback, useId } from 'react';
+import { useState, useCallback, useEffect, useId } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -22,6 +22,8 @@ import {
   type SkillAuth,
 } from '../../../lib/api';
 import { useRegistryStore } from '../../../stores/useRegistryStore';
+import { useWizardStore } from '../../../stores/useWizardStore';
+import { useBeforeUnloadGuard } from '../../../hooks/useBeforeUnloadGuard';
 import type { AgentPreview, SkillPreview } from '../../../types';
 import { describeError, isCancellation } from '../../../lib/describeError';
 
@@ -67,8 +69,21 @@ export function SkillImportWizard() {
     skippedAgents: { name: string; reason: string }[];
   } | null>(null);
 
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const setImportInProgress = useWizardStore((s) => s.setImportInProgress);
+
   const stepOrder: ImportStep[] = ['source', 'browse', 'configure', 'install'];
   const stepIdx = stepOrder.indexOf(step);
+
+  // A dismiss would discard a preview in flight, selections on browse or
+  // configure (including after a rejected install, which stays there for a
+  // retry), or an install in flight. A finished import has nothing to keep.
+  const inProgress = step === 'browse' || step === 'configure' || installing || previewLoading;
+  useEffect(() => {
+    setImportInProgress(inProgress);
+  }, [inProgress, setImportInProgress]);
+  useEffect(() => () => setImportInProgress(false), [setImportInProgress]);
+  useBeforeUnloadGuard(inProgress);
 
   const handlePreviewLoaded = useCallback(
     (
@@ -288,7 +303,7 @@ export function SkillImportWizard() {
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark">
         {step === 'source' && (
-          <AddSourceStep onPreviewLoaded={handlePreviewLoaded} />
+          <AddSourceStep onPreviewLoaded={handlePreviewLoaded} onLoadingChange={setPreviewLoading} />
         )}
 
         {step === 'browse' && (

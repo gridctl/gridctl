@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import type { ResourceType, MCPServerFormData, ResourceFormData, StackFormData } from '../lib/yaml-builder';
+import { structurallyEqual } from '../lib/graph/identity';
 
 export type WizardStep = 'type' | 'template' | 'form' | 'review';
 
@@ -18,6 +19,8 @@ export interface WizardDraft {
   name: string;
   resourceType: string;
   formData: Record<string, unknown>;
+  // YAML text of a draft saved in YAML mode.
+  yaml?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -50,6 +53,10 @@ interface WizardState {
   // manually-entered operation IDs.
   openapiOperationStats: OpenAPIOperationStats | null;
 
+  // True while a skill or pack import has progress a dismiss would discard.
+  // Published by the import wizards; never persisted to sessionStorage.
+  importInProgress: boolean;
+
   // Drafts
   drafts: WizardDraft[];
   draftsLoading: boolean;
@@ -65,6 +72,7 @@ interface WizardState {
   setYamlContent: (content: string) => void;
   setYamlError: (error: string | null) => void;
   setOpenAPIOperationStats: (stats: OpenAPIOperationStats | null) => void;
+  setImportInProgress: (value: boolean) => void;
   reset: () => void;
 
   // Draft actions
@@ -80,6 +88,22 @@ const defaultFormData: WizardState['formData'] = {
   'mcp-server': { name: '', serverType: 'container' },
   resource: { name: '', image: '' },
 };
+
+const clearedYamlState = { expertMode: false, yamlContent: '', yamlError: null };
+
+// isWizardDirty reports whether a reset or a draft load would discard work:
+// form data that differs from the defaults, or YAML-mode text.
+export function isWizardDirty(
+  state: Pick<WizardState, 'formData' | 'expertMode' | 'yamlContent'>,
+): boolean {
+  if (state.expertMode && state.yamlContent.trim() !== '') return true;
+  return (Object.keys(defaultFormData) as (keyof WizardState['formData'])[]).some((type) => {
+    // A JSON round trip drops keys set to undefined, which the form and the
+    // YAML parser both leave behind for cleared fields.
+    const entry: unknown = JSON.parse(JSON.stringify(state.formData[type] ?? {}));
+    return !structurallyEqual(entry, defaultFormData[type]);
+  });
+}
 
 function saveSession(state: Partial<WizardState>) {
   try {
@@ -121,12 +145,14 @@ export const useWizardStore = create<WizardState>()(
     yamlContent: savedState?.yamlContent ?? '',
     yamlError: null,
     openapiOperationStats: null,
+    importInProgress: false,
     drafts: [],
     draftsLoading: false,
 
     open: (presetType) => {
       const updates: Partial<WizardState> = { isOpen: true };
       if (presetType) {
+        if (presetType !== get().selectedType) Object.assign(updates, clearedYamlState);
         updates.selectedType = presetType;
         updates.currentStep = 'template';
       }
@@ -135,7 +161,7 @@ export const useWizardStore = create<WizardState>()(
     },
 
     close: () => {
-      set({ isOpen: false });
+      set({ isOpen: false, importInProgress: false });
       saveSession({ ...get(), isOpen: false });
     },
 
@@ -145,8 +171,10 @@ export const useWizardStore = create<WizardState>()(
     },
 
     setSelectedType: (type) => {
-      set({ selectedType: type, currentStep: 'template' });
-      saveSession({ ...get(), selectedType: type, currentStep: 'template' });
+      const updates: Partial<WizardState> = { selectedType: type, currentStep: 'template' };
+      if (type !== get().selectedType) Object.assign(updates, clearedYamlState);
+      set(updates);
+      saveSession({ ...get(), ...updates });
     },
 
     setSelectedTemplate: (template) => {
@@ -184,6 +212,10 @@ export const useWizardStore = create<WizardState>()(
       set({ openapiOperationStats: stats });
     },
 
+    setImportInProgress: (value) => {
+      set({ importInProgress: value });
+    },
+
     reset: () => {
       const fresh = {
         currentStep: 'type' as WizardStep,
@@ -194,6 +226,7 @@ export const useWizardStore = create<WizardState>()(
         yamlContent: '',
         yamlError: null,
         openapiOperationStats: null,
+        importInProgress: false,
       };
       set(fresh);
       saveSession({ ...get(), ...fresh });
@@ -213,6 +246,9 @@ export const useWizardStore = create<WizardState>()(
         currentStep: 'form' as WizardStep,
         formData,
         isOpen: true,
+        ...(draft.yaml
+          ? { expertMode: true, yamlContent: draft.yaml, yamlError: null }
+          : clearedYamlState),
         // The draft carries its own spec; any counts from a previous load
         // describe a different document.
         openapiOperationStats: null,
