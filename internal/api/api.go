@@ -115,6 +115,10 @@ type Server struct {
 	// Injected by GatewayBuilder so POST /api/stack/initialize can activate live reload.
 	startWatcher func(stackPath string)
 
+	// stackWatching reports whether a file watcher for the active stack file
+	// is running in this process. GatewayBuilder sets it around Watch.
+	stackWatching atomic.Bool
+
 	// prober enumerates an MCP server's tool list ephemerally (not registered
 	// with the gateway). Nil disables the /api/servers/probe endpoint.
 	prober       *probe.Prober
@@ -288,6 +292,18 @@ func (s *Server) ReloadHandler() *reload.Handler {
 	s.reloadMu.RLock()
 	defer s.reloadMu.RUnlock()
 	return s.reloadHandler
+}
+
+// SetStackWatching records whether a file watcher for the active stack file
+// is running. The append and preview responses report it as "watching".
+func (s *Server) SetStackWatching(watching bool) {
+	s.stackWatching.Store(watching)
+}
+
+// StackWatching reports whether a file watcher for the active stack file is
+// running. A Server built without the controller reports false.
+func (s *Server) StackWatching() bool {
+	return s.stackWatching.Load()
 }
 
 // SetAllowedOrigins sets the CORS allowed origins for the server.
@@ -659,6 +675,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/policy", s.handlePolicy)
 	mux.HandleFunc("GET /api/groups", s.handleGroups)
 	mux.HandleFunc("POST /api/stack/append", s.handleStackAppend)
+	mux.HandleFunc("POST /api/stack/append/preview", s.handleStackAppendPreview)
 	mux.HandleFunc("POST /api/stack/initialize", s.handleStackInitialize)
 	mux.HandleFunc("GET /api/python/packages/{package}/versions", s.handlePythonPackageVersions)
 	mux.HandleFunc("POST /api/python/resolve", s.handlePythonSourceResolve)

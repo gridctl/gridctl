@@ -1,4 +1,4 @@
-import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, OptimizeReport, ValidationIssue, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, RegistryHook, RegistryHookList, HookProjectionStatus, HookSyncResult, HookUnsyncResult, HookPin, HookPinDiff, SecurityFinding, WiringRow, WiringAdoptResult, SecurityReport, Proposal, ProposalList, ProposalVerdictResponse } from '../types';
+import type { GatewayStatus, MCPServerStatus, ServerAuthInfo, ServerAuthLogin, ClientStatus, ToolsListResult, ToolUsageResponse, SkillUsageResponse, RegistryStatus, AgentSkill, ItemState, SkillFile, SkillValidationResult, TokenMetricsResponse, OptimizeReport, ValidationIssue, ValidationResult, PlanDiff, SpecHealth, StackSpec, SkillSourceStatus, SkillPreviewResponse, ImportResult, SourceUpdateCheck, UpdateSummary, SourceSyncSummary, SkillSyncResult, SkillDiffResponse, InventoryRecord, TelemetryMutationResponse, TelemetryPersistDefaults, TelemetryRetention, SessionsResponse, RegistryAgent, AgentProjectionStatus, AgentSyncResult, AgentUnsyncResult, AgentAdoptResult, RegistryHook, RegistryHookList, HookProjectionStatus, HookSyncResult, HookUnsyncResult, HookPin, HookPinDiff, SecurityFinding, WiringRow, WiringAdoptResult, SecurityReport, Proposal, ProposalList, ProposalVerdictResponse, StackAppendPreview } from '../types';
 
 import { gatewayRequest, AuthError, GatewayRequestError } from './gatewayRequest';
 import { useAuthStore } from '../stores/useAuthStore';
@@ -1556,7 +1556,10 @@ export class StackAppendError extends Error {
  * Append a resource to the current stack.yaml
  * POST /api/stack/append
  */
-export async function appendToStack(yaml: string, resourceType: string): Promise<{ success: boolean; resourceType: string; resourceName: string }> {
+export async function appendToStack(
+  yaml: string,
+  resourceType: string,
+): Promise<{ success: boolean; resourceType: string; resourceName: string; watching?: boolean; path?: string }> {
   const response = await fetch(`${API_BASE}/api/stack/append`, {
     method: 'POST',
     headers: buildHeaders({ 'Content-Type': 'application/json' }),
@@ -1575,6 +1578,39 @@ export async function appendToStack(yaml: string, resourceType: string): Promise
       ? data.error
       : issues.length > 0 ? 'The YAML was rejected' : `Deploy failed: ${response.status}`;
     throw new StackAppendError(response.status, message, issues);
+  }
+
+  return response.json();
+}
+
+/**
+ * Preview an append without writing: the stack file before and after, the
+ * path, and whether a file watcher will apply the write.
+ * POST /api/stack/append/preview
+ *
+ * A 422 post-append validation failure, or a 400 strict-decode failure of the
+ * stack file or snippet, carries its issues on HTTPError.errors as
+ * "<field>: <message>" lines.
+ */
+export async function previewStackAppend(yaml: string, resourceType: string): Promise<StackAppendPreview> {
+  const endpoint = '/api/stack/append/preview';
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: 'POST',
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ yaml, resourceType }),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    const validation = data?.validation;
+    const issues = response.status === 422 && hasIssueList(validation)
+      ? validation.issues
+      : response.status === 400 && hasIssueList(data) ? data.issues : undefined;
+    const errors = issues?.map((issue) => `${issue.field}: ${issue.message}`);
+    const message = typeof data?.error === 'string' && data.error
+      ? data.error
+      : errors?.length ? 'The YAML was rejected' : `POST ${endpoint} failed: ${response.status}`;
+    throw new HTTPError(response.status, message, { errors });
   }
 
   return response.json();

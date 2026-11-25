@@ -1173,9 +1173,13 @@ Dockerfile before writing the server.
 Catalog entries retain host `uvx` behavior by default. Confirmed exact PyPI
 entries offer a `Run in a container` toggle. A catalog input marked as a file
 path requires an explicit host path, container path, mount mode, and command
-that uses the container path before the wizard enables selection. After the
-wizard appends a server to the active stack, review polls registration for up
-to five minutes. It reports unresolved deployment as pending rather than
+that uses the container path before the wizard enables selection. Before
+Deploy, Review names the stack file it writes, says whether the gateway is
+watching that file, and shows a diff of the file before and after the append,
+computed by the gateway. On a gateway that is not watching the stack file,
+the wizard does not poll after Deploy; it says the server was added and asks
+for Reload Config. After the wizard appends a server to a watched stack file,
+review polls registration for up to five minutes. It reports unresolved deployment as pending rather than
 success and links to server-filtered logs for detailed build phases. Leaving
 the review step stops that poll, and returning to review with the same YAML
 offers `Check deployment` instead of appending the server again. Attached

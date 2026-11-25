@@ -998,6 +998,16 @@ export interface ValidationResult {
 
 export type DiffAction = 'add' | 'remove' | 'change';
 
+/** POST /api/stack/append/preview success body. */
+export interface StackAppendPreview {
+  resourceType: string;
+  resourceName: string;
+  path: string;
+  before: string;
+  after: string;
+  watching: boolean;
+}
+
 export interface DiffItem {
   action: DiffAction;
   kind: string;

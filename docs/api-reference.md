@@ -1528,6 +1528,27 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 `resourceType` must be `mcp-server` or `resource`. Returns `422` with `{error, validation}` when the post-append stack would be invalid (for example, a duplicate name); `validation` is a `ValidationResult` with every issue. An unknown or mistyped key in the snippet returns `400` with a `ValidationResult` body. Other rejections return `{error}`. The wizard's Review step shows the message and every returned issue in a persistent alert. After it appends an MCP server, returning to Review with the same YAML offers `Check deployment`, which polls `GET /api/status` instead of calling this endpoint again. In form mode the wizard's Configure step catches empty required fields and names that collide with a server or resource in the running stack's status before Review; a name declared in the stack file but absent from status still reaches this endpoint and returns `422`. This endpoint's validation remains authoritative.
 
+Success returns `{success: true, resourceType, resourceName, path, watching}`. `path` is the absolute path of the stack file that was written. `watching` is `true` while a file watcher for that stack file runs in the daemon (started with `--watch`, or by `POST /api/stack/initialize`). The append itself does not reload the gateway: the gateway applies the change only when it is watching the file, or on the next reload (Reload Config or `gridctl reload`).
+
+#### `POST /api/stack/append/preview`
+
+Returns the stack file before and after the append the same request would perform, without writing. The preview runs the append's own decoding, validation, and patch steps, so `after` is byte-identical to what `POST /api/stack/append` writes for the same request against the same file content. It creates no backup or temporary file and does not reload. The wizard's Review step uses it to name the target file and show a diff before Deploy.
+
+**Auth:** Yes
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"resourceType": "mcp-server", "yaml": "name: new-server\nimage: alpine\n..."}' \
+  http://localhost:8180/api/stack/append/preview
+```
+
+The request body is the same as `POST /api/stack/append` (limited to 1 MiB).
+
+**Response:** `{resourceType, resourceName, path, before, after, watching}`. `before` is the stack file content as read, `after` is the content the append would write, and `watching` has the same meaning as on the append. The response carries raw stack file content, the same data as `GET /api/stack/spec`.
+
+Error statuses match the append: `503` with no stack file; `400` for bad JSON, an unsupported `resourceType`, an invalid snippet, a missing name, or an unknown key in the existing stack file (with a `ValidationResult` body); `422` with `{error, validation}` when the post-append stack would be invalid; and `422` or `500` for variable resolution, read, parse, or patch failures.
+
 #### `POST /api/stack/initialize`
 
 Cold-loads a saved stack into a stackless daemon (`gridctl serve`). Starts the file watcher when one is configured.
