@@ -14,6 +14,15 @@ export interface OpenAPIOperationStats {
   deleteCount: number;
 }
 
+// The MCP server the Review step appended to the stack, keyed to the exact
+// YAML that was sent so a revisit with unchanged YAML checks the deployment
+// instead of appending again.
+export interface AppendedResource {
+  resourceType: string;
+  name: string;
+  yaml: string;
+}
+
 export interface WizardDraft {
   id: string;
   name: string;
@@ -57,6 +66,15 @@ interface WizardState {
   // Published by the import wizards; never persisted to sessionStorage.
   importInProgress: boolean;
 
+  // Persisted across close and reload; cleared by reset, loadDraft, and a
+  // successful deploy.
+  appendedResource: AppendedResource | null;
+
+  // True while a stack append request is pending. Global to the wizard
+  // because a reopened Review step can mount before an earlier append
+  // settles. Never persisted to sessionStorage.
+  appendInFlight: boolean;
+
   // Drafts
   drafts: WizardDraft[];
   draftsLoading: boolean;
@@ -73,6 +91,8 @@ interface WizardState {
   setYamlError: (error: string | null) => void;
   setOpenAPIOperationStats: (stats: OpenAPIOperationStats | null) => void;
   setImportInProgress: (value: boolean) => void;
+  setAppendedResource: (record: AppendedResource | null) => void;
+  setAppendInFlight: (value: boolean) => void;
   reset: () => void;
 
   // Draft actions
@@ -115,6 +135,7 @@ function saveSession(state: Partial<WizardState>) {
       formData: state.formData,
       expertMode: state.expertMode,
       yamlContent: state.yamlContent,
+      appendedResource: state.appendedResource ?? null,
     };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(toSave));
   } catch {
@@ -132,6 +153,13 @@ function loadSession(): Partial<WizardState> | null {
   }
 }
 
+function toAppendedResource(value: unknown): AppendedResource | null {
+  if (!value || typeof value !== 'object') return null;
+  const { resourceType, name, yaml } = value as Record<string, unknown>;
+  if (typeof resourceType !== 'string' || typeof name !== 'string' || typeof yaml !== 'string') return null;
+  return { resourceType, name, yaml };
+}
+
 const savedState = loadSession();
 
 export const useWizardStore = create<WizardState>()(
@@ -146,6 +174,8 @@ export const useWizardStore = create<WizardState>()(
     yamlError: null,
     openapiOperationStats: null,
     importInProgress: false,
+    appendedResource: toAppendedResource(savedState?.appendedResource),
+    appendInFlight: false,
     drafts: [],
     draftsLoading: false,
 
@@ -216,6 +246,15 @@ export const useWizardStore = create<WizardState>()(
       set({ importInProgress: value });
     },
 
+    setAppendedResource: (record) => {
+      set({ appendedResource: record });
+      saveSession({ ...get(), appendedResource: record });
+    },
+
+    setAppendInFlight: (value) => {
+      set({ appendInFlight: value });
+    },
+
     reset: () => {
       const fresh = {
         currentStep: 'type' as WizardStep,
@@ -227,6 +266,7 @@ export const useWizardStore = create<WizardState>()(
         yamlError: null,
         openapiOperationStats: null,
         importInProgress: false,
+        appendedResource: null,
       };
       set(fresh);
       saveSession({ ...get(), ...fresh });
@@ -252,6 +292,7 @@ export const useWizardStore = create<WizardState>()(
         // The draft carries its own spec; any counts from a previous load
         // describe a different document.
         openapiOperationStats: null,
+        appendedResource: null,
       };
       set(updates);
       saveSession({ ...get(), ...updates });
