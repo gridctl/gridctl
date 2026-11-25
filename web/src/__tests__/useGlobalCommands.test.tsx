@@ -88,10 +88,16 @@ describe('useGlobalCommands inspect entry', () => {
       expect(result.current.commands.some((command) => command.id === 'auth:forget-credential')).toBe(true);
     });
     const command = result.current.commands.find((item) => item.id === 'auth:forget-credential');
-    expect(command?.label).toBe('Forget gateway credential');
+    expect(command?.label).toBe('Forget gateway credential…');
+    expect(command?.section).toBe('global');
     expect(command?.keywords).toEqual(['auth', 'credential', 'token', 'sign out', 'logout', 'forget']);
-    command?.onSelect();
-    expect(useAuthStore.getState().credential).toBeNull();
+    useUIStore.setState({ forgetCredentialOpen: false });
+    act(() => {
+      command?.onSelect();
+    });
+    expect(useUIStore.getState().forgetCredentialOpen).toBe(true);
+    expect(useAuthStore.getState().credential).not.toBeNull();
+    useUIStore.setState({ forgetCredentialOpen: false });
   });
 
   it('selects the mcp node id and opens the sidebar', async () => {

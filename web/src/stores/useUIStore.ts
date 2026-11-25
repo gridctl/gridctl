@@ -175,6 +175,10 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   setPreferencesOpen: (open: boolean) => void;
   shortcutsOpen: boolean;
   setShortcutsOpen: (open: boolean) => void;
+  // Forget credential confirmation: opened from the header's More actions
+  // menu or the command palette. Transient.
+  forgetCredentialOpen: boolean;
+  setForgetCredentialOpen: (open: boolean) => void;
 
   // Reset dialog (the machine-wide `gridctl reset` surface): opened from
   // the Connections danger zone or the command palette. Transient.
@@ -389,6 +393,8 @@ export const useUIStore = create<UIState>()(
       setPreferencesOpen: (preferencesOpen) => set({ preferencesOpen }),
       shortcutsOpen: false,
       setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
+      forgetCredentialOpen: false,
+      setForgetCredentialOpen: (forgetCredentialOpen) => set({ forgetCredentialOpen }),
 
       // Reset dialog (always starts closed)
       resetDialogOpen: false,

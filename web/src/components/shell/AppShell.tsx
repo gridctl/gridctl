@@ -4,6 +4,7 @@ import { Header } from '../layout/Header';
 import { StatusBar } from '../layout/StatusBar';
 import { CommandPalette } from '../palette/CommandPalette';
 import { PreferencesDialog } from './PreferencesDialog';
+import { ForgetCredentialDialog } from './ForgetCredentialDialog';
 import { ShortcutsPanel } from './ShortcutsPanel';
 import { NavigationGuardDialog } from './NavigationGuardDialog';
 import { ToastContainer } from '../ui/Toast';
@@ -138,6 +139,7 @@ export function AppShell() {
         onClose={() => setCommandPaletteOpen(false)}
       />
       <PreferencesDialog />
+      <ForgetCredentialDialog />
       <ShortcutsPanel />
       <NavigationGuardDialog />
     </div>
