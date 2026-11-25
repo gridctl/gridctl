@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router';
-import { requestGatewayPoll, usePolling, usePollingRefresh } from '../hooks/usePolling';
+import { requestGatewayPoll, resetPinAlertBaseline, usePolling, usePollingRefresh } from '../hooks/usePolling';
 import * as api from '../lib/api';
 import { HTTPError } from '../lib/api';
 import { GatewayRequestError } from '../lib/gatewayRequest';
@@ -34,6 +34,7 @@ describe('usePolling retry registration', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    resetPinAlertBaseline();
     useAuthStore.setState({ authRequired: false, generation: Symbol() });
     usePinsStore.setState({ pins: null, skillPins: null, pinsError: null, skillPinsError: null });
     useRegistryStore.setState({ skills: null, error: null });
@@ -333,6 +334,7 @@ describe('usePolling toast navigation guard', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.mocked(showToast).mockClear();
+    resetPinAlertBaseline();
     resetGuards();
     usePinsStore.setState({ pins: null, skillPins: null, pinsError: null, skillPinsError: null });
     useRegistryStore.setState({ skills: null, error: null });
@@ -346,7 +348,8 @@ describe('usePolling toast navigation guard', () => {
     vi.spyOn(api, 'fetchTools').mockResolvedValue({ tools: [] });
     vi.spyOn(api, 'fetchToolCatalog').mockResolvedValue({ tools: [] });
     vi.spyOn(api, 'fetchClients').mockResolvedValue([]);
-    vi.spyOn(api, 'fetchServerPins').mockResolvedValue({
+    // The first fetch seeds the baseline; the drift arrives on the next poll.
+    vi.spyOn(api, 'fetchServerPins').mockResolvedValueOnce({}).mockResolvedValue({
       github: {
         status: 'drift',
         tool_count: 1,
@@ -376,11 +379,15 @@ describe('usePolling toast navigation guard', () => {
         <NavigationGuardDialog />
       </MemoryRouter>,
     );
+    await waitFor(() => expect(api.fetchContextPins).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      requestGatewayPoll();
+    });
     let view: (() => void) | undefined;
     await waitFor(() => {
       const call = vi
         .mocked(showToast)
-        .mock.calls.find(([, message]) => String(message).startsWith('Pin drift detected on 1 server'));
+        .mock.calls.find(([, message]) => message === 'Pin drift detected on server github');
       view = call?.[2]?.action?.onClick;
       expect(view).toBeDefined();
     });
@@ -391,5 +398,189 @@ describe('usePolling toast navigation guard', () => {
     expect(screen.getByText('Discard unsaved changes')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Discard & leave' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/pins?server=github&view=drift');
+  });
+});
+
+describe('usePolling pin alerts', () => {
+  type ServerPinsMap = Awaited<ReturnType<typeof api.fetchServerPins>>;
+  type SkillPinsMap = Awaited<ReturnType<typeof api.fetchSkillPins>>;
+
+  function server(status: 'drift' | 'pinned', findings: { severity: string }[] = []) {
+    return {
+      status,
+      tool_count: 1,
+      server_hash: 'abc',
+      pinned_at: '2026-01-01T00:00:00Z',
+      last_verified_at: '2026-01-01T00:00:00Z',
+      tools: findings.length ? { t: { findings } } : {},
+    };
+  }
+
+  function servers(map: Record<string, ReturnType<typeof server>>): ServerPinsMap {
+    return map as unknown as ServerPinsMap;
+  }
+
+  function skills(map: Record<string, { status: string; findings?: { severity: string }[] }>): SkillPinsMap {
+    return map as unknown as SkillPinsMap;
+  }
+
+  function stubPoll() {
+    vi.spyOn(api, 'fetchStatus').mockResolvedValue(quietStatus);
+    vi.spyOn(api, 'fetchTools').mockResolvedValue({ tools: [] });
+    vi.spyOn(api, 'fetchToolCatalog').mockResolvedValue({ tools: [] });
+    vi.spyOn(api, 'fetchClients').mockResolvedValue([]);
+    vi.spyOn(api, 'fetchServerPins').mockResolvedValue({});
+    vi.spyOn(api, 'fetchSkillPins').mockResolvedValue({});
+    vi.spyOn(api, 'fetchContextPins').mockResolvedValue({});
+    vi.spyOn(api, 'fetchRegistryStatus').mockResolvedValue({ totalSkills: 0, activeSkills: 0 });
+    vi.spyOn(api, 'fetchRegistrySkills').mockResolvedValue([]);
+    vi.spyOn(api, 'fetchSkillSources').mockResolvedValue([]);
+    vi.spyOn(api, 'getTelemetryInventory').mockResolvedValue([]);
+    vi.spyOn(api, 'fetchStackSpec').mockResolvedValue({ content: '', path: '' });
+    vi.spyOn(api, 'fetchStackHealth').mockResolvedValue({
+      validation: { status: 'valid', errorCount: 0, warningCount: 0 },
+      drift: { status: 'in-sync' },
+      dependencies: { status: 'resolved' },
+    });
+  }
+
+  function LocationProbe() {
+    const location = useLocation();
+    return <div data-testid="location">{location.pathname + location.search}</div>;
+  }
+
+  let refresh: () => Promise<void> = () => Promise.resolve();
+
+  function Poller() {
+    usePolling();
+    refresh = usePollingRefresh();
+    return null;
+  }
+
+  async function mount() {
+    render(
+      <MemoryRouter initialEntries={['/stack']}>
+        <Poller />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+    await act(async () => {
+      await refresh();
+    });
+  }
+
+  async function cycle() {
+    await act(async () => {
+      await refresh();
+    });
+  }
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.mocked(showToast).mockClear();
+    resetPinAlertBaseline();
+    useAuthStore.setState({ authRequired: false, generation: Symbol() });
+    usePinsStore.setState({ pins: null, skillPins: null, contextPins: null, pinsError: null, skillPinsError: null });
+    useRegistryStore.setState({ skills: null, error: null });
+    useStackStore.setState({ error: null, isLoading: false, connectionStatus: 'disconnected' });
+    useTelemetryStore.setState({ rawSpec: null, config: { global: {}, servers: {} } });
+  });
+
+  it('does not toast state that exists when the page loads', async () => {
+    stubPoll();
+    vi.mocked(api.fetchServerPins).mockResolvedValue(servers({ a: server('drift') }));
+    vi.mocked(api.fetchSkillPins).mockResolvedValue(skills({ k: { status: 'pinned', findings: [{ severity: 'warn' }] } }));
+    await mount();
+    expect(api.fetchContextPins).toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('toasts a new drift once and links to the newly drifted item', async () => {
+    stubPoll();
+    vi.mocked(api.fetchServerPins).mockResolvedValue(servers({ a: server('drift') }));
+    await mount();
+    vi.mocked(api.fetchServerPins).mockResolvedValue(servers({ a: server('drift'), b: server('drift') }));
+    await cycle();
+    expect(showToast).toHaveBeenCalledTimes(1);
+    const [type, message, options] = vi.mocked(showToast).mock.calls[0];
+    expect(type).toBe('warning');
+    expect(message).toContain('server b');
+    expect(options).toMatchObject({ duration: 10000, deferWhileModal: true });
+    expect(options?.action).toBeDefined();
+    act(() => options?.action?.onClick());
+    expect(screen.getByTestId('location')).toHaveTextContent('/pins?server=b&view=drift');
+  });
+
+  it('toasts a new finding with view=findings', async () => {
+    stubPoll();
+    await mount();
+    vi.mocked(api.fetchServerPins).mockResolvedValue(servers({ a: server('pinned', [{ severity: 'critical' }]) }));
+    await cycle();
+    expect(showToast).toHaveBeenCalledTimes(1);
+    const [, message, options] = vi.mocked(showToast).mock.calls[0];
+    expect(message).toBe('New findings on server a');
+    act(() => options?.action?.onClick());
+    expect(screen.getByTestId('location')).toHaveTextContent('/pins?server=a&view=findings');
+  });
+
+  it('merges simultaneous drift across kinds into one toast', async () => {
+    stubPoll();
+    await mount();
+    vi.mocked(api.fetchServerPins).mockResolvedValue(servers({ a: server('drift') }));
+    vi.mocked(api.fetchSkillPins).mockResolvedValue(skills({ k: { status: 'drift' } }));
+    await cycle();
+    expect(showToast).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(showToast).mock.calls[0][1]).toBe('Pin drift detected on 1 server and 1 skill');
+  });
+
+  it('raises one drift and one findings toast in the same cycle', async () => {
+    stubPoll();
+    await mount();
+    vi.mocked(api.fetchServerPins).mockResolvedValue(servers({ a: server('drift') }));
+    vi.mocked(api.fetchSkillPins).mockResolvedValue(skills({ k: { status: 'pinned', findings: [{ severity: 'warn' }] } }));
+    await cycle();
+    expect(vi.mocked(showToast).mock.calls.map(([, message]) => message)).toEqual([
+      'Pin drift detected on server a',
+      'New findings on skill k',
+    ]);
+  });
+
+  it('does not treat existing state as new after a failed first fetch', async () => {
+    stubPoll();
+    vi.mocked(api.fetchServerPins).mockRejectedValueOnce(new HTTPError(503, 'API error: 503 Service Unavailable'));
+    await mount();
+    vi.mocked(api.fetchServerPins).mockResolvedValue(servers({ a: server('drift') }));
+    await cycle();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('toasts again when a name leaves and re-enters drift', async () => {
+    stubPoll();
+    vi.mocked(api.fetchServerPins).mockResolvedValue(servers({ a: server('drift') }));
+    await mount();
+    vi.mocked(api.fetchServerPins).mockResolvedValue(servers({ a: server('pinned') }));
+    await cycle();
+    expect(showToast).not.toHaveBeenCalled();
+    vi.mocked(api.fetchServerPins).mockResolvedValue(servers({ a: server('drift') }));
+    await cycle();
+    expect(showToast).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(showToast).mock.calls[0][1]).toBe('Pin drift detected on server a');
+  });
+
+  it('delays the toast when an auth change cuts the cycle short', async () => {
+    stubPoll();
+    vi.mocked(api.fetchServerPins).mockResolvedValue(servers({ a: server('drift') }));
+    await mount();
+    vi.mocked(api.fetchServerPins).mockResolvedValue(servers({ a: server('drift'), b: server('drift') }));
+    vi.mocked(api.fetchContextPins).mockImplementationOnce(async () => {
+      useAuthStore.setState({ generation: Symbol() });
+      return {};
+    });
+    await cycle();
+    expect(showToast).not.toHaveBeenCalled();
+    await cycle();
+    expect(showToast).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(showToast).mock.calls[0][1]).toBe('Pin drift detected on server b');
   });
 });
