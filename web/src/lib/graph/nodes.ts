@@ -13,6 +13,11 @@ import { GATEWAY_NODE_ID } from './edges';
  * Determine MCP server status based on its state and health
  */
 export function getMCPServerStatus(server: MCPServerStatus): NodeStatus {
+  // Disabled wins over every other state: a disabled server is not registered
+  // with the gateway, so its other fields describe nothing live.
+  if (server.enabled === false) {
+    return 'disabled';
+  }
   // Autoscaled server currently at zero replicas: deliberately idle, not
   // initializing. This check must precede !initialized because scale-to-zero
   // makes the backend emit initialized=false for these servers.
@@ -113,10 +118,7 @@ export function createMCPServerNodes(mcpServers: MCPServerStatus[]): Node[] {
     id: `mcp-${server.name}`,
     type: NODE_TYPES.MCP_SERVER,
     position: { x: 0, y: 0 }, // Will be calculated by layout engine
-    // A disabled server renders a disabled badge instead of its health state.
-    ariaLabel: `${server.name}, MCP server, ${
-      server.enabled === false ? 'disabled' : accessibleStatus(getMCPServerStatus(server))
-    }`,
+    ariaLabel: `${server.name}, MCP server, ${accessibleStatus(getMCPServerStatus(server))}`,
     data: {
       type: 'mcp-server',
       name: server.name,

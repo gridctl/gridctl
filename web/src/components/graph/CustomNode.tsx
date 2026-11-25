@@ -1,10 +1,11 @@
 import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse, FileJson, FileOutput, Filter, Lock, ChevronRight, ChevronDown } from 'lucide-react';
+import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse, FileJson, FileOutput, Filter, Lock, ChevronRight, ChevronDown, Power } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { PinDriftLink } from './PinDriftLink';
 import { Badge } from '../ui/Badge';
 import { StatusDot } from '../ui/StatusDot';
+import { NODE_STATUS_LABELS } from '../../lib/nodeStatus';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
@@ -349,12 +350,6 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
           {/* Health indicator (MCP servers only). Suppressed while the
               server needs authorization: the amber needs-auth indicator below
               is the actionable state, and red must never co-render with it. */}
-          {isServer && (data as MCPServerNodeData).enabled === false && (
-            <div role="status" aria-label={`${data.name} is disabled`}>
-              <Badge status="stopped">disabled</Badge>
-            </div>
-          )}
-
           {isServer && (data as MCPServerNodeData).enabled !== false && (data as MCPServerNodeData).healthy === false &&
             (data as MCPServerNodeData).authStatus !== 'needs_auth' && (
             <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-md bg-status-error/5 border border-status-error/15">
@@ -408,11 +403,16 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
                 <span className="w-1.5 h-1.5 rounded-full bg-status-running" />
                 {data.status}
               </span>
+            ) : data.status === 'disabled' ? (
+              <div role="status" aria-label={`${data.name} is disabled`}>
+                <Badge status="disabled">
+                  <Power size={10} aria-hidden="true" />
+                  <span>{NODE_STATUS_LABELS.disabled}</span>
+                </Badge>
+              </div>
             ) : (
               <Badge status={data.status}>
-                <span className="capitalize">
-                  {data.status === 'needs-auth' ? 'needs auth' : data.status}
-                </span>
+                <span className="capitalize">{NODE_STATUS_LABELS[data.status]}</span>
               </Badge>
             )}
             {isServer && !isExternal && !isLocalProcess && !isSSH && !isOpenAPI && (

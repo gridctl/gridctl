@@ -110,6 +110,26 @@ describe('getMCPServerStatus', () => {
       }),
       'running',
     ],
+    [
+      'disabled server',
+      makeServer({ enabled: false, initialized: false }),
+      'disabled',
+    ],
+    [
+      'disabled wins over unhealthy',
+      makeServer({ enabled: false, initialized: false, healthy: false, healthError: 'down' }),
+      'disabled',
+    ],
+    [
+      'disabled wins over needs-auth',
+      makeServer({ enabled: false, initialized: false, authStatus: 'needs_auth' }),
+      'disabled',
+    ],
+    [
+      'disabled wins over autoscale idle',
+      makeServer({ enabled: false, initialized: false, autoscale: makeAutoscale(), replicas: [] }),
+      'disabled',
+    ],
   ])('%s → %s', (_label, input, expected) => {
     expect(getMCPServerStatus(input)).toBe(expected);
   });
@@ -128,6 +148,12 @@ describe('createMCPServerNodes', () => {
       image: server.image,
       source: server.source,
     });
+  });
+
+  it('marks a disabled server disabled and keeps its accessible name', () => {
+    const node = createMCPServerNodes([makeServer({ name: 'parked', enabled: false, initialized: false })])[0];
+    expect(node.data.status).toBe('disabled');
+    expect(node.ariaLabel).toBe('parked, MCP server, disabled');
   });
 
   it('copies replica diagnostics and stderr into node data', () => {

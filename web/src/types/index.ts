@@ -468,7 +468,7 @@ export interface SkillUsageResponse {
 }
 
 // Node status for UI display
-export type NodeStatus = 'running' | 'stopped' | 'error' | 'initializing' | 'idle' | 'needs-auth' | 'restarting';
+export type NodeStatus = 'running' | 'stopped' | 'error' | 'initializing' | 'idle' | 'needs-auth' | 'restarting' | 'disabled';
 
 // Base type for React Flow compatibility (requires index signature)
 interface NodeDataBase {
