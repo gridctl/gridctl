@@ -9,9 +9,11 @@ import { describeError, isCancellation } from '../../lib/describeError';
 
 interface DraftManagerProps {
   className?: string;
+  // Called after a draft replaces the form data.
+  onLoad?: () => void;
 }
 
-export function DraftManager({ className }: DraftManagerProps) {
+export function DraftManager({ className, onLoad }: DraftManagerProps) {
   const {
     drafts,
     setDrafts,
@@ -91,6 +93,7 @@ export function DraftManager({ className }: DraftManagerProps) {
 
   const applyLoad = (draft: WizardDraft) => {
     loadDraft(draft);
+    onLoad?.();
     setShowList(false);
     showToast('success', `Loaded draft "${draft.name}"`);
   };

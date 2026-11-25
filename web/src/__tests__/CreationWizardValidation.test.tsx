@@ -4,6 +4,7 @@ import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-libra
 import { CreationWizard } from '../components/wizard/CreationWizard';
 import { useWizardStore } from '../stores/useWizardStore';
 import { useStackStore } from '../stores/useStackStore';
+import { fetchWizardDrafts } from '../lib/api';
 import type { MCPServerStatus, ResourceStatus } from '../types';
 import type { MCPServerFormData, ResourceFormData, StackFormData } from '../lib/yaml-builder';
 
@@ -198,6 +199,31 @@ describe('CreationWizard Configure step validation', () => {
     expect(useWizardStore.getState().currentStep).toBe('form');
   });
 
+  it('expands the collapsed Configuration section for an OpenAPI custom header failure', () => {
+    openServerForm({
+      name: 'petstore',
+      serverType: 'openapi',
+      openapi: { spec: 'https://x.example/openapi.yaml' },
+      headers: { 'Mcp-Session-Id': 'x' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Configuration/ }));
+    expect(screen.queryByRole('textbox', { name: /^Spec/ })).not.toBeInTheDocument();
+    expect(nextButton()).toHaveAccessibleDescription('Fix the custom header errors');
+
+    fireEvent.click(nextButton());
+
+    expect(useWizardStore.getState().currentStep).toBe('form');
+    expect(screen.getByRole('textbox', { name: /^Spec/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Configuration, has errors/ })).toBeInTheDocument();
+  });
+
+  it('exposes the full Next reason as a tooltip', () => {
+    openServerForm();
+    const reason = '3 fields need attention: Name, Image, Port';
+    expect(screen.getByText(reason)).toHaveAttribute('title', reason);
+  });
+
   it('gates Next for a resource with an empty image', () => {
     openResourceForm({ name: 'cache', image: '' });
 
@@ -318,5 +344,42 @@ describe('CreationWizard Configure step validation', () => {
 
     expect(useWizardStore.getState().selectedType).toBe('resource');
     expect(screen.queryByText('Name is required')).not.toBeInTheDocument();
+  });
+  it('clears touched errors when the wizard is closed and reopened', () => {
+    openServerForm();
+    fireEvent.click(nextButton());
+    expect(screen.getByText('Name is required')).toBeInTheDocument();
+
+    act(() => useWizardStore.getState().close());
+    act(() => useWizardStore.getState().open());
+
+    expect(nextButton()).toHaveAttribute('aria-disabled', 'true');
+    expect(nameInput()).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByText('Name is required')).not.toBeInTheDocument();
+  });
+
+  it('clears touched errors when a draft of the same type is loaded', async () => {
+    vi.mocked(fetchWizardDrafts).mockResolvedValue([
+      {
+        id: 'd1',
+        name: 'half-done',
+        resourceType: 'mcp-server',
+        formData: { name: '', serverType: 'container' },
+        createdAt: '2026-11-01T00:00:00Z',
+        updatedAt: '2026-11-01T00:00:00Z',
+      },
+    ]);
+    openServerForm();
+    fireEvent.click(nextButton());
+    expect(nameInput()).toHaveAttribute('aria-invalid', 'true');
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Drafts/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^half-done/ }));
+    const confirm = screen.queryByRole('button', { name: 'Load "half-done"' });
+    if (confirm) fireEvent.click(confirm);
+
+    expect(useWizardStore.getState().selectedType).toBe('mcp-server');
+    expect(nameInput()).not.toHaveAttribute('aria-invalid');
+    vi.mocked(fetchWizardDrafts).mockResolvedValue([]);
   });
 });

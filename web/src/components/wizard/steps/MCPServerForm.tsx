@@ -704,11 +704,15 @@ export function MCPServerForm({ data, onChange, errors, fieldPrefix = '', reveal
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(['identity', 'type', 'config']),
   );
-  const headerErrorCount = data.serverType === 'external'
+  // Header failures gate Next in the wizard, so only the wizard (which passes
+  // errors) marks their section; the headers editor sits under Authentication
+  // for external servers and under Configuration for OpenAPI.
+  const headerSection = data.serverType === 'external' ? 'auth' : data.serverType === 'openapi' ? 'config' : null;
+  const headerErrorCount = errors && headerSection
     ? Object.keys(customHeaderErrors(data.headers, Boolean(data.auth))).length
     : 0;
   const errorSections = new Set(Object.keys(errors ?? {}).map(errorSection));
-  if (headerErrorCount > 0) errorSections.add('auth');
+  if (headerSection && headerErrorCount > 0) errorSections.add(headerSection);
   const [revealed, setRevealed] = useState<number | undefined>(undefined);
   if (revealKey && revealKey !== revealed) {
     setRevealed(revealKey);

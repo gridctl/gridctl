@@ -391,6 +391,12 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
     setNextAttempted(false);
   }
 
+  // A loaded draft is a fresh form even when its type matches the current one.
+  const resetValidation = useCallback(() => {
+    setTouched(new Set());
+    setNextAttempted(false);
+  }, []);
+
   const visibleErrors = useMemo<WizardErrors>(() => {
     if (nextAttempted) return formErrors;
     return Object.fromEntries(Object.entries(formErrors).filter(([key]) => touched.has(key)));
@@ -545,7 +551,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
 
             {/* Draft Manager */}
             <div className="relative">
-              <DraftManager />
+              <DraftManager onLoad={resetValidation} />
             </div>
 
             {/* Reset */}
@@ -657,7 +663,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
           </div>
           <div className="flex items-center gap-3 min-w-0">
             {currentStep !== 'review' && nextBlockedReason && (
-              <p id={nextReasonId} className="text-2xs text-status-error truncate">
+              <p id={nextReasonId} title={nextBlockedReason} className="text-2xs text-status-error truncate">
                 {nextBlockedReason}
               </p>
             )}
