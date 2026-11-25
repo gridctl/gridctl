@@ -3,15 +3,16 @@ import { useGuardedNavigate } from './useGuardedNavigate';
 import { useStackStore } from '../stores/useStackStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
-import { usePinsStore, serverPinsChanged } from '../stores/usePinsStore';
+import { usePinsStore, serverPinsChanged, countDriftedHooks, firstDriftedHook } from '../stores/usePinsStore';
 import { useTelemetryStore } from '../stores/useTelemetryStore';
 import { useSpecStore } from '../stores/useSpecStore';
 import { useUIStore } from '../stores/useUIStore';
-import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchSkillSources, fetchServerPins, fetchSkillPins, fetchContextPins, fetchStackSpec, fetchStackHealth, getTelemetryInventory, AuthError, isFeatureUnavailable } from '../lib/api';
+import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchSkillSources, fetchServerPins, fetchSkillPins, fetchContextPins, fetchHookPins, fetchStackSpec, fetchStackHealth, getTelemetryInventory, AuthError, isFeatureUnavailable } from '../lib/api';
 import { dismissToast, showToast } from '../components/ui/Toast';
 import { POLLING } from '../lib/constants';
 import { affectedContexts, affectedServers, affectedSkills, driftAlert, findingsAlert, newlyAffected, type AffectedNames, type NewNames, type PinAlert } from '../lib/pinAlerts';
 import { GatewayRequestError } from '../lib/gatewayRequest';
+import { hookPinsUrl } from '../lib/hookGovernance';
 import type { GatewayStatus } from '../types';
 import { useBroadcastChannel, type BroadcastMessage } from './useBroadcastChannel';
 import { useInterval } from './useInterval';
@@ -26,11 +27,17 @@ const pinBaseline: Record<keyof NewNames, AffectedNames | null> = {
   fragment: null,
 };
 
+// Hook drift count from the last successful /api/hook-pins fetch. Hooks
+// toast on a zero-to-nonzero transition, including the first load: a held
+// hook blocks projection until someone approves it.
+let _prevHookDriftCount = 0;
+
 /** Clears the pin alert baseline. Exists for test isolation. */
 export function resetPinAlertBaseline(): void {
   pinBaseline.server = null;
   pinBaseline.skill = null;
   pinBaseline.fragment = null;
+  _prevHookDriftCount = 0;
 }
 
 // Commits every kind fetched this cycle and returns the toasts to raise.
@@ -201,6 +208,7 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
       if (!current()) return;
       usePinsStore.getState().setPinsError(message);
       usePinsStore.getState().setSkillPinsError(message);
+      usePinsStore.getState().setHookPinsError(message);
       useRegistryStore.getState().setError(message);
     }
   }, [setGatewayStatus, setClients, setTools, setError, setConnectionStatus, setAuthRequired, setLoading]);
@@ -290,6 +298,44 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
           }
         } else {
           usePinsStore.getState().setContextPinsError(
+            isConnectionFailure(err) ? 'Gateway connection unavailable' : failureMessage(err),
+          );
+        }
+      }
+
+      try {
+        const hookPins = await fetchHookPins();
+        if (!current()) return;
+        usePinsStore.getState().setHookPins(hookPins);
+        const hookDriftCount = countDriftedHooks(hookPins);
+        if (_prevHookDriftCount === 0 && hookDriftCount > 0) {
+          const target = hookPinsUrl(firstDriftedHook(hookPins), 'drift');
+          const toastId = showToast(
+            'warning',
+            `Pin drift detected on ${hookDriftCount} hook${hookDriftCount === 1 ? '' : 's'}`,
+            {
+              action: {
+                label: 'View',
+                onClick: () => {
+                  dismissToast(toastId);
+                  navigate(target);
+                },
+              },
+              duration: 6000,
+            },
+          );
+        }
+        _prevHookDriftCount = hookDriftCount;
+      } catch (err) {
+        if (!current()) return;
+        if (isFeatureUnavailable(err)) {
+          if (usePinsStore.getState().hookPins === null) {
+            usePinsStore.getState().setHookPins({});
+          } else {
+            usePinsStore.getState().setHookPinsError(null);
+          }
+        } else {
+          usePinsStore.getState().setHookPinsError(
             isConnectionFailure(err) ? 'Gateway connection unavailable' : failureMessage(err),
           );
         }

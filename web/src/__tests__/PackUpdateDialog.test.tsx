@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { PackUpdateDialog } from '../components/registry/packs/PackUpdateDialog';
 
 vi.mock('../lib/api', async () => {
@@ -14,10 +15,10 @@ vi.mock('../lib/api', async () => {
   };
 });
 
-vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
+vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn(), dismissToast: vi.fn() }));
 
 import { previewPack, addPack, HTTPError, PackFindingsError } from '../lib/api';
-import { showToast } from '../components/ui/Toast';
+import { dismissToast, showToast } from '../components/ui/Toast';
 
 const mockPreview = vi.mocked(previewPack);
 const mockAdd = vi.mocked(addPack);
@@ -39,14 +40,24 @@ const origin = {
   fetched_at: '2026-08-17T00:00:00Z',
 };
 
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname + location.search}</div>;
+}
+
 function renderDialog(over: Partial<typeof origin> = {}) {
   return render(
-    <PackUpdateDialog
-      packName="team-pack"
-      origin={{ ...origin, ...over }}
-      onClose={vi.fn()}
-      onUpdated={vi.fn()}
-    />,
+    <MemoryRouter initialEntries={['/library?kind=pack']}>
+      <PackUpdateDialog
+        packName="team-pack"
+        origin={{ ...origin, ...over }}
+        onClose={vi.fn()}
+        onUpdated={vi.fn()}
+      />
+      <Routes>
+        <Route path="*" element={<LocationProbe />} />
+      </Routes>
+    </MemoryRouter>,
   );
 }
 
@@ -199,12 +210,14 @@ describe('PackUpdateDialog — vault picker keyboard handling', () => {
   async function openVaultPicker(onClose = vi.fn()) {
     mockPreview.mockRejectedValueOnce(new HTTPError(401, 'Authentication required'));
     render(
-      <PackUpdateDialog
-        packName="team-pack"
-        origin={origin}
-        onClose={onClose}
-        onUpdated={vi.fn()}
-      />,
+      <MemoryRouter>
+        <PackUpdateDialog
+          packName="team-pack"
+          origin={origin}
+          onClose={onClose}
+          onUpdated={vi.fn()}
+        />
+      </MemoryRouter>,
     );
     await waitFor(() => screen.getByRole('button', { name: /retry with credentials/i }));
     fireEvent.click(screen.getByRole('button', { name: /authentication/i }));
@@ -252,6 +265,7 @@ describe('PackUpdateDialog held hooks', () => {
     mockPreview.mockReset();
     mockAdd.mockReset();
     vi.mocked(showToast).mockReset();
+    vi.mocked(dismissToast).mockReset();
   });
 
   it('warns rather than reporting a clean update when a hook is held', async () => {
@@ -273,9 +287,68 @@ describe('PackUpdateDialog held hooks', () => {
 
     await waitFor(() => expect(mockAdd).toHaveBeenCalledTimes(1));
     await waitFor(() =>
-      expect(showToast).toHaveBeenCalledWith('warning', 'Updated team-pack; 1 hook held for pin approval'),
+      expect(showToast).toHaveBeenCalledWith(
+        'warning',
+        'Updated team-pack; 1 hook held for pin approval',
+        expect.objectContaining({ action: expect.objectContaining({ label: 'Review' }) }),
+      ),
     );
     expect(showToast).not.toHaveBeenCalledWith('success', 'Updated team-pack from its origin');
+  });
+
+  it('links the Review action to the alphabetically first held hook', async () => {
+    mockPreview.mockResolvedValueOnce(resolved);
+    mockAdd.mockResolvedValueOnce({
+      doc: {
+        pack: 'team-pack',
+        skills: [],
+        agents: [],
+        wiring: false,
+        held_hooks: [
+          { name: 'b', composite_hash: 'sha256:b' },
+          { name: 'a', composite_hash: 'sha256:a' },
+        ],
+      },
+      notes: [],
+    });
+    vi.mocked(showToast).mockReturnValue('toast-held');
+    renderDialog();
+
+    await waitFor(() => screen.getByText(/0 skills, 0 agents/));
+    fireEvent.click(screen.getByRole('button', { name: /update from origin/i }));
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        'warning',
+        'Updated team-pack; 2 hooks held for pin approval',
+        expect.anything(),
+      ),
+    );
+    const call = vi
+      .mocked(showToast)
+      .mock.calls.find(([, message]) => message === 'Updated team-pack; 2 hooks held for pin approval');
+    expect(call?.[2]?.duration).toBe(6000);
+    act(() => call?.[2]?.action?.onClick());
+    expect(screen.getByTestId('location')).toHaveTextContent('/pins?kind=hook&hook=a&view=drift');
+    expect(dismissToast).toHaveBeenCalledWith('toast-held');
+  });
+
+  it('calls the toast with two arguments when no hook is held', async () => {
+    mockPreview.mockResolvedValueOnce(resolved);
+    mockAdd.mockResolvedValueOnce({
+      doc: { pack: 'team-pack', skills: [], agents: [], wiring: false },
+      notes: [],
+    });
+    renderDialog();
+
+    await waitFor(() => screen.getByText(/0 skills, 0 agents/));
+    fireEvent.click(screen.getByRole('button', { name: /update from origin/i }));
+
+    await waitFor(() => expect(showToast).toHaveBeenCalled());
+    const call = vi
+      .mocked(showToast)
+      .mock.calls.find(([, message]) => message === 'Updated team-pack from its origin');
+    expect(call).toHaveLength(2);
   });
 });
 

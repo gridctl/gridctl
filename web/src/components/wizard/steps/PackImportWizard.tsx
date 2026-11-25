@@ -27,6 +27,7 @@ import {
   shouldOpenAuthCard,
 } from '../../../lib/gitAuthErrors';
 import { describeError, isCancellation } from '../../../lib/describeError';
+import { hookPinsUrl } from '../../../lib/hookGovernance';
 
 type PackStep = 'source' | 'review' | 'done';
 
@@ -186,6 +187,14 @@ export function PackImportWizard() {
     (packName: string) => {
       close();
       navigate(`/library?kind=pack&selected=${encodeURIComponent(packName)}`);
+    },
+    [close, navigate],
+  );
+
+  const goToHeldHook = useCallback(
+    (hookName: string) => {
+      close();
+      navigate(hookPinsUrl(hookName, 'drift'));
     },
     [close, navigate],
   );
@@ -468,6 +477,16 @@ export function PackImportWizard() {
           >
             View pack
           </button>
+          {held.length > 0 && (
+            <button
+              onClick={() =>
+                goToHeldHook(held.map((h) => h.name).sort((a, b) => a.localeCompare(b))[0])
+              }
+              className="px-4 py-2 text-xs font-medium text-status-pending bg-status-pending/10 border border-status-pending/25 rounded-lg hover:bg-status-pending/15 transition-colors"
+            >
+              {held.length === 1 ? 'Review held hook' : 'Review held hooks'}
+            </button>
+          )}
         </div>
       </div>
     );

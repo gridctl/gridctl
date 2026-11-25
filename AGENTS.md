@@ -287,7 +287,7 @@ pkg/token/, pkg/format/, pkg/output/, pkg/jsonrpc/, pkg/state/, pkg/git/, pkg/do
 web/                React 19 + Vite + TypeScript. Tailwind v4 (postcss plugin). Zustand stores in src/stores/, route map in
                     src/routes.tsx, feature components grouped under src/components/<workspace>/. Nine workspaces:
                     Stack, Library, Variables (`/vault`), Tools, Metrics, Pins, Logs, Traces (Runs tab), Connections. The Pins
-                    workspace has a Context tab beside Server and Skills. The Library kind switch has Skills, Agents, Hooks,
+                    workspace has Context and Hooks tabs beside Server and Skills. The Library kind switch has Skills, Agents, Hooks,
                     Packs, and Proposals segments; registry/proposals/ reviews staged proposals over `/api/proposals`. The Detached*Page
                     files are lazy popout windows that mirror specific panels; each renders through
                     src/components/detached/DetachedWindowFrame.tsx, which owns the window title, toasts, and chrome.

@@ -36,7 +36,7 @@ describe('usePolling retry registration', () => {
     vi.restoreAllMocks();
     resetPinAlertBaseline();
     useAuthStore.setState({ authRequired: false, generation: Symbol() });
-    usePinsStore.setState({ pins: null, skillPins: null, pinsError: null, skillPinsError: null });
+    usePinsStore.setState({ pins: null, skillPins: null, hookPins: null, pinsError: null, skillPinsError: null, hookPinsError: null });
     useRegistryStore.setState({ skills: null, error: null });
     useStackStore.setState({ error: null, isLoading: false, connectionStatus: 'disconnected' });
     useTelemetryStore.setState({ rawSpec: null, config: { global: {}, servers: {} } });
@@ -51,6 +51,7 @@ describe('usePolling retry registration', () => {
     vi.spyOn(api, 'fetchServerPins').mockResolvedValue({});
     vi.spyOn(api, 'fetchSkillPins').mockResolvedValue({});
     vi.spyOn(api, 'fetchContextPins').mockResolvedValue({});
+    vi.spyOn(api, 'fetchHookPins').mockResolvedValue({});
     vi.spyOn(api, 'fetchRegistryStatus').mockResolvedValue({ totalSkills: 0, activeSkills: 0 });
     vi.spyOn(api, 'fetchRegistrySkills').mockResolvedValue([]);
     vi.spyOn(api, 'fetchSkillSources').mockResolvedValue([]);
@@ -88,6 +89,7 @@ describe('usePolling retry registration', () => {
     vi.mocked(api.fetchStatus).mockRejectedValue(down);
     vi.mocked(api.fetchServerPins).mockRejectedValue(down);
     vi.mocked(api.fetchSkillPins).mockRejectedValue(down);
+    vi.mocked(api.fetchHookPins).mockRejectedValue(down);
     vi.mocked(api.fetchRegistryStatus).mockRejectedValue(down);
     vi.mocked(api.fetchRegistrySkills).mockRejectedValue(down);
     useAuthStore.setState({ authRequired: false, generation: Symbol() });
@@ -97,6 +99,7 @@ describe('usePolling retry registration', () => {
     });
     expect(usePinsStore.getState().pinsError).toBe('Gateway connection unavailable');
     expect(usePinsStore.getState().skillPinsError).toBe('Gateway connection unavailable');
+    expect(usePinsStore.getState().hookPinsError).toBe('Gateway connection unavailable');
     expect(useRegistryStore.getState().error).toBe('Gateway connection unavailable');
     await waitFor(() => expect(api.fetchServerPins).toHaveBeenCalled());
     view.unmount();
@@ -336,7 +339,7 @@ describe('usePolling toast navigation guard', () => {
     vi.mocked(showToast).mockClear();
     resetPinAlertBaseline();
     resetGuards();
-    usePinsStore.setState({ pins: null, skillPins: null, pinsError: null, skillPinsError: null });
+    usePinsStore.setState({ pins: null, skillPins: null, hookPins: null, pinsError: null, skillPinsError: null, hookPinsError: null });
     useRegistryStore.setState({ skills: null, error: null });
     useStackStore.setState({ error: null, isLoading: false, connectionStatus: 'disconnected' });
     useTelemetryStore.setState({ rawSpec: null, config: { global: {}, servers: {} } });
@@ -361,6 +364,7 @@ describe('usePolling toast navigation guard', () => {
     } as Awaited<ReturnType<typeof api.fetchServerPins>>);
     vi.spyOn(api, 'fetchSkillPins').mockResolvedValue({});
     vi.spyOn(api, 'fetchContextPins').mockResolvedValue({});
+    vi.spyOn(api, 'fetchHookPins').mockResolvedValue({});
     vi.spyOn(api, 'fetchRegistryStatus').mockResolvedValue({ totalSkills: 0, activeSkills: 0 });
     vi.spyOn(api, 'fetchRegistrySkills').mockResolvedValue([]);
     vi.spyOn(api, 'fetchSkillSources').mockResolvedValue([]);
@@ -432,6 +436,7 @@ describe('usePolling pin alerts', () => {
     vi.spyOn(api, 'fetchServerPins').mockResolvedValue({});
     vi.spyOn(api, 'fetchSkillPins').mockResolvedValue({});
     vi.spyOn(api, 'fetchContextPins').mockResolvedValue({});
+    vi.spyOn(api, 'fetchHookPins').mockResolvedValue({});
     vi.spyOn(api, 'fetchRegistryStatus').mockResolvedValue({ totalSkills: 0, activeSkills: 0 });
     vi.spyOn(api, 'fetchRegistrySkills').mockResolvedValue([]);
     vi.spyOn(api, 'fetchSkillSources').mockResolvedValue([]);
@@ -481,7 +486,7 @@ describe('usePolling pin alerts', () => {
     vi.mocked(showToast).mockClear();
     resetPinAlertBaseline();
     useAuthStore.setState({ authRequired: false, generation: Symbol() });
-    usePinsStore.setState({ pins: null, skillPins: null, contextPins: null, pinsError: null, skillPinsError: null });
+    usePinsStore.setState({ pins: null, skillPins: null, contextPins: null, hookPins: null, pinsError: null, skillPinsError: null, hookPinsError: null });
     useRegistryStore.setState({ skills: null, error: null });
     useStackStore.setState({ error: null, isLoading: false, connectionStatus: 'disconnected' });
     useTelemetryStore.setState({ rawSpec: null, config: { global: {}, servers: {} } });
@@ -583,5 +588,58 @@ describe('usePolling pin alerts', () => {
     await cycle();
     expect(showToast).toHaveBeenCalledTimes(1);
     expect(vi.mocked(showToast).mock.calls[0][1]).toBe('Pin drift detected on server b');
+  });
+  function hookPin(status: 'drift' | 'pinned') {
+    return {
+      status,
+      definition_hash: 'h',
+      pinned_at: '2026-01-01T00:00:00Z',
+      last_verified_at: '2026-01-01T00:00:00Z',
+    };
+  }
+
+  it('stores hook pins and toasts hook drift once with a View link', async () => {
+    stubPoll();
+    vi.mocked(api.fetchHookPins).mockResolvedValue({ 'block-force-push': hookPin('drift') });
+    await mount();
+    expect(usePinsStore.getState().hookPins).toEqual({ 'block-force-push': hookPin('drift') });
+    const hookToasts = () =>
+      vi.mocked(showToast).mock.calls.filter(([, message]) => message === 'Pin drift detected on 1 hook');
+    expect(hookToasts()).toHaveLength(1);
+    const [kind, , options] = hookToasts()[0];
+    expect(kind).toBe('warning');
+    expect(options?.action?.label).toBe('View');
+    act(() => options?.action?.onClick());
+    expect(screen.getByTestId('location')).toHaveTextContent('/pins?kind=hook&hook=block-force-push&view=drift');
+    await cycle();
+    expect(hookToasts()).toHaveLength(1);
+  });
+
+  it('pluralizes hook drift and toasts again after it clears', async () => {
+    stubPoll();
+    vi.mocked(api.fetchHookPins).mockResolvedValue({ a: hookPin('pinned') });
+    await mount();
+    expect(showToast).not.toHaveBeenCalled();
+    vi.mocked(api.fetchHookPins).mockResolvedValue({ b: hookPin('drift'), a: hookPin('drift') });
+    await cycle();
+    expect(vi.mocked(showToast).mock.calls.map(([, m]) => m)).toEqual(['Pin drift detected on 2 hooks']);
+    vi.mocked(showToast).mockClear();
+    vi.mocked(api.fetchHookPins).mockResolvedValue({ a: hookPin('pinned') });
+    await cycle();
+    vi.mocked(api.fetchHookPins).mockResolvedValue({ a: hookPin('drift') });
+    await cycle();
+    expect(vi.mocked(showToast).mock.calls.map(([, m]) => m)).toEqual(['Pin drift detected on 1 hook']);
+  });
+
+  it('treats an unavailable hook pins endpoint as empty and records other failures', async () => {
+    stubPoll();
+    vi.mocked(api.fetchHookPins).mockRejectedValue(new HTTPError(503, 'API error: 503 Service Unavailable'));
+    await mount();
+    expect(usePinsStore.getState().hookPins).toEqual({});
+    expect(usePinsStore.getState().hookPinsError).toBeNull();
+    vi.mocked(api.fetchHookPins).mockRejectedValue(new Error('hook pins down'));
+    await cycle();
+    expect(usePinsStore.getState().hookPinsError).toBe('hook pins down');
+    expect(usePinsStore.getState().hookPins).toEqual({});
   });
 });

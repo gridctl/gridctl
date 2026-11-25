@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import type { ContextPin, ServerPins, SkillPin } from '../lib/api';
+import type { HookPin } from '../types';
 
 interface PinsState {
   pins: Record<string, ServerPins> | null;
@@ -19,6 +20,11 @@ interface PinsState {
   contextPinsError: string | null;
   setContextPins: (contextPins: Record<string, ContextPin>) => void;
   setContextPinsError: (error: string | null) => void;
+  // Hook pins from /api/hook-pins: the stored status, not a live verify.
+  hookPins: Record<string, HookPin> | null;
+  hookPinsError: string | null;
+  setHookPins: (hookPins: Record<string, HookPin>) => void;
+  setHookPinsError: (error: string | null) => void;
 }
 
 /**
@@ -57,6 +63,10 @@ export const usePinsStore = create<PinsState>()(
     contextPinsError: null,
     setContextPins: (contextPins) => set({ contextPins, contextPinsError: null }),
     setContextPinsError: (contextPinsError) => set({ contextPinsError }),
+    hookPins: null,
+    hookPinsError: null,
+    setHookPins: (hookPins) => set({ hookPins, hookPinsError: null }),
+    setHookPinsError: (hookPinsError) => set({ hookPinsError }),
   }))
 );
 
@@ -239,4 +249,33 @@ export const useFirstDriftedContext = () => {
 export const useFirstFindingsContext = () => {
   const contextPins = usePinsStore((s) => s.contextPins);
   return useMemo(() => firstFindingsContext(contextPins), [contextPins]);
+};
+
+export const hookHasAlertFindings = (pin: HookPin): boolean =>
+  (pin.findings ?? []).some((f) => f.severity === 'warn' || f.severity === 'critical');
+
+export const countHookAlertFindings = (pin: HookPin): number =>
+  (pin.findings ?? []).filter((f) => f.severity === 'warn' || f.severity === 'critical').length;
+
+export const countDriftedHooks = (hookPins: Record<string, HookPin> | null): number => {
+  if (!hookPins) return 0;
+  return Object.values(hookPins).filter((p) => p.status === 'drift').length;
+};
+
+export const firstDriftedHook = (hookPins: Record<string, HookPin> | null): string | null => {
+  if (!hookPins) return null;
+  const names = Object.keys(hookPins)
+    .filter((name) => hookPins[name].status === 'drift')
+    .sort((a, b) => a.localeCompare(b));
+  return names[0] ?? null;
+};
+
+export const useDriftedHookCount = () => {
+  const hookPins = usePinsStore((s) => s.hookPins);
+  return useMemo(() => countDriftedHooks(hookPins), [hookPins]);
+};
+
+export const useFirstDriftedHook = () => {
+  const hookPins = usePinsStore((s) => s.hookPins);
+  return useMemo(() => firstDriftedHook(hookPins), [hookPins]);
 };

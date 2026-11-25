@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useState, createElement } from 'react';
-import { useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { List, Package, RefreshCw, Bot, FileDiff } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { WORKSPACE_LABELS } from '../../../types/workspace';
@@ -16,6 +16,8 @@ import { fetchHookProjectionStatus, fetchRegistryHooks } from '../../../lib/api'
 import type { PaletteCommand } from '../../../types/palette';
 import type { HookProjectionStatus, HookUnsupportedClient, RegistryHook } from '../../../types';
 import { describeError, isCancellation } from '../../../lib/describeError';
+import { hookPinsUrl } from '../../../lib/hookGovernance';
+import { usePinsStore } from '../../../stores/usePinsStore';
 
 interface HooksWorkspaceProps {
   onKindChange: (kind: RegistryKind) => void;
@@ -24,6 +26,8 @@ interface HooksWorkspaceProps {
 export function HooksWorkspace({ onKindChange }: HooksWorkspaceProps) {
   const headingId = useId();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const hookPins = usePinsStore((s) => s.hookPins);
   const [hooks, setHooks] = useState<RegistryHook[] | null>(null);
   const [statuses, setStatuses] = useState<HookProjectionStatus[] | null>(null);
   const [unsupported, setUnsupported] = useState<HookUnsupportedClient[]>([]);
@@ -213,6 +217,8 @@ export function HooksWorkspace({ onKindChange }: HooksWorkspaceProps) {
                       statuses={statusMap.get(hook.name) ?? []}
                       isActive={hook.name === selectedName}
                       onSelect={(h) => setSelectedName(h.name)}
+                      pinDrift={(hookPins?.[hook.name]?.status ?? hook.pin_status) === 'drift'}
+                      onOpenPinDrift={(name) => navigate(hookPinsUrl(name, 'drift'))}
                     />
                   ))}
                 </div>

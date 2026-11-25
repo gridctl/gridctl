@@ -10,9 +10,13 @@ export interface HookCardProps {
   statuses: HookProjectionStatus[];
   onSelect: (hook: RegistryHook) => void;
   isActive?: boolean;
+  // Stored pin status is drift: an import is held for pin approval. This is
+  // separate from the projection pills' "drifted" (a hand-edited client file).
+  pinDrift?: boolean;
+  onOpenPinDrift?: (name: string) => void;
 }
 
-export const HookCard = memo(({ hook, statuses, onSelect, isActive = false }: HookCardProps) => {
+export const HookCard = memo(({ hook, statuses, onSelect, isActive = false, pinDrift = false, onOpenPinDrift }: HookCardProps) => {
   return (
     <div
       aria-current={isActive ? 'true' : undefined}
@@ -45,6 +49,18 @@ export const HookCard = memo(({ hook, statuses, onSelect, isActive = false }: Ho
           ))}
         </div>
       </button>
+      {pinDrift && (
+        <div className="px-3 pb-3 -mt-1">
+          <button
+            type="button"
+            aria-label={`Review pin drift for ${hook.name}`}
+            onClick={() => onOpenPinDrift?.(hook.name)}
+            className="inline-flex items-center text-3xs font-medium px-1.5 py-0.5 rounded bg-status-pending/15 text-status-pending border border-status-pending/30 hover:bg-status-pending/25 transition-colors"
+          >
+            Pin drift
+          </button>
+        </div>
+      )}
     </div>
   );
 });
