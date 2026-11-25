@@ -488,6 +488,15 @@ describe('single-file drift review evidence', () => {
     expect(screen.getByLabelText('Diff for OpenCode')).not.toHaveTextContent('diff exploded');
   });
 
+  it('escapes hidden characters in the failed-load message', async () => {
+    vi.mocked(fetchGlobalContextDiff).mockRejectedValueOnce(new Error('bad\u202e'));
+    await openReview();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('bad\\u202e');
+    expect(alert.textContent).not.toContain('\u202e');
+  });
+
   it('treats an empty diff as ready with no line-level differences', async () => {
     vi.mocked(fetchGlobalContextDiff).mockResolvedValue('');
     await openReview();

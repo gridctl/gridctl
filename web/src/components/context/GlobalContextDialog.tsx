@@ -1190,6 +1190,7 @@ function FragmentDriftResolveDialog({
   );
   const evidence = useLoadedEvidence(diffKey, fetchDiff);
   const ready = evidence.status === 'ready';
+  const gateTitle = evidence.status === 'idle' ? IDLE_GATE_TITLE : EVIDENCE_GATE_TITLE;
   const [busy, setBusy] = useState(false);
   const driftCase = !multiFile ? 'compiled' : identity ? 'multi-file-identity' : 'multi-file-lossy';
 
@@ -1289,7 +1290,7 @@ function FragmentDriftResolveDialog({
                   size="sm"
                   variant="primary"
                   disabled={busy || !ready}
-                  title={ready ? undefined : EVIDENCE_GATE_TITLE}
+                  title={ready ? undefined : gateTitle}
                   onClick={() =>
                     void run(
                       () => adoptGlobalContext(client.slug, { fragment: selected }),
@@ -1305,7 +1306,7 @@ function FragmentDriftResolveDialog({
                 size="sm"
                 variant="outline-danger"
                 disabled={busy || !ready}
-                title={ready ? undefined : EVIDENCE_GATE_TITLE}
+                title={ready ? undefined : gateTitle}
                 onClick={handleOverwrite}
               >
                 Force overwrite
@@ -1437,6 +1438,7 @@ function CompiledCaptureActions({
 }
 
 const EVIDENCE_GATE_TITLE = 'Review the diff before choosing';
+const IDLE_GATE_TITLE = 'Select a drifted fragment first';
 
 /**
  * The evidence block of a drift dialog. A failed load is an alert outside

@@ -26,6 +26,10 @@ describe('packFindingToPinFinding', () => {
     expect(packFindingToPinFinding({}).message).toBe('flagged content');
   });
 
+  it('keeps an unknown wire severity out of the code slot', () => {
+    expect(packFindingToPinFinding({ severity: 'odd\u202e' }).code).toBe('finding');
+  });
+
   it('never puts the regex pattern in the snippet or decoded slot', () => {
     const adapted = packFindingsToPinFindings([
       { pattern: 'curl.*sh', description: 'piped shell', severity: 'danger' },
