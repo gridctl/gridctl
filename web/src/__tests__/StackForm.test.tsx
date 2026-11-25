@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { StackForm } from '../components/wizard/steps/StackForm';
-import type { StackFormData } from '../lib/yaml-builder';
+import { MCPServerForm } from '../components/wizard/steps/MCPServerForm';
+import type { MCPServerFormData, StackFormData } from '../lib/yaml-builder';
 import { buildYAML } from '../lib/yaml-builder';
 import { fetchVariableSets } from '../lib/api';
 
@@ -18,6 +19,7 @@ vi.mock('../components/wizard/VariablesPopover', () => ({
 // Mock vault API — default to empty sets; individual tests override as needed
 vi.mock('../lib/api', () => ({
   fetchVariableSets: vi.fn().mockResolvedValue([]),
+  fetchPythonPackageVersions: vi.fn().mockResolvedValue({ versions: ['1.0.0'], latest: '1.0.0' }),
 }));
 
 function defaultData(overrides?: Partial<StackFormData>): StackFormData {
@@ -558,5 +560,191 @@ describe('YAML serialization — logging fields', () => {
     expect(yaml).not.toContain('maxSizeMB');
     expect(yaml).not.toContain('maxAgeDays');
     expect(yaml).not.toContain('maxBackups');
+  });
+});
+
+describe('StackForm tracing select', () => {
+  let onChange: OnChange;
+
+  beforeEach(() => {
+    onChange = vi.fn<OnChange>();
+  });
+
+  function tracingSelect(): HTMLSelectElement {
+    fireEvent.click(screen.getByText('Gateway Advanced'));
+    return screen.getByLabelText('Tracing enabled') as HTMLSelectElement;
+  }
+
+  it('offers Default (on), On, and Off and defaults to Default', () => {
+    render(<StackForm data={defaultData()} onChange={onChange} />);
+    const select = tracingSelect();
+    expect(select.tagName).toBe('SELECT');
+    expect(select.value).toBe('');
+    expect(Array.from(select.options).map((o) => o.text)).toEqual(['Default (on)', 'On', 'Off']);
+    expect(screen.queryByText('Default: on')).not.toBeInTheDocument();
+  });
+
+  it('writes false, true, and undefined', () => {
+    render(<StackForm data={defaultData()} onChange={onChange} />);
+    const select = tracingSelect();
+    const enabledAfter = (value: string) => {
+      fireEvent.change(select, { target: { value } });
+      const last = vi.mocked(onChange).mock.lastCall![0];
+      return last.gateway?.tracing && 'enabled' in last.gateway.tracing ? last.gateway.tracing.enabled : 'missing';
+    };
+    expect(enabledAfter('false')).toBe(false);
+    expect(enabledAfter('true')).toBe(true);
+    expect(enabledAfter('')).toBeUndefined();
+  });
+
+  it('shows stored values', () => {
+    const { unmount } = render(
+      <StackForm data={defaultData({ gateway: { tracing: { enabled: true } } })} onChange={onChange} />,
+    );
+    expect(tracingSelect().value).toBe('true');
+    unmount();
+    render(<StackForm data={defaultData({ gateway: { tracing: { enabled: false } } })} onChange={onChange} />);
+    expect(tracingSelect().value).toBe('false');
+  });
+
+  it('leaves the schema pinning checkbox as the only Enabled label', () => {
+    render(<StackForm data={defaultData()} onChange={onChange} />);
+    fireEvent.click(screen.getByText('Gateway Advanced'));
+    const pinning = screen.getByLabelText('Enabled') as HTMLInputElement;
+    expect(pinning.type).toBe('checkbox');
+    fireEvent.click(pinning);
+    expect(vi.mocked(onChange).mock.lastCall![0].gateway?.security?.schemaPinning?.enabled).toBe(true);
+  });
+
+  it('serializes enabled: false and omits an empty tracing block', () => {
+    const off = buildYAML({
+      type: 'stack',
+      data: { name: 'my-stack', version: '1', gateway: { tracing: { enabled: false } } },
+    });
+    expect(off).toContain('tracing:');
+    expect(off).toContain('enabled: false');
+    const empty = buildYAML({ type: 'stack', data: { name: 'my-stack', version: '1', gateway: { tracing: {} } } });
+    expect(empty).not.toContain('tracing:');
+    expect(empty).not.toContain('enabled:');
+  });
+});
+
+function expectUniqueIdsAndResolvedRefs(root: HTMLElement) {
+  const ids = Array.from(root.querySelectorAll('[id]')).map((el) => el.id);
+  const duplicates = ids.filter((id, i) => ids.indexOf(id) !== i);
+  expect(duplicates).toEqual([]);
+  const count = (id: string) => ids.filter((x) => x === id).length;
+  root.querySelectorAll('label[for]').forEach((label) => {
+    expect(count(label.getAttribute('for')!)).toBe(1);
+  });
+  root.querySelectorAll('[list]').forEach((el) => {
+    expect(count(el.getAttribute('list')!)).toBe(1);
+  });
+  root.querySelectorAll('[aria-describedby]').forEach((el) => {
+    for (const token of el.getAttribute('aria-describedby')!.split(/\s+/).filter(Boolean)) {
+      expect(count(token)).toBe(1);
+    }
+  });
+}
+
+describe('StackForm element ids across servers', () => {
+  const servers: MCPServerFormData[] = [
+    {
+      name: 'srv-container',
+      serverType: 'container',
+      image: 'mcp/fetch:latest',
+      autoscale: { min: 0, max: 3, targetInFlight: 4, idleToZero: true },
+    },
+    { name: 'srv-pypi', serverType: 'source', transport: 'stdio', source: { type: 'pypi', runtime: 'python', package: 'mcp-server-fetch', ref: '1.0.0' } },
+    { name: 'srv-git', serverType: 'source', transport: 'stdio', source: { type: 'git', url: 'https://github.com/o/r.git', ref: 'main', runtime: 'python' } },
+    { name: 'srv-local', serverType: 'source', transport: 'http', source: { type: 'local', path: './server', dockerfile: 'Dockerfile' } },
+    { name: 'srv-api-one', serverType: 'openapi', transport: '', openapi: { spec: 'https://a.example.com/spec.yaml', tls: {} } },
+    { name: 'srv-api-two', serverType: 'openapi', transport: '', openapi: { spec: 'https://b.example.com/spec.yaml', tls: {} } },
+  ];
+
+  it('renders unique ids whose references resolve, and the second TLS label targets the second server', async () => {
+    const onChange = vi.fn<OnChange>();
+    const { container } = render(<StackForm data={defaultData({ mcpServers: servers })} onChange={onChange} />);
+    fireEvent.click(screen.getByText('MCP Servers'));
+    for (const server of servers) fireEvent.click(screen.getByText(server.name));
+    for (const advanced of screen.getAllByText('Advanced', { exact: true })) fireEvent.click(advanced);
+    for (const tls of screen.getAllByText('TLS / mTLS')) fireEvent.click(tls);
+    // Let the PyPI version lookup settle.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+
+    expect(screen.getByLabelText('Scale to zero when idle')).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Project name/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Repository URL/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Ref')).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Local root/)).toBeInTheDocument();
+    expect(screen.getAllByLabelText('Dockerfile')).toHaveLength(2);
+    expect(screen.getByLabelText('Project subdirectory')).toBeInTheDocument();
+    expect(screen.getAllByLabelText('Volumes').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByLabelText('Execution configuration')).toHaveLength(servers.length);
+
+    expectUniqueIdsAndResolvedRefs(container);
+
+    vi.mocked(onChange).mockClear();
+    const skipLabels = screen.getAllByText('Skip TLS Verification');
+    expect(skipLabels).toHaveLength(2);
+    fireEvent.click(skipLabels[1]);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const updated = vi.mocked(onChange).mock.calls[0][0].mcpServers!;
+    expect(updated[5].openapi?.tls?.insecureSkipVerify).toBe(true);
+    expect(updated[4].openapi?.tls?.insecureSkipVerify).toBeUndefined();
+  });
+});
+
+describe('MCPServerForm error ids across forms', () => {
+  function Pair({ a, b, errors }: { a: MCPServerFormData; b: MCPServerFormData; errors: Record<string, string> }) {
+    return (
+      <>
+        <div data-testid="form-a"><MCPServerForm data={a} onChange={vi.fn()} errors={errors} /></div>
+        <div data-testid="form-b"><MCPServerForm data={b} onChange={vi.fn()} errors={errors} /></div>
+      </>
+    );
+  }
+
+  function expectDescribedByOwnError(form: HTMLElement, label: RegExp, message: string) {
+    const input = within(form).getByLabelText(label);
+    const ids = (input.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+    expect(ids.length).toBeGreaterThan(0);
+    const targets = ids.map((id) => document.getElementById(id));
+    expect(targets.every((t) => t !== null && form.contains(t))).toBe(true);
+    expect(targets.some((t) => t?.textContent?.includes(message))).toBe(true);
+  }
+
+  it('keeps PyPI package and version errors in their own form', async () => {
+    const pypi: MCPServerFormData = { name: 'p', serverType: 'source', transport: 'stdio', source: { type: 'pypi', runtime: 'python', package: 'pkg', ref: '1.0.0' } };
+    const { container } = render(
+      <Pair a={pypi} b={{ ...pypi, name: 'q' }} errors={{ 'source.package': 'Package is required', 'source.ref': 'Version is required' }} />,
+    );
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    expectUniqueIdsAndResolvedRefs(container);
+    for (const form of [screen.getByTestId('form-a'), screen.getByTestId('form-b')]) {
+      expectDescribedByOwnError(form, /^Project name/, 'Package is required');
+      expectDescribedByOwnError(form, /^Exact version/, 'Version is required');
+      const version = within(form).getByLabelText(/^Exact version/);
+      const list = document.getElementById(version.getAttribute('list')!);
+      expect(list?.tagName).toBe('DATALIST');
+      expect(form.contains(list)).toBe(true);
+    }
+  });
+
+  it('keeps Git URL and local path errors in their own form', () => {
+    const git: MCPServerFormData = { name: 'g', serverType: 'source', transport: 'http', source: { type: 'git', url: '', dockerfile: 'Dockerfile' } };
+    const local: MCPServerFormData = { name: 'l', serverType: 'source', transport: 'http', source: { type: 'local', path: '', dockerfile: 'Dockerfile' } };
+    const errors = { 'source.url': 'URL is required', 'source.path': 'Path is required' };
+    const { container, unmount } = render(<Pair a={git} b={{ ...git, name: 'h' }} errors={errors} />);
+    expectUniqueIdsAndResolvedRefs(container);
+    for (const form of [screen.getByTestId('form-a'), screen.getByTestId('form-b')]) {
+      expectDescribedByOwnError(form, /^Repository URL/, 'URL is required');
+    }
+    unmount();
+    const second = render(<Pair a={local} b={{ ...local, name: 'm' }} errors={errors} />);
+    expectUniqueIdsAndResolvedRefs(second.container);
+    for (const form of [screen.getByTestId('form-a'), screen.getByTestId('form-b')]) {
+      expectDescribedByOwnError(form, /^Local root/, 'Path is required');
+    }
   });
 });
