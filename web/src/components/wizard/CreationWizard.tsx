@@ -29,6 +29,7 @@ import { useRegistryStore } from '../../stores/useRegistryStore';
 import { useVaultStore } from '../../stores/useVaultStore';
 import { buildYAML, customHeaderErrors, parseYAMLToForm, yamlToFormWithLoss, type ResourceType, type WizardFormData, type MCPServerFormData } from '../../lib/yaml-builder';
 import { formatOperationsSummary } from '../../lib/openapiOperations';
+import { formatNextReason, validateMCPServer, validateResource, validateStack, type WizardErrors } from '../../lib/wizard-validation';
 import { catalogEntryToFormData, type CatalogContainerOptions } from '../../lib/catalog';
 import type { CatalogEntry } from '../../lib/api';
 import { TemplateGrid } from './TemplateGrid';
@@ -361,6 +362,64 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
     onDeploy?.();
   }, [close, onDeploy]);
 
+  const formErrors = useMemo<WizardErrors>(() => {
+    const ctx = {
+      serverNames: mcpServers.map((s) => s.name),
+      resourceNames: resources.map((r) => r.name),
+    };
+    switch (selectedType) {
+      case 'mcp-server':
+        return validateMCPServer(formData['mcp-server'], ctx);
+      case 'resource':
+        return validateResource(formData.resource, ctx);
+      case 'stack':
+        return validateStack(formData.stack);
+      default:
+        return {};
+    }
+  }, [selectedType, formData, mcpServers, resources]);
+
+  const [touched, setTouched] = useState<Set<string>>(() => new Set());
+  const [nextAttempted, setNextAttempted] = useState(false);
+  const [revealKey, setRevealKey] = useState(0);
+  const focusPendingRef = useRef(false);
+  const validationScope = `${isOpen}:${selectedType}`;
+  const [prevValidationScope, setPrevValidationScope] = useState(validationScope);
+  if (prevValidationScope !== validationScope) {
+    setPrevValidationScope(validationScope);
+    setTouched(new Set());
+    setNextAttempted(false);
+  }
+
+  // A loaded draft is a fresh form even when its type matches the current one.
+  const resetValidation = useCallback(() => {
+    setTouched(new Set());
+    setNextAttempted(false);
+  }, []);
+
+  const visibleErrors = useMemo<WizardErrors>(() => {
+    if (nextAttempted) return formErrors;
+    return Object.fromEntries(Object.entries(formErrors).filter(([key]) => touched.has(key)));
+  }, [formErrors, touched, nextAttempted]);
+
+  const handleFieldBlur = useCallback((event: React.FocusEvent<HTMLElement>) => {
+    const key = event.target.getAttribute?.('data-wizard-field');
+    if (!key) return;
+    setTouched((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+  }, []);
+
+  const handleRemoveItem = useCallback((list: 'mcpServers' | 'resources') => {
+    setTouched((prev) => new Set([...prev].filter((key) => !key.startsWith(`${list}.`))));
+  }, []);
+
+  useEffect(() => {
+    if (!focusPendingRef.current) return;
+    focusPendingRef.current = false;
+    const fields = panelRef.current?.querySelectorAll<HTMLElement>('[data-wizard-field]') ?? [];
+    const first = Array.from(fields).find((el) => el.getAttribute('data-wizard-field')! in formErrors);
+    first?.focus();
+  }, [revealKey, formErrors, panelRef]);
+
   const canGoNext = () => {
     switch (currentStep) {
       case 'type':
@@ -368,19 +427,42 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
       case 'template':
         return selectedTemplate !== null;
       case 'form':
-        if (selectedType === 'mcp-server') {
-          const server = formData['mcp-server'];
-          // Conflict checks mirror the server: only top-level auth: counts.
-          // openapi.auth wins Authorization at request time and is not a conflict.
-          const authSet = Boolean(server.auth);
-          if (server.serverType === 'external' || server.serverType === 'openapi') {
-            return Object.keys(customHeaderErrors(server.headers, authSet)).length === 0;
-          }
-        }
-        return true;
+        return headersValid();
       default:
         return false;
     }
+  };
+
+  function headersValid(): boolean {
+    if (selectedType === 'mcp-server') {
+      const server = formData['mcp-server'];
+      // Conflict checks mirror the server: only top-level auth: counts.
+      // openapi.auth wins Authorization at request time and is not a conflict.
+      const authSet = Boolean(server.auth);
+      if (server.serverType === 'external' || server.serverType === 'openapi') {
+        return Object.keys(customHeaderErrors(server.headers, authSet)).length === 0;
+      }
+    }
+    return true;
+  }
+
+  // On the form step Next stays focusable while blocked (aria-disabled rather
+  // than disabled) so a click can reveal the errors and keyboard users can
+  // reach the reason. YAML mode keeps the native disabled behavior.
+  const formGateActive = currentStep === 'form' && !expertMode;
+  const nextBlockedReason = !formGateActive
+    ? null
+    : Object.keys(formErrors).length > 0
+      ? formatNextReason(formErrors)
+      : !headersValid()
+        ? 'Fix the custom header errors'
+        : null;
+  const nextReasonId = useId();
+
+  const handleBlockedNext = () => {
+    setNextAttempted(true);
+    focusPendingRef.current = true;
+    setRevealKey((k) => k + 1);
   };
 
   const goNext = () => {
@@ -395,6 +477,13 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
     if (idx > 0) {
       setStep(stepOrder[idx - 1]);
     }
+  };
+
+  const formValidation: FormValidation = {
+    errors: visibleErrors,
+    revealKey,
+    onFieldBlur: handleFieldBlur,
+    onRemoveItem: handleRemoveItem,
   };
 
   const currentStepIdx = stepOrder.indexOf(currentStep);
@@ -462,7 +551,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
 
             {/* Draft Manager */}
             <div className="relative">
-              <DraftManager />
+              <DraftManager onLoad={resetValidation} />
             </div>
 
             {/* Reset */}
@@ -522,6 +611,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
                       handleDeploy,
                       handleCatalogSelect,
                       operationsSummary,
+                      formValidation,
                     )}
                   </div>
                 </div>
@@ -554,6 +644,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
                 handleDeploy,
                 handleCatalogSelect,
                 operationsSummary,
+                formValidation,
               )}
             </div>
           )}
@@ -570,13 +661,21 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
               </Button>
             )}
           </div>
-          <div>
+          <div className="flex items-center gap-3 min-w-0">
+            {currentStep !== 'review' && nextBlockedReason && (
+              <p id={nextReasonId} title={nextBlockedReason} className="text-2xs text-status-error truncate">
+                {nextBlockedReason}
+              </p>
+            )}
             {currentStep !== 'review' && (
               <Button
                 variant="primary"
                 size="sm"
-                onClick={goNext}
-                disabled={!canGoNext()}
+                onClick={nextBlockedReason ? handleBlockedNext : goNext}
+                disabled={formGateActive ? undefined : !canGoNext()}
+                aria-disabled={nextBlockedReason ? true : undefined}
+                aria-describedby={nextBlockedReason ? nextReasonId : undefined}
+                className="flex-shrink-0 aria-disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:transform-none aria-disabled:shadow-none aria-disabled:hover:translate-y-0 aria-disabled:hover:from-primary aria-disabled:hover:to-primary-dark aria-disabled:hover:shadow-none"
               >
                 Next
                 <ArrowRight size={14} />
@@ -624,6 +723,7 @@ function renderStepContent(
   onDeploy: () => void,
   onCatalogSelect: (entry: CatalogEntry, container?: CatalogContainerOptions) => void,
   operationsSummary: string | null,
+  validation: FormValidation,
 ) {
   switch (step) {
     case 'type':
@@ -662,6 +762,7 @@ function renderStepContent(
           resourceType={selectedType}
           formData={formData}
           updateFormData={updateFormData}
+          validation={validation}
         />
       );
     case 'review':
@@ -840,43 +941,66 @@ function TypePicker({
   );
 }
 
-// Form renderer for each resource type
+interface FormValidation {
+  errors: WizardErrors;
+  revealKey: number;
+  onFieldBlur: (event: React.FocusEvent<HTMLElement>) => void;
+  onRemoveItem: (list: 'mcpServers' | 'resources') => void;
+}
+
+// Form renderer for each resource type. Fields carry data-wizard-field, and a
+// single bubbling blur handler here marks them touched.
 function FormRenderer({
   resourceType,
   formData,
   updateFormData,
+  validation,
 }: {
   resourceType: ResourceType;
   formData: ReturnType<typeof useWizardStore.getState>['formData'];
   updateFormData: ReturnType<typeof useWizardStore.getState>['updateFormData'];
+  validation: FormValidation;
 }) {
   // MCP Server — full form
   if (resourceType === 'mcp-server') {
     return (
-      <MCPServerForm
-        data={formData['mcp-server']}
-        onChange={(partial) => updateFormData('mcp-server', partial as Record<string, unknown>)}
-      />
+      <div onBlur={validation.onFieldBlur}>
+        <MCPServerForm
+          data={formData['mcp-server']}
+          onChange={(partial) => updateFormData('mcp-server', partial as Record<string, unknown>)}
+          errors={validation.errors}
+          revealKey={validation.revealKey}
+        />
+      </div>
     );
   }
 
   // Stack — full composition form
   if (resourceType === 'stack') {
     return (
-      <StackForm
-        data={formData['stack']}
-        onChange={(partial) => updateFormData('stack', partial as Record<string, unknown>)}
-      />
+      <div onBlur={validation.onFieldBlur}>
+        <StackForm
+          data={formData['stack']}
+          onChange={(partial) => updateFormData('stack', partial as Record<string, unknown>)}
+          errors={validation.errors}
+          revealKey={validation.revealKey}
+          onRemoveItem={validation.onRemoveItem}
+        />
+      </div>
     );
   }
 
   // Resource — full form with presets
   if (resourceType === 'resource') {
     return (
-      <ResourceForm
-        data={formData['resource']}
-        onChange={(partial) => updateFormData('resource', partial as Record<string, unknown>)}
-      />
+      <div onBlur={validation.onFieldBlur}>
+        <ResourceForm
+          data={formData['resource']}
+          onChange={(partial) => updateFormData('resource', partial as Record<string, unknown>)}
+          errors={validation.errors}
+          revealKey={validation.revealKey}
+        />
+      </div>
     );
   }
 

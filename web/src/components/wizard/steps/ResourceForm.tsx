@@ -9,6 +9,7 @@ import {
   KeyRound,
   Network,
   Settings,
+  AlertCircle,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
@@ -94,6 +95,7 @@ function Section({
   onToggle,
   children,
   badge,
+  hasError,
 }: {
   title: string;
   icon: LucideIcon;
@@ -101,6 +103,7 @@ function Section({
   onToggle: () => void;
   children: React.ReactNode;
   badge?: string;
+  hasError?: boolean;
 }) {
   return (
     <div className="border border-border/20 rounded-xl overflow-hidden transition-colors hover:border-border/30">
@@ -116,6 +119,12 @@ function Section({
         )}
         <Icon size={14} className="text-secondary flex-shrink-0" />
         <span className="text-xs font-medium text-text-primary">{title}</span>
+        {hasError && (
+          <span className="flex items-center text-status-error">
+            <AlertCircle size={12} aria-hidden="true" />
+            <span className="sr-only">, has errors</span>
+          </span>
+        )}
         {badge && (
           <span className="ml-auto text-3xs text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full">
             {badge}
@@ -350,12 +359,20 @@ interface ResourceFormProps {
   data: ResourceFormData;
   onChange: (data: Partial<ResourceFormData>) => void;
   errors?: Record<string, string>;
+  // Each new value expands the sections that hold an error.
+  revealKey?: number;
 }
 
-export function ResourceForm({ data, onChange, errors }: ResourceFormProps) {
+export function ResourceForm({ data, onChange, errors, revealKey }: ResourceFormProps) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set(['preset', 'identity', 'config']),
   );
+  const identityHasError = Boolean(errors?.name || errors?.image);
+  const [revealed, setRevealed] = useState<number | undefined>(undefined);
+  if (revealKey && revealKey !== revealed) {
+    setRevealed(revealKey);
+    if (identityHasError) setExpandedSections((prev) => new Set([...prev, 'identity']));
+  }
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
 
   const toggleSection = useCallback((section: string) => {
@@ -407,6 +424,7 @@ export function ResourceForm({ data, onChange, errors }: ResourceFormProps) {
         icon={Box}
         expanded={expandedSections.has('identity')}
         onToggle={() => toggleSection('identity')}
+        hasError={identityHasError}
       >
         <div className="space-y-3">
           <Field label="Name" required error={errors?.name} help="Kebab-case identifier for this resource">
@@ -417,6 +435,7 @@ export function ResourceForm({ data, onChange, errors }: ResourceFormProps) {
                 value={data.name}
                 onChange={(e) => onChange({ name: toKebabCase(e.target.value) })}
                 onBlur={(e) => onChange({ name: e.target.value.replace(/-+$/, '') })}
+                data-wizard-field="name"
                 placeholder="my-resource"
                 aria-describedby={describedBy}
                 aria-invalid={invalid}
@@ -431,6 +450,7 @@ export function ResourceForm({ data, onChange, errors }: ResourceFormProps) {
                 type="text"
                 value={data.image}
                 onChange={(e) => onChange({ image: e.target.value })}
+                data-wizard-field="image"
                 placeholder="postgres:16"
                 aria-describedby={describedBy}
                 aria-invalid={invalid}
