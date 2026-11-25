@@ -671,15 +671,32 @@ describe('StackForm element ids across servers', () => {
     for (const tls of screen.getAllByText('TLS / mTLS')) fireEvent.click(tls);
     await waitFor(() => expect(fetchPythonPackageVersions).toHaveBeenCalledWith('mcp-server-fetch'));
 
-    expect(screen.getByLabelText('Scale to zero when idle')).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Project name/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Repository URL/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Ref')).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Local root/)).toBeInTheDocument();
-    expect(screen.getAllByLabelText('Dockerfile')).toHaveLength(2);
-    expect(screen.getByLabelText('Project subdirectory')).toBeInTheDocument();
-    expect(screen.getAllByLabelText('Volumes').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByLabelText('Execution configuration')).toHaveLength(servers.length);
+    // getByLabelText scans every element of this large tree per call and
+    // exceeded the test timeout on CI under coverage; resolve labels directly.
+    const labeled = (matcher: string | RegExp) =>
+      Array.from(container.querySelectorAll('label'))
+        .filter((label) => {
+          const text = (label.textContent ?? '').replace(/\s+/g, ' ').trim();
+          return typeof matcher === 'string' ? text === matcher : matcher.test(text);
+        })
+        .map((label) => label.control);
+    for (const controls of [
+      labeled('Scale to zero when idle'),
+      labeled(/^Project name/),
+      labeled(/^Repository URL/),
+      labeled('Ref'),
+      labeled(/^Local root/),
+      labeled('Project subdirectory'),
+    ]) {
+      expect(controls).toHaveLength(1);
+      expect(controls[0]).toBeInstanceOf(HTMLElement);
+    }
+    expect(labeled('Dockerfile')).toHaveLength(2);
+    expect(labeled('Volumes').length).toBeGreaterThanOrEqual(1);
+    expect(labeled('Execution configuration')).toHaveLength(servers.length);
+    for (const control of [...labeled('Dockerfile'), ...labeled('Volumes'), ...labeled('Execution configuration')]) {
+      expect(control).toBeInstanceOf(HTMLElement);
+    }
 
     expectUniqueIdsAndResolvedRefs(container);
 
