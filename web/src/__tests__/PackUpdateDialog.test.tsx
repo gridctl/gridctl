@@ -15,10 +15,10 @@ vi.mock('../lib/api', async () => {
   };
 });
 
-vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
+vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn(), dismissToast: vi.fn() }));
 
 import { previewPack, addPack, HTTPError, PackFindingsError } from '../lib/api';
-import { showToast } from '../components/ui/Toast';
+import { dismissToast, showToast } from '../components/ui/Toast';
 
 const mockPreview = vi.mocked(previewPack);
 const mockAdd = vi.mocked(addPack);
@@ -265,6 +265,7 @@ describe('PackUpdateDialog held hooks', () => {
     mockPreview.mockReset();
     mockAdd.mockReset();
     vi.mocked(showToast).mockReset();
+    vi.mocked(dismissToast).mockReset();
   });
 
   it('warns rather than reporting a clean update when a hook is held', async () => {
@@ -310,6 +311,7 @@ describe('PackUpdateDialog held hooks', () => {
       },
       notes: [],
     });
+    vi.mocked(showToast).mockReturnValue('toast-held');
     renderDialog();
 
     await waitFor(() => screen.getByText(/0 skills, 0 agents/));
@@ -325,8 +327,10 @@ describe('PackUpdateDialog held hooks', () => {
     const call = vi
       .mocked(showToast)
       .mock.calls.find(([, message]) => message === 'Updated team-pack; 2 hooks held for pin approval');
+    expect(call?.[2]?.duration).toBe(6000);
     act(() => call?.[2]?.action?.onClick());
     expect(screen.getByTestId('location')).toHaveTextContent('/pins?kind=hook&hook=a&view=drift');
+    expect(dismissToast).toHaveBeenCalledWith('toast-held');
   });
 
   it('calls the toast with two arguments when no hook is held', async () => {

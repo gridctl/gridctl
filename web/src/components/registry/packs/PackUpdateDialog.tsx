@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { AlertTriangle, Copy, ShieldAlert, Upload } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { useFocusTrap } from '../../../hooks/useFocusTrap';
-import { showToast } from '../../ui/Toast';
+import { dismissToast, showToast } from '../../ui/Toast';
 import {
   addPack,
   PackFindingsError,
@@ -143,8 +143,15 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
           : `Updated ${packName} from its origin`;
       if (held.length > 0) {
         const firstHeld = held.map((h) => h.name).sort((a, b) => a.localeCompare(b))[0];
-        showToast(kind, message, {
-          action: { label: 'Review', onClick: () => navigate(hookPinsUrl(firstHeld, 'drift')) },
+        const toastId = showToast(kind, message, {
+          action: {
+            label: 'Review',
+            onClick: () => {
+              dismissToast(toastId);
+              navigate(hookPinsUrl(firstHeld, 'drift'));
+            },
+          },
+          duration: 6000,
         });
       } else {
         showToast(kind, message);
