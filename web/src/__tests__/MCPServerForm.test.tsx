@@ -1594,3 +1594,79 @@ describe('MCPServerForm key-value rows', () => {
     expect(screen.getAllByRole('textbox', { name: /^Custom headers key \d+$/ })).toHaveLength(2);
   });
 });
+
+describe('MCPServerForm transport on type change', () => {
+  let onChange: OnChange;
+
+  beforeEach(() => {
+    onChange = vi.fn<OnChange>();
+  });
+
+  it('replaces stdio with the default when switching to External URL', () => {
+    render(<MCPServerForm data={defaultData({ serverType: 'container', transport: 'stdio' })} onChange={onChange} />);
+    fireEvent.click(screen.getByText('External URL'));
+    expect(onChange).toHaveBeenCalledWith({ serverType: 'external', transport: 'http' });
+  });
+
+  it('treats the OpenAPI empty transport as unset when switching to Container', () => {
+    render(<MCPServerForm data={defaultData({ serverType: 'openapi', transport: '' })} onChange={onChange} />);
+    fireEvent.click(screen.getAllByText('Container').find((el) => el.closest('button'))!);
+    expect(onChange).toHaveBeenCalledWith({ serverType: 'container', transport: 'http' });
+  });
+
+  it('keeps a transport the new type offers', () => {
+    render(<MCPServerForm data={defaultData({ serverType: 'container', transport: 'sse' })} onChange={onChange} />);
+    fireEvent.click(screen.getByText('External URL'));
+    expect(onChange).toHaveBeenCalledWith({ serverType: 'external', transport: 'sse' });
+  });
+
+  it('keeps the locked OpenAPI transport empty', () => {
+    render(<MCPServerForm data={defaultData({ serverType: 'container', transport: 'stdio' })} onChange={onChange} />);
+    fireEvent.click(screen.getByText('OpenAPI'));
+    expect(onChange).toHaveBeenCalledWith({ serverType: 'openapi', transport: '' });
+  });
+
+  it('emits transport: http in the YAML after switching from stdio container to External URL', () => {
+    function Harness() {
+      const [data, setData] = useState<MCPServerFormData>({ name: 'remote', serverType: 'container', transport: 'stdio', url: 'https://x.example.com/mcp' });
+      return (
+        <>
+          <MCPServerForm data={data} onChange={(patch) => setData((prev) => ({ ...prev, ...patch }))} />
+          <pre data-testid="yaml">{buildYAML({ type: 'mcp-server', data })}</pre>
+        </>
+      );
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByText('External URL'));
+    const yaml = screen.getByTestId('yaml').textContent ?? '';
+    expect(yaml).toContain('transport: http');
+    expect(yaml).not.toContain('transport: stdio');
+  });
+});
+
+describe('MCPServerForm transport select display', () => {
+  const onChange = vi.fn<OnChange>();
+
+  it('shows the type default for an empty transport with no invalid option', () => {
+    render(<MCPServerForm data={defaultData({ serverType: 'container', transport: '' })} onChange={onChange} />);
+    const select = screen.getByLabelText('Transport') as HTMLSelectElement;
+    expect(select.value).toBe('http');
+    expect(Array.from(select.options).some((o) => o.text.includes('not valid'))).toBe(false);
+  });
+
+  it('shows the type default for a missing transport with no invalid option', () => {
+    render(<MCPServerForm data={defaultData({ serverType: 'external' })} onChange={onChange} />);
+    const select = screen.getByLabelText('Transport') as HTMLSelectElement;
+    expect(select.value).toBe('http');
+    expect(Array.from(select.options).some((o) => o.text.includes('not valid'))).toBe(false);
+  });
+
+  it('shows a stored transport the type does not offer, marked as not valid', () => {
+    render(<MCPServerForm data={defaultData({ serverType: 'external', transport: 'stdio' })} onChange={onChange} />);
+    const select = screen.getByLabelText('Transport') as HTMLSelectElement;
+    expect(select.value).toBe('stdio');
+    const invalid = Array.from(select.options).filter((o) => o.text.includes('not valid'));
+    expect(invalid.map((o) => o.text)).toEqual(['stdio (not valid for this type)']);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});

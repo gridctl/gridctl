@@ -1,9 +1,11 @@
+import { useId } from 'react';
 import type { MCPServerFormData } from '../../../lib/yaml-builder';
 
 export function ExecutionFields({ data, onChange }: {
   data: MCPServerFormData;
   onChange: (patch: Partial<MCPServerFormData>) => void;
 }) {
+  const modeId = `${useId()}-execution-mode`;
   const execution = data.execution;
   const supported = ['container', 'source', 'local'].includes(data.serverType);
   const patch = (values: Record<string, unknown>) => onChange({ execution: { ...execution, ...values } });
@@ -11,8 +13,8 @@ export function ExecutionFields({ data, onChange }: {
     <details className="rounded-lg border border-border p-3 space-y-3">
       <summary className="cursor-pointer text-sm font-medium">Execution</summary>
       {!supported && <p className="text-sm">Externally managed execution. Local confinement is unavailable; SSH remote cleanup is unverified.</p>}
-      <label className="block text-sm" htmlFor="execution-mode">Execution configuration</label>
-      <select id="execution-mode" className="w-full rounded border border-border bg-surface p-2" value={String(execution?.mode ?? '')}
+      <label className="block text-sm" htmlFor={modeId}>Execution configuration</label>
+      <select id={modeId} className="w-full rounded border border-border bg-surface p-2" value={String(execution?.mode ?? '')}
         onChange={(event) => onChange({ execution: event.target.value ? (event.target.value === 'local' ? { mode: 'local', inherit: [], lookup: 'absolute' } : { mode: 'hardened' }) : undefined })}>
         <option value="">Compatibility (no execution requirements)</option>
         {supported && <option value={data.serverType === 'local' ? 'local' : 'hardened'}>{data.serverType === 'local' ? 'Local environment hygiene' : 'Hardened container'}</option>}
