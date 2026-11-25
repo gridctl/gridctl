@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { createRef } from 'react';
 import { Trash2 } from 'lucide-react';
 import { IconButton } from '../IconButton';
 
@@ -64,6 +65,38 @@ describe('IconButton', () => {
 
     rerender(<IconButton icon={Trash2} tooltip="Delete skill" size="md" />);
     expect(screen.getByRole('button', { name: 'Delete skill' })).toHaveClass('p-2');
+  });
+
+  it('spins the glyph, not the button, and marks it busy', () => {
+    const { container, rerender } = render(<IconButton icon={Trash2} tooltip="Refresh" spinning />);
+    const btn = screen.getByRole('button', { name: 'Refresh' });
+    expect(container.querySelector('svg')).toHaveClass('animate-spin');
+    expect(btn).not.toHaveClass('animate-spin');
+    expect(btn).toHaveAttribute('aria-busy', 'true');
+
+    rerender(<IconButton icon={Trash2} tooltip="Refresh" />);
+    expect(container.querySelector('svg')).not.toHaveClass('animate-spin');
+    expect(screen.getByRole('button', { name: 'Refresh' })).not.toHaveAttribute('aria-busy');
+  });
+
+  it('renders aria-haspopup and aria-expanded only when given', () => {
+    const { rerender } = render(<IconButton icon={Trash2} tooltip="More actions" hasPopup="menu" expanded={false} />);
+    const btn = screen.getByRole('button', { name: 'More actions' });
+    expect(btn).toHaveAttribute('aria-haspopup', 'menu');
+    expect(btn).toHaveAttribute('aria-expanded', 'false');
+
+    rerender(<IconButton icon={Trash2} tooltip="More actions" hasPopup="menu" expanded />);
+    expect(screen.getByRole('button', { name: 'More actions' })).toHaveAttribute('aria-expanded', 'true');
+
+    rerender(<IconButton icon={Trash2} tooltip="More actions" />);
+    expect(screen.getByRole('button', { name: 'More actions' })).not.toHaveAttribute('aria-haspopup');
+    expect(screen.getByRole('button', { name: 'More actions' })).not.toHaveAttribute('aria-expanded');
+  });
+
+  it('forwards a ref to the button element', () => {
+    const ref = createRef<HTMLButtonElement>();
+    render(<IconButton ref={ref} icon={Trash2} tooltip="More actions" hasPopup="menu" />);
+    expect(ref.current).toBe(screen.getByRole('button', { name: 'More actions' }));
   });
 
   it('renders aria-pressed for stateful toggles', () => {

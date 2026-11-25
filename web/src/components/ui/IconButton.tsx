@@ -11,6 +11,12 @@ interface IconButtonBase {
   variant?: 'default' | 'ghost';
   /** For stateful toggles: rendered as aria-pressed. */
   pressed?: boolean;
+  /** Spins the glyph (never the bordered button) and marks the button aria-busy. */
+  spinning?: boolean;
+  /** Rendered as aria-haspopup for a menu or dialog trigger. */
+  hasPopup?: 'menu' | 'dialog';
+  /** Rendered as aria-expanded alongside `hasPopup`. */
+  expanded?: boolean;
 }
 
 type IconButtonProps = IconButtonBase & (
@@ -39,6 +45,9 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
   size = 'md',
   variant = 'default',
   pressed,
+  spinning,
+  hasPopup,
+  expanded,
 }, ref) {
   const accessibleName = ariaLabel ?? tooltip;
   const sizeClasses = {
@@ -70,6 +79,9 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       title={tooltip}
       aria-label={accessibleName}
       aria-pressed={pressed}
+      aria-busy={spinning ? true : undefined}
+      aria-haspopup={hasPopup}
+      aria-expanded={expanded}
       className={cn(
         'rounded-lg transition-all duration-200 ease-out',
         'disabled:opacity-40 disabled:cursor-not-allowed',
@@ -78,7 +90,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
         className
       )}
     >
-      <Icon size={iconSize} aria-hidden="true" />
+      <Icon size={iconSize} aria-hidden="true" className={spinning ? 'animate-spin' : undefined} />
     </button>
   );
 });
