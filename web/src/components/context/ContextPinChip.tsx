@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { describeError, isCancellation } from '../../lib/describeError';
 import { cn } from '../../lib/cn';
+import { escapeNonPrintable } from '../../lib/nonPrintable';
 import { fetchContextPins, resetContextPin, type ContextPin } from '../../lib/api';
 import { usePinsStore } from '../../stores/usePinsStore';
 import { Modal } from '../ui/Modal';
@@ -40,8 +41,10 @@ export function ContextPinReviewModal({
   name: string;
   onClose: () => void;
 }) {
-  // undefined while loading; null when the load succeeded with no record.
-  const [pin, setPin] = useState<ContextPin | null | undefined>(undefined);
+  // The pin renders from the store so an approve inside the detail (which
+  // refreshes the store) updates the status, history, and title here.
+  const storePin = usePinsStore((s) => s.contextPins?.[name]);
+  const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -49,7 +52,8 @@ export function ContextPinReviewModal({
     void fetchContextPins()
       .then((all) => {
         if (cancelled) return;
-        setPin(all[name] ?? null);
+        usePinsStore.getState().setContextPins(all);
+        setLoaded(true);
         setLoadError(null);
       })
       .catch((err) => {
@@ -59,12 +63,17 @@ export function ContextPinReviewModal({
       cancelled = true;
     };
   }, [name, attempt]);
+  // undefined while loading; null when the load succeeded with no record.
+  const pin: ContextPin | null | undefined = loaded ? (storePin ?? null) : undefined;
+  const shown = escapeNonPrintable(name);
+  const title = pin?.status === 'drift' ? `${shown} changed since its pin` : `Pin for ${shown}`;
   return (
-    <Modal isOpen onClose={onClose} title={`${name} changed since its pin`} size="wide">
+    <Modal isOpen onClose={onClose} title={title} size="wide">
       {pin ? (
         <PinsContextDetail
           name={name}
           pin={pin}
+          anchors={false}
           onReset={async (fragment) => {
             await resetContextPin(fragment);
             usePinsStore.getState().setContextPins(await fetchContextPins());
@@ -72,7 +81,7 @@ export function ContextPinReviewModal({
           }}
         />
       ) : pin === null ? (
-        <p className="text-xs text-text-muted p-4">No pin record for {name}.</p>
+        <p className="text-xs text-text-muted p-4">No pin record for {shown}.</p>
       ) : loadError ? (
         <FailedState
           feature="Pin record"

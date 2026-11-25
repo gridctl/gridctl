@@ -69,6 +69,14 @@ export function prettySchema(canonical: string): string {
 }
 
 /**
+ * True exactly when diffLines skips alignment for these inputs and returns
+ * every old line as removed, then every new line as added.
+ */
+export function lineDiffUnaligned(oldText: string, newText: string): boolean {
+  return oldText.split('\n').length * newText.split('\n').length > MAX_DP_CELLS;
+}
+
+/**
  * Line-level diff with 1-based source line numbers on every token. Oversized
  * inputs fall back to plain removed/added blocks so the quadratic table
  * stays bounded.
@@ -76,13 +84,12 @@ export function prettySchema(canonical: string): string {
 export function diffLines(oldText: string, newText: string): DiffToken[] {
   const a = oldText.split('\n');
   const b = newText.split('\n');
-  const out: DiffToken[] =
-    a.length * b.length > MAX_DP_CELLS
-      ? [
-          ...a.map((text) => ({ kind: 'removed' as const, text })),
-          ...b.map((text) => ({ kind: 'added' as const, text })),
-        ]
-      : lcsTokens(a, b);
+  const out: DiffToken[] = lineDiffUnaligned(oldText, newText)
+    ? [
+        ...a.map((text) => ({ kind: 'removed' as const, text })),
+        ...b.map((text) => ({ kind: 'added' as const, text })),
+      ]
+    : lcsTokens(a, b);
   let oldLine = 0;
   let newLine = 0;
   for (const t of out) {

@@ -70,6 +70,8 @@ A pack rule is pinned on `gridctl pack apply`, not on `pack add`. A later upstre
 
 `ctx status` and `ctx sync` print one summary line when any fragment is drifted, missing, or unpinned: `Pin drift: <names>; missing: <names>; unpinned: <names> (review with 'gridctl ctx pins diff')`, omitting empty parts. Their JSON documents gain a `pins` object (`drifted`, `missing`, `unpinned`). See [ctx pins](cli-reference.md#global-context).
 
+In the web UI, the Pins workspace's Context tab (`/pins?kind=context&fragment=<name>`) reviews a drifted fragment as one line diff of the pinned and current content, with findings on the current content, a reason (required over findings), and evidence references. Approve sends the `composite_hash` of the diff on screen; when the content changed since that diff, the tab reloads it for re-review. Documents too large to align line by line (about 500 lines per side) show the pinned text as removed followed by the current text as added, and the full current document is offered below the diff. Reset sits in a Danger section: it deletes the pin record and keeps the approval history, and the next context sync re-pins whatever is on disk without a diff. The pin review opened from the Global Context dialog shows the same detail.
+
 ## Rule fragments (opt-in)
 
 By default `ctx` manages a single AGENTS.md. `gridctl ctx add <name>` activates **fragments mode**: the store becomes `~/.gridctl/context/fragments/*.md`, each an ordinary markdown file with optional YAML frontmatter (`description`, `paths:` glob list). On first add, the existing AGENTS.md is backed up and becomes `fragments/00-default.md` (no special casing afterward). Read-only commands (`status`, `sync --dry-run`, `diff`, `list`) never create the directory or migrate.
