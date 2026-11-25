@@ -322,6 +322,8 @@ function PackCard({
   if (p.counts.skills > 0) counts.push(`${p.counts.skills} skill${p.counts.skills === 1 ? '' : 's'}`);
   if (p.counts.agents > 0) counts.push(`${p.counts.agents} agent${p.counts.agents === 1 ? '' : 's'}`);
   if (p.counts.rules > 0) counts.push(`${p.counts.rules} rule${p.counts.rules === 1 ? '' : 's'}`);
+  const hooks = p.counts.hooks ?? 0;
+  if (hooks > 0) counts.push(`${hooks} hook${hooks === 1 ? '' : 's'}`);
   if (p.counts.wiring) counts.push('wiring');
 
   return (

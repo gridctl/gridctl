@@ -406,9 +406,12 @@ function PackRowLine({ row, onNavigate }: { row: PackRow; onNavigate: (to: strin
   );
 }
 
-/** Deep links only where a real surface exists; rule rows stay text. */
+/** Deep links only where a real surface exists; rule rows stay text, and
+ *  a missing hook row stays text because the registry has no such hook. */
 function rowLink(row: PackRow): string | null {
   switch (row.kind) {
+    case 'hook':
+      return row.state === 'missing' ? null : `/library?kind=hook&selected=${encodeURIComponent(row.name)}`;
     case 'skill':
       return `/library?kind=skill&selected=${encodeURIComponent(row.name)}`;
     case 'agent':

@@ -2,7 +2,7 @@ import type { PackApplyDoc, PackListItem, PackRow } from '../../../lib/api';
 import type { ProjectionState } from '../../ui/StatePill';
 
 /** Kind order matches the manifest's own axis. */
-export const PACK_KIND_ORDER = ['stack', 'fragment', 'lock', 'source', 'skill', 'agent', 'rule', 'wiring', 'unresolved'] as const;
+export const PACK_KIND_ORDER = ['stack', 'fragment', 'lock', 'source', 'skill', 'agent', 'rule', 'hook', 'wiring', 'unresolved'] as const;
 
 const KIND_LABELS: Record<(typeof PACK_KIND_ORDER)[number], string> = {
   stack: 'Stack',
@@ -12,6 +12,7 @@ const KIND_LABELS: Record<(typeof PACK_KIND_ORDER)[number], string> = {
   skill: 'Skills',
   agent: 'Agents',
   rule: 'Rules',
+  hook: 'Hooks',
   wiring: 'Wiring',
   unresolved: 'Unresolved',
 };
@@ -24,11 +25,11 @@ export function packKindLabel(kind: string): string {
 export function rowNeedsAttention(row: PackRow): boolean {
   const v = row.state || row.action || '';
   if (v === '' || v === 'in-sync' || v === 'missing') {
-    // "missing" is clean for skills (never projected); pack rules report
-    // missing as a real problem, which the backend encodes as attention
-    // at the pack level, but row-level ordering treats rule missing as
-    // attention so it sorts first.
-    return (row.kind === 'rule' || row.kind === 'fragment') && v === 'missing';
+    // "missing" is clean for skills (never projected). For rules,
+    // fragments, and hooks it means the source is gone, which the backend
+    // flags as attention at the pack level; row-level ordering treats it
+    // as attention too so it sorts first.
+    return (row.kind === 'rule' || row.kind === 'fragment' || row.kind === 'hook') && v === 'missing';
   }
   return !['synced', 'updated', 'created', 'unchanged', 'removed', 'would-remove', 'adopted', 'linked', 'started', 'replaced', 'reloaded', 'composed', 'would-start', 'would-replace', 'would-reload', 'honored', 'ignored', 'absent'].includes(v);
 }

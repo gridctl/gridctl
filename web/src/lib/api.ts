@@ -3567,7 +3567,7 @@ export async function deleteContextFragment(name: string): Promise<{ name: strin
 
 /** One resource line in a pack document (status, apply, or remove). */
 export interface PackRow {
-  kind: 'stack' | 'fragment' | 'lock' | 'source' | 'skill' | 'agent' | 'rule' | 'wiring' | 'unresolved';
+  kind: 'stack' | 'fragment' | 'lock' | 'source' | 'skill' | 'agent' | 'rule' | 'hook' | 'wiring' | 'unresolved';
   name: string;
   client?: string;
   action?: string;
@@ -3604,6 +3604,7 @@ export interface PackCounts {
   skills: number;
   agents: number;
   rules: number;
+  hooks?: number;
   wiring: boolean;
   stack?: boolean;
   sources?: number;

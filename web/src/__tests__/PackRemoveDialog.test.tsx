@@ -88,4 +88,18 @@ describe('PackRemoveDialog', () => {
       ),
     );
   });
+
+  it('lists hook rows under Hooks in the removal preview', async () => {
+    mockRemove.mockResolvedValueOnce(
+      dryRun([
+        { kind: 'skill', name: 'alpha', action: 'would-remove' },
+        { kind: 'hook', name: 'block-force-push', action: 'would-remove' },
+      ]),
+    );
+
+    render(<PackRemoveDialog packName="team-pack" onClose={vi.fn()} onRemoved={vi.fn()} />);
+    const hooks = await screen.findByText('Hooks');
+    expect(hooks.closest('li')).toHaveTextContent('block-force-push');
+    expect(screen.getByText('Skills').closest('li')).toHaveTextContent('alpha');
+  });
 });
