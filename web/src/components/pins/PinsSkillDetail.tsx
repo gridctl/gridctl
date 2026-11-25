@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Clock, GitBranch, Lock, LockOpen } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import {
@@ -27,7 +27,10 @@ import { PINS_APPROVE_KEYS } from '../../lib/shortcuts';
 import { describeError, isCancellation } from '../../lib/describeError';
 import { showToast } from '../ui/Toast';
 import { ApprovalFields, PinApprovalHistory } from './PinApprovalHistory';
-import { credentialRefusalText, splitEvidence } from './pinApproval';
+import { approvalRisk, credentialRefusalText, splitEvidence } from './pinApproval';
+import { ApprovalRiskNotes } from './ApprovalRiskNotes';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { diffLines, MAX_DIFF_LINES } from '../../lib/diff';
 
 // ---------------------------------------------------------------------------
 // Skill detail - pin drift review (prose diff + file changes) + pinned files
@@ -172,6 +175,7 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
   const [loadError, setLoadError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [isApproving, setIsApproving] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [evidence, setEvidence] = useState('');
 
@@ -205,6 +209,19 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
   const needsReason = diff !== null && diff.findings.length > 0;
   const documentChanged =
     diff !== null && (diff.old_document ?? '') !== (diff.new_document ?? '');
+
+  const tokens = useMemo(
+    () => (documentChanged && diff ? diffLines(diff.old_document ?? '', diff.new_document ?? '') : []),
+    [documentChanged, diff],
+  );
+  const risk = approvalRisk({
+    findings: diff?.findings,
+    truncated: tokens.length > MAX_DIFF_LINES,
+    changedLines: tokens.filter((t) => t.kind !== 'same').length,
+    changes: diff
+      ? diff.added_files.length + diff.removed_files.length + diff.modified_files.length
+      : 0,
+  });
 
   const doApprove = async () => {
     // The in-flight guard lives here rather than in `disabled`, so a repeated
@@ -246,7 +263,17 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
     }
   };
 
+  const handleApproveClick = () => {
+    if (!diff || isApproving) return;
+    if (risk.needsConfirm) {
+      setConfirmOpen(true);
+    } else {
+      void doApprove();
+    }
+  };
+
   return (
+    <>
     <section
       id={DRIFT_SECTION_ID}
       className="rounded-lg border border-status-pending/30 bg-status-pending/5 p-4 space-y-3"
@@ -266,7 +293,7 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
           />
           <button
             id={APPROVE_BUTTON_ID}
-            onClick={() => void doApprove()}
+            onClick={handleApproveClick}
             disabled={diff === null || loadError || (needsReason && reason.trim() === '')}
             aria-busy={isApproving}
             aria-keyshortcuts={APPROVE_ARIA_KEYSHORTCUTS}
@@ -312,6 +339,8 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
               label="SKILL.md"
               oldDocument={diff.old_document ?? ''}
               newDocument={diff.new_document ?? ''}
+              tokens={tokens}
+              fullDiffCommand={`gridctl skill pins diff ${skillName}`}
             />
           )}
 
@@ -326,6 +355,33 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
         </>
       )}
     </section>
+
+    {/* display:contents so the parent's space-y margin cannot offset the
+        fixed-position backdrop. */}
+    <div className="contents">
+      <ConfirmDialog
+        isOpen={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={() => {
+          setConfirmOpen(false);
+          void doApprove();
+        }}
+        title={`Approve content update for ${escapeNonPrintable(skillName)}`}
+        confirmLabel="Approve"
+        autoFocus="cancel"
+        message={
+          <div className="space-y-2">
+            <p>
+              This re-pins the current content of{' '}
+              <span className="font-mono text-text-secondary">{escapeNonPrintable(skillName)}</span>
+              {diff ? `: ${driftSummary(diff, documentChanged)}.` : '.'}
+            </p>
+            <ApprovalRiskNotes risk={risk} fullDiffCommand={`gridctl skill pins diff ${skillName}`} />
+          </div>
+        }
+      />
+    </div>
+    </>
   );
 }
 

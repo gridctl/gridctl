@@ -126,7 +126,9 @@ describe('PinsWorkspace skills kind', () => {
     expect(screen.getByText(/Old body line\./)).toBeInTheDocument();
     expect(screen.getByText(/New body line\./)).toBeInTheDocument();
 
+    // A small clean change approves in one click.
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     await waitFor(() => {
       expect(approve).toHaveBeenCalledWith('incident-triage', 'reviewed-composite', undefined);
     });
@@ -157,6 +159,13 @@ describe('PinsWorkspace skills kind', () => {
     });
     expect(approveBtn).toBeEnabled();
     fireEvent.click(approveBtn);
+    const dialog = screen.getByRole('alertdialog', {
+      name: 'Approve content update for incident-triage',
+    });
+    expect(dialog).toHaveTextContent('1 warn-or-critical scan finding');
+    expect(dialog).toHaveTextContent('SKILL.md changed · 1 supporting file added');
+    expect(approve).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve' }));
     await waitFor(() => {
       expect(approve).toHaveBeenCalledWith(
         'incident-triage',
@@ -192,11 +201,75 @@ describe('PinsWorkspace skills kind', () => {
     expect(fireEvent.keyDown(reason, { key: 'Enter', ctrlKey: true })).toBe(true);
 
     fireEvent.change(reason, { target: { value: 'training material' } });
+    // The chord clicks the button, so it opens the same confirmation.
     expect(fireEvent.keyDown(reason, { key: 'Enter', ctrlKey: true })).toBe(false);
+    const dialog = screen.getByRole('alertdialog', {
+      name: 'Approve content update for incident-triage',
+    });
+    expect(approve).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve' }));
     await waitFor(() => {
       expect(approve).toHaveBeenCalledWith('incident-triage', 'reviewed-composite', 'training material');
     });
     expect(approve).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirms a diff of 50 or more changed lines', async () => {
+    const body = (tag: string) => Array.from({ length: 30 }, (_, i) => `${tag} ${i}`).join('\n');
+    vi.spyOn(api, 'fetchSkillPinDiff').mockResolvedValue({
+      ...triageDiff,
+      old_document: body('old'),
+      new_document: body('new'),
+      added_files: [],
+      modified_files: [],
+    });
+    const approve = vi.spyOn(api, 'approveSkillPin').mockResolvedValue(undefined);
+    vi.spyOn(api, 'fetchSkillPins').mockResolvedValue({});
+    renderWorkspace('/pins?kind=skill&skill=incident-triage');
+
+    const approveBtn = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approveBtn).toBeEnabled());
+    fireEvent.click(approveBtn);
+    const dialog = screen.getByRole('alertdialog', {
+      name: 'Approve content update for incident-triage',
+    });
+    expect(dialog).toHaveTextContent('This is a large change.');
+    expect(dialog).not.toHaveTextContent('truncated');
+    expect(approve).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(approve).toHaveBeenCalledTimes(1));
+  });
+
+  it('shows both sides of an oversize diff and confirms with truncation copy', async () => {
+    const body = (tag: string) => Array.from({ length: 2100 }, (_, i) => `${tag}-${i}`).join('\n');
+    vi.spyOn(api, 'fetchSkillPinDiff').mockResolvedValue({
+      ...triageDiff,
+      old_document: body('old'),
+      new_document: body('new'),
+      added_files: [],
+      modified_files: [],
+    });
+    const approve = vi.spyOn(api, 'approveSkillPin').mockResolvedValue(undefined);
+    renderWorkspace('/pins?kind=skill&skill=incident-triage');
+
+    // 4,200 tokens render as 1,000 removed plus 1,000 added.
+    expect(
+      await screen.findByText(/^2200 more lines not shown/, undefined, { timeout: 5000 }),
+    ).toHaveTextContent('gridctl skill pins diff incident-triage');
+    expect(
+      screen.getByText((_, el) => el?.tagName === 'SPAN' && el.textContent === '+ new-0'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText((_, el) => el?.tagName === 'SPAN' && el.textContent === '- old-0'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    const dialog = screen.getByRole('alertdialog', {
+      name: 'Approve content update for incident-triage',
+    });
+    expect(dialog).toHaveTextContent('The diff shown is truncated');
+    expect(dialog).toHaveTextContent('gridctl skill pins diff incident-triage');
+    expect(approve).not.toHaveBeenCalled();
   });
 
   it('reloads the diff for re-review on a stale-hash 409', async () => {

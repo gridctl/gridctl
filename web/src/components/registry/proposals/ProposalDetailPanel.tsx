@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { FileDiff } from 'lucide-react';
 import { InspectorHeader } from '../../inspector';
 import { Button } from '../../ui/Button';
@@ -10,7 +10,10 @@ import { describeError, isCancellation } from '../../../lib/describeError';
 import { escapeNonPrintable, shortPinHash } from '../../../lib/nonPrintable';
 import { formatRelativeTime } from '../../../lib/time';
 import { FindingsList } from '../../pins/PinFindings';
-import { credentialRefusalText, splitEvidence } from '../../pins/pinApproval';
+import { approvalRisk, credentialRefusalText, splitEvidence } from '../../pins/pinApproval';
+import { ApprovalRiskNotes } from '../../pins/ApprovalRiskNotes';
+import { ConfirmDialog } from '../../ui/ConfirmDialog';
+import { classifyUnifiedDiff } from '../../../lib/unifiedDiff';
 import { UnifiedDiffView } from '../../ui/UnifiedDiffView';
 import { approveBlock, pathExplanation, provenanceLabel } from './proposalModel';
 import type { Proposal } from '../../../types';
@@ -229,6 +232,7 @@ function ProposalActions({
   const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const findingsExist = (proposal.findings?.length ?? 0) > 0;
   const block = ready
@@ -238,6 +242,28 @@ function ProposalActions({
       : 'Loading the current base and pin status.';
   const showBlock = block !== null && (ready || failed);
   const approveDisabled = busy || block !== null;
+  const applies = proposal.path === 'apply';
+  const approveLabel = applies ? 'Approve and apply' : 'Record approval';
+
+  const changedLines = useMemo(
+    () => classifyUnifiedDiff(proposal.diff).filter((l) => l.kind === 'added' || l.kind === 'removed').length,
+    [proposal.diff],
+  );
+  const risk = approvalRisk({
+    findings: proposal.findings,
+    truncated: false,
+    changedLines,
+    changes: proposal.files?.length ?? 0,
+  });
+
+  const handleApproveClick = () => {
+    if (approveDisabled) return;
+    if (risk.needsConfirm) {
+      setConfirmOpen(true);
+    } else {
+      void approve();
+    }
+  };
 
   const approve = async () => {
     if (approveDisabled) return;
@@ -338,10 +364,15 @@ function ProposalActions({
           disabled={approveDisabled}
           aria-busy={busy}
           aria-describedby={showBlock ? blockId : undefined}
-          title={block ?? 'Approve this proposal'}
-          onClick={() => void approve()}
+          title={
+            block ??
+            (applies
+              ? 'Apply this diff to the target and re-pin it'
+              : 'Record the approval on this proposal; nothing is written')
+          }
+          onClick={handleApproveClick}
         >
-          {busy && !rejecting ? 'Approving…' : 'Approve'}
+          {busy && !rejecting ? (applies ? 'Applying…' : 'Recording…') : approveLabel}
         </Button>
         <Button size="sm" variant="secondary" disabled={busy} onClick={() => setRejecting(true)}>
           Reject
@@ -374,6 +405,25 @@ function ProposalActions({
           </div>
         </div>
       )}
+      <div className="contents">
+        <ConfirmDialog
+          isOpen={confirmOpen}
+          onClose={() => setConfirmOpen(false)}
+          onConfirm={() => {
+            setConfirmOpen(false);
+            void approve();
+          }}
+          title={approveLabel}
+          confirmLabel={approveLabel}
+          autoFocus="cancel"
+          message={
+            <div className="space-y-2">
+              <p>{escapeNonPrintable(pathExplanation(proposal))}</p>
+              <ApprovalRiskNotes risk={risk} />
+            </div>
+          }
+        />
+      </div>
     </footer>
   );
 }

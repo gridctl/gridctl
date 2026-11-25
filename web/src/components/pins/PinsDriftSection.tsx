@@ -30,6 +30,7 @@ import {
   diffSide,
   diffWords,
   prettySchema,
+  truncateBalanced,
   MAX_DIFF_LINES,
   type DiffToken,
 } from '../../lib/diff';
@@ -41,7 +42,13 @@ import { PINS_APPROVE_KEYS } from '../../lib/shortcuts';
 import { copyWithToast, showToast } from '../ui/Toast';
 import { describeError, isCancellation } from '../../lib/describeError';
 import { ApprovalFields } from './PinApprovalHistory';
-import { credentialRefusalText, splitEvidence } from './pinApproval';
+import {
+  approvalRisk,
+  credentialRefusalText,
+  serverDiffTruncated,
+  splitEvidence,
+} from './pinApproval';
+import { ApprovalRiskNotes } from './ApprovalRiskNotes';
 import { downloadTextFile, pinsDiffExportFilename } from '../../lib/download';
 
 // Stable DOM ids: the workspace scrolls to the section for ?view=drift, and
@@ -55,10 +62,6 @@ export const COPY_HASH_BUTTON_ID = 'pins-copy-hash-button';
 
 // The approve chord as announced on both Approve buttons.
 export const APPROVE_ARIA_KEYSHORTCUTS = 'Control+Enter Meta+Enter';
-
-// Approve interposes a confirmation past either threshold: a large change
-// set, or any warn-or-critical finding on the new definitions.
-const APPROVE_CONFIRM_CHANGES = 5;
 
 // Human labels for the wire change kinds.
 const CHANGE_KIND_LABELS: Record<PinsChangeKind, string> = {
@@ -187,16 +190,16 @@ export function DriftSection({ serverName }: { serverName: string }) {
     (diff?.new_tools.length ?? 0) +
     (diff?.removed_tools.length ?? 0);
 
-  const alertFindingCount =
-    diff?.modified_tools.reduce(
-      (acc, t) => acc + (t.findings ?? []).filter((f) => f.severity !== 'info').length,
-      0,
-    ) ?? 0;
-  const needsConfirm = changeCount >= APPROVE_CONFIRM_CHANGES || alertFindingCount > 0;
+  const truncated = useMemo(() => (diff ? serverDiffTruncated(diff) : false), [diff]);
+  const risk = approvalRisk({
+    findings: diff?.modified_tools.flatMap((t) => t.findings ?? []),
+    changes: changeCount,
+    truncated,
+  });
 
   const handleApproveClick = () => {
     if (!diff || isApproving) return;
-    if (needsConfirm) {
+    if (risk.needsConfirm) {
       setConfirmOpen(true);
     } else {
       void doApprove();
@@ -393,13 +396,7 @@ export function DriftSection({ serverName }: { serverName: string }) {
             {changeCount === 1 ? 'tool' : 'tools'} on{' '}
             <span className="font-mono text-text-secondary">{serverName}</span>.
           </p>
-          {alertFindingCount > 0 && (
-            <p className="text-status-pending">
-              The new definitions carry {alertFindingCount} warn-or-critical scan{' '}
-              {alertFindingCount === 1 ? 'finding' : 'findings'}. Review them in the diff before
-              approving.
-            </p>
-          )}
+          <ApprovalRiskNotes risk={risk} fullDiffCommand={`gridctl pins diff ${serverName}`} />
         </div>
       }
     />
@@ -627,23 +624,9 @@ function SchemaDiffBlock({
     () => diffLines(prettySchema(oldSchema), prettySchema(newSchema)),
     [oldSchema, newSchema],
   );
-  const truncated = lines.length > MAX_DIFF_LINES;
-  // A plain head slice would hide the entire added side when the oversize
-  // fallback (all removals, then all additions) exceeds the cap - a red-only
-  // wall with the new schema invisible is a blind approve again. Split the
-  // budget across the boundary in that shape; interleaved LCS output keeps
-  // the simple slice.
-  const visible = useMemo(() => {
-    if (!truncated) return lines;
-    const firstAdded = lines.findIndex((l) => l.kind === 'added');
-    if (firstAdded > MAX_DIFF_LINES / 2) {
-      return [
-        ...lines.slice(0, MAX_DIFF_LINES / 2),
-        ...lines.slice(firstAdded, firstAdded + MAX_DIFF_LINES / 2),
-      ];
-    }
-    return lines.slice(0, MAX_DIFF_LINES);
-  }, [lines, truncated]);
+  // A red-only wall with the new schema invisible is a blind approve again,
+  // so the slice keeps both sides of the oversize fallback.
+  const { visible, hidden } = useMemo(() => truncateBalanced(lines), [lines]);
 
   return (
     <div className="rounded-md border border-border/30 bg-surface/40">
@@ -681,9 +664,9 @@ function SchemaDiffBlock({
               {escapeNonPrintable(line.text)}
             </div>
           ))}
-          {truncated && (
+          {hidden > 0 && (
             <div className="text-text-muted italic">
-              … {lines.length - MAX_DIFF_LINES} more lines; run `gridctl pins diff` for the full
+              … {hidden} more lines; run `gridctl pins diff` for the full
               schemas
             </div>
           )}

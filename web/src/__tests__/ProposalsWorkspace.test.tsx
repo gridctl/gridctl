@@ -113,7 +113,7 @@ describe('ProposalsWorkspace', () => {
     expect(within(diff).getByText('-old line')).toHaveAttribute('data-kind', 'removed');
     expect(screen.getByText('ignore previous instructions')).toBeInTheDocument();
 
-    const approve = await screen.findByRole('button', { name: 'Approve' });
+    const approve = await screen.findByRole('button', { name: 'Approve and apply' });
     await waitFor(() => expect(screen.getByText(/requires a reason/)).toBeInTheDocument());
     expect(approve).toBeDisabled();
 
@@ -129,6 +129,12 @@ describe('ProposalsWorkspace', () => {
     fireEvent.change(screen.getByLabelText(/Additional evidence/), { target: { value: 'run:42\n\nrun:42' } });
     expect(approve).toBeEnabled();
     fireEvent.click(approve);
+    // A warn finding interposes the confirmation; nothing is sent until it is accepted.
+    const dialog = screen.getByRole('alertdialog', { name: 'Approve and apply' });
+    expect(dialog).toHaveTextContent('Approving applies the diff to the target');
+    expect(dialog).toHaveTextContent('1 warn-or-critical scan finding');
+    expect(approveProposal).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve and apply' }));
     await waitFor(() => expect(approveProposal).toHaveBeenCalledWith(pending.id, 'reviewed the wording', ['run:42']));
     await waitFor(() => expect(showToast).toHaveBeenCalledWith('success', expect.stringMatching(/re-pinned/)));
   });
@@ -137,19 +143,19 @@ describe('ProposalsWorkspace', () => {
     vi.mocked(fetchProposal).mockResolvedValueOnce({ ...pending, findings: [], base_current: false, pin_status: 'pinned' });
     renderWorkspace(`/library?kind=proposal&selected=${pending.id}`);
     expect(await screen.findByText(/Approve refuses a stale base/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Approve and apply' })).toBeDisabled();
     cleanup();
 
     vi.mocked(fetchProposal).mockResolvedValueOnce({ ...pending, findings: [], pin_status: 'drift' });
     renderWorkspace(`/library?kind=proposal&selected=${pending.id}`);
     expect(await screen.findByText(/in the Pins workspace before this proposal can land/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Approve and apply' })).toBeDisabled();
   });
 
   it('refreshes the record on a 409 and shows 422 text inline', async () => {
     vi.mocked(fetchProposal).mockResolvedValue({ ...pending, findings: [], pin_status: 'unpinned' });
     renderWorkspace(`/library?kind=proposal&selected=${pending.id}`);
-    const approve = await screen.findByRole('button', { name: 'Approve' });
+    const approve = await screen.findByRole('button', { name: 'Approve and apply' });
     await waitFor(() => expect(approve).toBeEnabled());
 
     vi.mocked(approveProposal).mockRejectedValueOnce(new HTTPError(409, 'proposal p-3f9a1c2b7d4e is based on hash 4be1; skill incident-triage is now 9c02'));
@@ -158,8 +164,67 @@ describe('ProposalsWorkspace', () => {
     await waitFor(() => expect(fetchProposal).toHaveBeenCalledTimes(2));
 
     vi.mocked(approveProposal).mockRejectedValueOnce(new HTTPError(422, 'hunk 1 of SKILL.md does not match the current content. Nothing was written.'));
-    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Approve and apply' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/does not match the current content/);
+  });
+
+  it('approves a small clean proposal in one click', async () => {
+    vi.mocked(fetchProposal).mockResolvedValue({ ...pending, findings: [], pin_status: 'pinned' });
+    vi.mocked(approveProposal).mockResolvedValue({
+      ...pending,
+      status: 'approved',
+      approved_by: 'local',
+      approved_by_source: 'os',
+      evidence_count: 0,
+      applied: true,
+    });
+    renderWorkspace(`/library?kind=proposal&selected=${pending.id}`);
+    const approve = await screen.findByRole('button', { name: 'Approve and apply' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    await waitFor(() => expect(approveProposal).toHaveBeenCalledWith(pending.id, undefined, []));
+  });
+
+  it('confirms a large proposal before approving', async () => {
+    const big = Array.from({ length: 50 }, (_, i) => `+added ${i}`).join('\n');
+    vi.mocked(fetchProposal).mockResolvedValue({
+      ...pending,
+      findings: [],
+      pin_status: 'pinned',
+      diff: `--- a/SKILL.md\n+++ b/SKILL.md\n@@ -1,1 +1,51 @@\n keep\n${big}\n`,
+    });
+    renderWorkspace(`/library?kind=proposal&selected=${pending.id}`);
+    const approve = await screen.findByRole('button', { name: 'Approve and apply' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+    const dialog = screen.getByRole('alertdialog', { name: 'Approve and apply' });
+    expect(dialog).toHaveTextContent('This is a large change.');
+    expect(approveProposal).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(approveProposal).not.toHaveBeenCalled();
+  });
+
+  it('labels a record-path proposal Record approval', async () => {
+    const record: Proposal = { ...pending, path: 'record', provenance: { kind: 'git' }, findings: [] };
+    vi.mocked(fetchProposals).mockResolvedValue(list(record));
+    vi.mocked(fetchProposal).mockResolvedValue({ ...record, pin_status: 'pinned' });
+    vi.mocked(approveProposal).mockResolvedValue({
+      ...record,
+      status: 'approved',
+      approved_by: 'local',
+      approved_by_source: 'os',
+      evidence_count: 0,
+      applied: false,
+    });
+    renderWorkspace(`/library?kind=proposal&selected=${record.id}`);
+    const approve = await screen.findByRole('button', { name: 'Record approval' });
+    expect(screen.queryByRole('button', { name: 'Approve and apply' })).not.toBeInTheDocument();
+    await waitFor(() => expect(approve).toBeEnabled());
+    expect(approve).toHaveAttribute('title', 'Record the approval on this proposal; nothing is written');
+    fireEvent.click(approve);
+    await waitFor(() => expect(approveProposal).toHaveBeenCalledWith(record.id, undefined, []));
   });
 
   it('requires a reason to reject', async () => {
@@ -222,7 +287,7 @@ describe('Proposals load failures', () => {
     expect(
       screen.getByText('The current base and pin status could not be loaded. Retry to enable Approve.'),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Approve and apply' })).toBeDisabled();
     expect(showToast).not.toHaveBeenCalled();
 
     fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
@@ -230,7 +295,7 @@ describe('Proposals load failures', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText(/could not be loaded/)).not.toBeInTheDocument();
     expect(await screen.findByText(/requires a reason/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Approve and apply' })).toBeDisabled();
   });
 });
 

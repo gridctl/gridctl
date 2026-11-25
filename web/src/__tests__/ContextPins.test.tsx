@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { CommandRegistryProvider, useCommandRegistry } from '../hooks/useCommandRegistry';
@@ -138,6 +138,11 @@ describe('context pin approve', () => {
     fireEvent.change(screen.getByLabelText('Approval reason'), { target: { value: 'reviewed' } });
     expect(button).toBeEnabled();
     fireEvent.click(button);
+    const dialog = screen.getByRole('alertdialog', { name: 'Approve style' });
+    expect(dialog).toHaveTextContent('injected into every linked client');
+    expect(dialog).toHaveTextContent('1 warn-or-critical scan finding');
+    expect(approve).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve' }));
     await waitFor(() => expect(approve).toHaveBeenCalledWith('style', 'abc', 'reviewed'));
   });
 
@@ -169,6 +174,7 @@ describe('context pin approve', () => {
     const button = await screen.findByRole('button', { name: 'Approve' });
     expect(button).toBeEnabled();
     fireEvent.click(button);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     await waitFor(() => expect(approve).toHaveBeenCalledWith('tools', 'def', undefined));
     await waitFor(() => expect(usePinsStore.getState().contextPins?.tools.status).toBe('pinned'));
   });
@@ -199,6 +205,66 @@ describe('context pin approve', () => {
     const button = await screen.findByRole('button', { name: 'Approve' });
     expect(button).toBeDisabled();
     expect(screen.getByText('This fragment carries advisory findings; a reason is required')).toBeInTheDocument();
+  });
+
+  it('approves over an info-only finding without a confirmation', async () => {
+    vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue({
+      fragment: 'tools',
+      status: 'drift',
+      composite_hash: 'def',
+      old_document: 'old',
+      new_document: 'new',
+      findings: [{ code: 'P003', severity: 'info', confidence: 'low', field: 'body', message: 'note' }],
+    });
+    const approve = vi.spyOn(api, 'approveContextPin').mockResolvedValue();
+    vi.spyOn(api, 'fetchContextPins').mockResolvedValue({ tools: pin('pinned') });
+    usePinsStore.setState({ pins: {}, skillPins: {}, contextPins: { tools: pin('drift') } });
+    render(
+      <CommandRegistryProvider>
+        <MemoryRouter initialEntries={['/pins?kind=context&fragment=tools']}>
+          <Routes>
+            <Route path="/pins" element={<PinsWorkspace />} />
+          </Routes>
+        </MemoryRouter>
+      </CommandRegistryProvider>,
+    );
+    const button = await screen.findByRole('button', { name: 'Approve' });
+    fireEvent.change(screen.getByLabelText('Approval reason'), { target: { value: 'ok' } });
+    fireEvent.click(button);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    await waitFor(() => expect(approve).toHaveBeenCalledWith('tools', 'def', 'ok'));
+  });
+
+  it('confirms a diff of 50 or more changed lines', async () => {
+    const body = (tag: string) => Array.from({ length: 25 }, (_, i) => `${tag} ${i}`).join('\n');
+    vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue({
+      fragment: 'tools',
+      status: 'drift',
+      composite_hash: 'def',
+      old_document: body('old'),
+      new_document: body('new'),
+      findings: [],
+    });
+    const approve = vi.spyOn(api, 'approveContextPin').mockResolvedValue();
+    vi.spyOn(api, 'fetchContextPins').mockResolvedValue({ tools: pin('pinned') });
+    usePinsStore.setState({ pins: {}, skillPins: {}, contextPins: { tools: pin('drift') } });
+    render(
+      <CommandRegistryProvider>
+        <MemoryRouter initialEntries={['/pins?kind=context&fragment=tools']}>
+          <Routes>
+            <Route path="/pins" element={<PinsWorkspace />} />
+          </Routes>
+        </MemoryRouter>
+      </CommandRegistryProvider>,
+    );
+    const button = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    const dialog = screen.getByRole('alertdialog', { name: 'Approve tools' });
+    expect(dialog).toHaveTextContent('This is a large change.');
+    expect(approve).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(approve).toHaveBeenCalledWith('tools', 'def', undefined));
   });
 });
 
@@ -528,6 +594,10 @@ describe('context pin detail review', () => {
       await screen.findByText(/Full current document \(\d+ lines\)/, undefined, { timeout: LARGE_RENDER_TIMEOUT }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Approve style' });
+    expect(dialog).toHaveTextContent('The diff shown is truncated');
+    expect(dialog).toHaveTextContent('gridctl ctx pins diff style');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Approve' }));
     await waitFor(() => expect(fetchDiff).toHaveBeenCalledTimes(2));
     expect(await screen.findByText('Loading diff…')).toBeInTheDocument();
     expect(screen.queryByText(/Full current document/)).not.toBeInTheDocument();

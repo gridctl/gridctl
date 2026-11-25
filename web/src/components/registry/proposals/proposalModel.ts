@@ -68,12 +68,13 @@ function arrival(p: Proposal): string {
   return "the change arrives through 'gridctl skill update'";
 }
 
-// pathExplanation is the one-sentence summary of what Approve will do.
+// pathExplanation is the one-sentence summary of what approving will do on
+// this proposal's path.
 export function pathExplanation(p: Proposal): string {
   if (p.path === 'apply') {
-    return 'Approve applies the diff to the target, re-pins it, and records the approval with this proposal as evidence.';
+    return 'Approving applies the diff to the target, re-pins it, and records the approval with this proposal as evidence.';
   }
-  return `Approve records the verdict on the proposal only; nothing is written and no pin changes. ${capitalize(arrival(p))}, and the approval of the resulting pin drift should cite proposal:${p.id}.`;
+  return `Approving records the verdict on the proposal only; nothing is written and no pin changes. ${capitalize(arrival(p))}, and the approval of the resulting pin drift should cite proposal:${p.id}.`;
 }
 
 export function provenanceLabel(p: Proposal): string {
