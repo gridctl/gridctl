@@ -59,8 +59,9 @@ function clearTimer(id: string) {
 
 function isPersistent(type: Toast['type'], options?: ToastOptions): boolean {
   if (options?.persistent !== undefined) return options.persistent;
+  if (type === 'error') return true;
   if (options?.duration !== undefined) return false;
-  return Boolean(options?.action) || type === 'error';
+  return Boolean(options?.action);
 }
 
 function isHeld(toast: Toast): boolean {

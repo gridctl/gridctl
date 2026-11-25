@@ -173,6 +173,17 @@ describe('ToastContainer', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
+  it('keeps an error toast with a duration until it is dismissed', () => {
+    render(<ToastContainer />);
+    act(() => {
+      showToast('error', 'saved but not loaded', { duration: 10000 });
+    });
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('saved but not loaded');
+  });
+
   it('adopts the new action when the same message repeats', () => {
     const first = vi.fn();
     const second = vi.fn();

@@ -15,9 +15,9 @@ import { useTelemetryStore } from '../stores/useTelemetryStore';
 import { useUIStore } from '../stores/useUIStore';
 import { useNavigationGuardStore } from '../stores/useNavigationGuardStore';
 import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
-import { showToast } from '../components/ui/Toast';
+import { dismissToast, showToast } from '../components/ui/Toast';
 
-vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
+vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn(() => 'toast-1'), dismissToast: vi.fn() }));
 
 function wrapper({ children }: { children: ReactNode }) {
   return <MemoryRouter>{children}</MemoryRouter>;
@@ -509,6 +509,7 @@ describe('usePolling pin alerts', () => {
     expect(options).toMatchObject({ duration: 10000, deferWhileModal: true });
     expect(options?.action).toBeDefined();
     act(() => options?.action?.onClick());
+    expect(dismissToast).toHaveBeenCalledWith('toast-1');
     expect(screen.getByTestId('location')).toHaveTextContent('/pins?server=b&view=drift');
   });
 

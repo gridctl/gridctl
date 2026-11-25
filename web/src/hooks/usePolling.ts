@@ -8,7 +8,7 @@ import { useTelemetryStore } from '../stores/useTelemetryStore';
 import { useSpecStore } from '../stores/useSpecStore';
 import { useUIStore } from '../stores/useUIStore';
 import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchSkillSources, fetchServerPins, fetchSkillPins, fetchContextPins, fetchStackSpec, fetchStackHealth, getTelemetryInventory, AuthError, isFeatureUnavailable } from '../lib/api';
-import { showToast } from '../components/ui/Toast';
+import { dismissToast, showToast } from '../components/ui/Toast';
 import { POLLING } from '../lib/constants';
 import { affectedContexts, affectedServers, affectedSkills, driftAlert, findingsAlert, newlyAffected, type AffectedNames, type NewNames, type PinAlert } from '../lib/pinAlerts';
 import { GatewayRequestError } from '../lib/gatewayRequest';
@@ -299,8 +299,16 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
       for (const alert of [alerts.drift, alerts.findings]) {
         if (!alert) continue;
         const { target } = alert;
-        showToast('warning', alert.message, {
-          action: { label: 'View', onClick: () => navigate(target) },
+        // View dismisses the toast first so an unsaved-edits confirm has no
+        // detached button to restore focus to and no stale toast reappears.
+        const toastId = showToast('warning', alert.message, {
+          action: {
+            label: 'View',
+            onClick: () => {
+              dismissToast(toastId);
+              navigate(target);
+            },
+          },
           duration: 10000,
           deferWhileModal: true,
         });
