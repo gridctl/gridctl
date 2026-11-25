@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
 import { HooksWorkspace } from '../components/registry/hooks/HooksWorkspace';
@@ -38,6 +38,7 @@ import {
   fetchRegistryHooks,
   HTTPError,
   syncHookProjections,
+  unsyncHookProjections,
 } from '../lib/api';
 
 const block: RegistryHook = {
@@ -413,5 +414,224 @@ describe('HooksWorkspace load failures', () => {
     expect(notice).toHaveTextContent('/tmp/demo/.gridctl/hooks/block-force-push');
     expect(screen.getByRole('button', { name: 'Force sync' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Close' })).toBeEnabled();
+  });
+});
+
+const opencodeRow: HookProjectionStatus = {
+  ...inSync,
+  client: 'opencode',
+  channel: 'dedicated-file',
+  target: '/tmp/demo/.config/opencode/plugins/gridctl-hook-block-force-push.ts',
+  script_dir: '/tmp/demo/.gridctl/hooks/block-force-push@opencode',
+};
+
+const coveredClients: RegistryHookList['unsupported_clients'] = [
+  { slug: 'cursor', name: 'Cursor', location: 'reads ~/.claude/settings.json hooks', covered_by: 'claude-code', detected: true },
+  {
+    slug: 'windsurf',
+    name: 'Windsurf (Devin Local)',
+    location: 'reads ~/.claude/settings.json hooks',
+    covered_by: 'claude-code',
+    detected: false,
+  },
+];
+
+describe('HooksWorkspace unsync', () => {
+  async function openProjection(rows: HookProjectionStatus[]) {
+    vi.mocked(fetchHookProjectionStatus).mockResolvedValue(rows);
+    renderWorkspace();
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect block-force-push' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Projection' }));
+    await screen.findAllByText(rows.length > 0 ? 'Claude Code' : 'Not projected yet.');
+    return screen.getByRole('button', { name: 'Unsync' });
+  }
+
+  it('confirms before unsyncing and names each projected client', async () => {
+    fireEvent.click(await openProjection([inSync, opencodeRow]));
+    const dialog = screen.getByRole('alertdialog', { name: 'Unsync block-force-push?' });
+    expect(unsyncHookProjections).not.toHaveBeenCalled();
+    expect(dialog).toHaveTextContent(
+      "Removes this hook's entries and script copies from Claude Code and OpenCode. Those clients stop running it.",
+    );
+    expect(dialog).toHaveTextContent('The registry copy and its pin stay. Sync restores the projection.');
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus());
+    expect(within(dialog).getByRole('button', { name: 'Unsync from 2 clients' })).toBeEnabled();
+  });
+
+  it('closes on Cancel and Escape without calling the API', async () => {
+    const unsync = await openProjection([inSync]);
+    fireEvent.click(unsync);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+
+    fireEvent.click(unsync);
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(unsyncHookProjections).not.toHaveBeenCalled();
+  });
+
+  it('unsyncs once on confirm, refreshes, and toasts an unsync result', async () => {
+    vi.mocked(unsyncHookProjections).mockResolvedValue([
+      { hook: 'block-force-push', client: 'claude-code', target: inSync.target, action: 'removed' },
+      { hook: 'block-force-push', client: 'opencode', target: opencodeRow.target, action: 'removed' },
+    ]);
+    fireEvent.click(await openProjection([inSync, opencodeRow]));
+    const before = vi.mocked(fetchHookProjectionStatus).mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Unsync from 2 clients' }));
+
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('success', 'Unsynced block-force-push from 2 clients'));
+    expect(unsyncHookProjections).toHaveBeenCalledTimes(1);
+    expect(unsyncHookProjections).toHaveBeenCalledWith({ hooks: ['block-force-push'] });
+    await waitFor(() => expect(vi.mocked(fetchHookProjectionStatus).mock.calls.length).toBeGreaterThan(before));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    const messages = vi.mocked(showToast).mock.calls.map(([, msg]) => String(msg));
+    expect(messages).not.toContain('Hook sync finished');
+    expect(messages).not.toContain('Nothing to sync');
+  });
+
+  it('marks the confirm busy while the request is in flight', async () => {
+    let settle: (rows: never[]) => void = () => {};
+    vi.mocked(unsyncHookProjections).mockReturnValue(new Promise((resolve) => { settle = resolve; }));
+    fireEvent.click(await openProjection([inSync]));
+    const confirm = screen.getByRole('button', { name: 'Unsync from 1 client' });
+    fireEvent.click(confirm);
+    await waitFor(() => expect(confirm).toBeDisabled());
+    settle([]);
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    expect(showToast).toHaveBeenCalledWith('success', 'Nothing to unsync');
+  });
+
+  it('closes the dialog and reports a thrown unsync as a projection error', async () => {
+    vi.mocked(unsyncHookProjections).mockRejectedValue(new Error('offline'));
+    fireEvent.click(await openProjection([inSync]));
+    fireEvent.click(screen.getByRole('button', { name: 'Unsync from 1 client' }));
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('error', expect.stringContaining('Hook projection'), expect.anything()),
+    );
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Unsync' })).toBeEnabled();
+  });
+
+  it('names detected covered clients only', async () => {
+    vi.mocked(fetchRegistryHooks).mockResolvedValue({ ...list, unsupported_clients: coveredClients });
+    fireEvent.click(await openProjection([inSync, opencodeRow]));
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Cursor reads the Claude Code projection and stops running it too.');
+    expect(dialog).not.toHaveTextContent('Windsurf');
+    expect(within(dialog).getByRole('button', { name: 'Unsync from 2 clients' })).toBeInTheDocument();
+  });
+
+  it('names no covered client without a removable Claude Code projection', async () => {
+    vi.mocked(fetchRegistryHooks).mockResolvedValue({ ...list, unsupported_clients: coveredClients });
+    fireEvent.click(await openProjection([{ ...inSync, state: 'drifted' }, opencodeRow]));
+    expect(screen.getByRole('alertdialog')).not.toHaveTextContent('Cursor');
+  });
+
+  it('names no covered client when only another client is projected', async () => {
+    vi.mocked(fetchRegistryHooks).mockResolvedValue({ ...list, unsupported_clients: coveredClients });
+    vi.mocked(fetchHookProjectionStatus).mockResolvedValue([opencodeRow]);
+    renderWorkspace();
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect block-force-push' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Projection' }));
+    await screen.findAllByText('OpenCode');
+    fireEvent.click(screen.getByRole('button', { name: 'Unsync' }));
+    expect(screen.getByRole('alertdialog')).not.toHaveTextContent('Cursor');
+  });
+
+  it('keeps a drifted client out of the removal and says it is kept', async () => {
+    fireEvent.click(await openProjection([inSync, { ...opencodeRow, state: 'drifted' }]));
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent(
+      "Removes this hook's entries and script copies from Claude Code. That client stops running it.",
+    );
+    expect(dialog).toHaveTextContent(
+      'OpenCode was edited after gridctl wrote it. Its projection is kept until the drift is reviewed.',
+    );
+    expect(within(dialog).getByRole('button', { name: 'Unsync from 1 client' })).toBeInTheDocument();
+  });
+
+  it('disables Unsync with no projections or with every projection drifted', async () => {
+    const empty = await openProjection([]);
+    expect(empty).toBeDisabled();
+    expect(empty).toHaveAttribute('title', 'Not projected to any client');
+    expect(screen.getByRole('button', { name: 'Sync' })).toBeEnabled();
+    cleanup();
+
+    const drifted = await openProjection([{ ...inSync, state: 'drifted' }, { ...opencodeRow, state: 'drifted' }]);
+    expect(drifted).toBeDisabled();
+    expect(drifted).toHaveAttribute('title', 'Every projection has drifted. Review the drift first.');
+    expect(screen.getByRole('button', { name: 'Sync' })).toBeEnabled();
+    expect(screen.getAllByRole('button', { name: 'Review drift' })).toHaveLength(2);
+  });
+
+  it('keeps sync toasts on the sync describer', async () => {
+    renderWorkspace();
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect block-force-push' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Projection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sync' }));
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('success', 'Hook sync finished'));
+  });
+});
+
+describe('HooksWorkspace pin review readability', () => {
+  async function openPin() {
+    renderWorkspace();
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect block-force-push' }));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Pin' }));
+    await screen.findByLabelText('Approve reason');
+  }
+
+  it('gives the hook.json diff a taller scroll box', async () => {
+    await openPin();
+    const box = await screen.findByLabelText('Hook pin diff');
+    expect(box).toHaveClass('max-h-96', 'scrollbar-dark', 'overflow-x-auto', 'overflow-y-auto');
+    expect(box).not.toHaveClass('max-h-40');
+  });
+
+  it('names the registry directory when scripts changed', async () => {
+    vi.mocked(fetchRegistryHook).mockResolvedValue({ ...detail, dir: '/home/u/.gridctl/registry/hooks/block\u202eforce' });
+    vi.mocked(fetchHookPinDiff).mockResolvedValue({ ...diff, modified_files: ['scripts/block-force-push.sh'] });
+    await openPin();
+    const note = await screen.findByTestId('hook-script-note');
+    await waitFor(() =>
+      expect(note).toHaveTextContent(
+        'Script contents are not shown here. Read the changed files under /home/u/.gridctl/registry/hooks/block\\u202eforce before approving.',
+      ),
+    );
+    expect(document.body.textContent).not.toContain('\u202e');
+  });
+
+  it('falls back to the registry directory wording without dir', async () => {
+    vi.mocked(fetchHookPinDiff).mockResolvedValue({ ...diff, added_files: ['scripts/new.sh'], modified_files: [] });
+    await openPin();
+    expect(await screen.findByTestId('hook-script-note')).toHaveTextContent(
+      "Script contents are not shown here. Read the changed files in the hook's registry directory before approving.",
+    );
+  });
+
+  it('omits the note for removed-only changes, no changes, unpinned, and a failed load', async () => {
+    vi.mocked(fetchHookPinDiff).mockResolvedValue({ ...diff, removed_files: ['scripts/old.sh'], modified_files: [] });
+    await openPin();
+    expect(await screen.findByLabelText('Removed files')).toBeInTheDocument();
+    expect(screen.queryByTestId('hook-script-note')).not.toBeInTheDocument();
+    cleanup();
+
+    vi.mocked(fetchHookPinDiff).mockResolvedValue(pinnedDiff);
+    await openPin();
+    expect(await screen.findByText('hook.json unchanged')).toBeInTheDocument();
+    expect(screen.queryByTestId('hook-script-note')).not.toBeInTheDocument();
+    cleanup();
+
+    vi.mocked(fetchHookPinDiff).mockRejectedValue(new HTTPError(404, 'No pin found'));
+    await openPin();
+    expect(await screen.findByText('Not pinned; the next accepted import pins it')).toBeInTheDocument();
+    expect(screen.queryByTestId('hook-script-note')).not.toBeInTheDocument();
+    cleanup();
+
+    vi.mocked(fetchHookPinDiff).mockRejectedValue(new Error('offline'));
+    await openPin();
+    expect(await screen.findByText(/Load hook pin diff/)).toBeInTheDocument();
+    expect(screen.queryByTestId('hook-script-note')).not.toBeInTheDocument();
   });
 });

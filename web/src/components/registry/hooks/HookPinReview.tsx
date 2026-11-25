@@ -19,12 +19,15 @@ interface HookPinReviewProps {
   // evidence input. The Library Pin tab leaves them out so the ids stay
   // unique to the Pins route.
   inPinsWorkspace?: boolean;
+  // The registry directory, named in the note that script contents are
+  // not shown. The Library Pin tab passes it from the hook detail.
+  hookDir?: string;
 }
 
 // HookPinReview is the single hook pin review, mounted by the Library Pin
 // tab and the Pins workspace hook detail. The diff endpoint verifies live,
 // so its status is authoritative over the stored list status.
-export function HookPinReview({ name, onRefresh, inPinsWorkspace = false }: HookPinReviewProps) {
+export function HookPinReview({ name, onRefresh, inPinsWorkspace = false, hookDir }: HookPinReviewProps) {
   const [diff, setDiff] = useState<HookPinDiff | null>(null);
   const [notPinned, setNotPinned] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -144,6 +147,19 @@ export function HookPinReview({ name, onRefresh, inPinsWorkspace = false }: Hook
           <HookFileChangeList label="Added" paths={diff.added_files} glyph="+" tone="text-status-running" />
           <HookFileChangeList label="Removed" paths={diff.removed_files} glyph="-" tone="text-status-error" />
           <HookFileChangeList label="Modified" paths={diff.modified_files} glyph="~" tone="text-status-pending" />
+          {(diff.added_files.length > 0 || diff.modified_files.length > 0) && (
+            <p className="text-2xs text-text-muted" data-testid="hook-script-note">
+              Script contents are not shown here.{' '}
+              {hookDir ? (
+                <>
+                  Read the changed files under{' '}
+                  <span className="font-mono break-all">{escapeNonPrintable(hookDir)}</span> before approving.
+                </>
+              ) : (
+                "Read the changed files in the hook's registry directory before approving."
+              )}
+            </p>
+          )}
           {documentChanged ? (
             <HookDocumentDiff oldDocument={oldDocument} newDocument={newDocument} />
           ) : (
@@ -222,7 +238,7 @@ function HookDocumentDiff({ oldDocument, newDocument }: { oldDocument: string; n
       <h4 className="text-3xs uppercase tracking-[0.18em] text-text-muted">
         hook.json ({changed} {changed === 1 ? 'line' : 'lines'} changed)
       </h4>
-      <div className="rounded border border-border/40 bg-background/60 overflow-x-auto max-h-40 overflow-y-auto" aria-label="Hook pin diff">
+      <div className="rounded border border-border/40 bg-background/60 overflow-x-auto max-h-96 overflow-y-auto scrollbar-dark" aria-label="Hook pin diff">
         <pre className="text-2xs font-mono leading-relaxed p-2 whitespace-pre-wrap break-words">
           {shown.map((token, i) => (
             <HookDiffLine key={i} token={token} />
