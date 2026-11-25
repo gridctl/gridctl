@@ -1,10 +1,11 @@
-import { useCallback, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Loader2, Package, ShieldAlert } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { Button } from '../../ui/Button';
 import { showToast } from '../../ui/Toast';
 import { useWizardStore } from '../../../stores/useWizardStore';
+import { useBeforeUnloadGuard } from '../../../hooks/useBeforeUnloadGuard';
 import {
   addPack,
   applyPack,
@@ -39,6 +40,7 @@ type PackStep = 'source' | 'review' | 'done';
 export function PackImportWizard() {
   const navigate = useNavigate();
   const close = useWizardStore((s) => s.close);
+  const setImportInProgress = useWizardStore((s) => s.setImportInProgress);
   const trustId = useId();
 
   const [step, setStep] = useState<PackStep>('source');
@@ -62,6 +64,15 @@ export function PackImportWizard() {
   const [agentBlock, setAgentBlock] = useState<{ message: string; https?: string } | null>(null);
 
   const ssh = isSSHUrl(repo);
+
+  // The done step is never progress: the pack is already added, and Apply
+  // now does not depend on the dialog staying open.
+  const inProgress = step !== 'done' && (step === 'review' || loading || installing);
+  useEffect(() => {
+    setImportInProgress(inProgress);
+  }, [inProgress, setImportInProgress]);
+  useEffect(() => () => setImportInProgress(false), [setImportInProgress]);
+  useBeforeUnloadGuard(inProgress);
 
   /**
    * Route a clone failure to the one remedy that fits it. Shared by preview

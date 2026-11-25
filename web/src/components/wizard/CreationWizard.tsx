@@ -22,11 +22,12 @@ import { cn } from '../../lib/cn';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { useEscapeLayer } from '../../hooks/useEscapeLayer';
 import { Button } from '../ui/Button';
-import { useWizardStore, type WizardStep } from '../../stores/useWizardStore';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { isWizardDirty, useWizardStore, type WizardStep } from '../../stores/useWizardStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useRegistryStore } from '../../stores/useRegistryStore';
 import { useVaultStore } from '../../stores/useVaultStore';
-import { buildYAML, customHeaderErrors, parseYAMLToForm, type ResourceType, type WizardFormData, type MCPServerFormData } from '../../lib/yaml-builder';
+import { buildYAML, customHeaderErrors, parseYAMLToForm, yamlToFormWithLoss, type ResourceType, type WizardFormData, type MCPServerFormData } from '../../lib/yaml-builder';
 import { formatOperationsSummary } from '../../lib/openapiOperations';
 import { catalogEntryToFormData, type CatalogContainerOptions } from '../../lib/catalog';
 import type { CatalogEntry } from '../../lib/api';
@@ -173,6 +174,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
     yamlError,
     setYamlError,
     openapiOperationStats,
+    importInProgress,
     reset,
   } = useWizardStore();
   const titleId = useId();
@@ -293,7 +295,40 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
     };
   }, [formData, selectedType, isOpen, expertMode, setYamlContent]);
 
-  useEscapeLayer({ active: isOpen, onEscape: close, modal: true, ref: panelRef });
+  const [pendingAction, setPendingAction] = useState<'close' | 'reset' | null>(null);
+
+  // Form and YAML state persist across close, so only an import with
+  // progress needs a confirm before the wizard closes.
+  const requestClose = useCallback(() => {
+    if (useWizardStore.getState().importInProgress) {
+      setPendingAction('close');
+      return;
+    }
+    close();
+  }, [close]);
+
+  const requestReset = useCallback(() => {
+    const state = useWizardStore.getState();
+    if (state.importInProgress || isWizardDirty(state)) {
+      setPendingAction('reset');
+      return;
+    }
+    reset();
+  }, [reset]);
+
+  const confirmPendingAction = () => {
+    const action = pendingAction;
+    setPendingAction(null);
+    if (action === 'close') close();
+    else if (action === 'reset') reset();
+  };
+
+  useEscapeLayer({ active: isOpen, onEscape: requestClose, modal: true, ref: panelRef });
+
+  const editYamlContent = useCallback((content: string) => {
+    setYamlContent(content);
+    if (useWizardStore.getState().yamlError !== null) setYamlError(null);
+  }, [setYamlContent, setYamlError]);
 
   const handleExpertModeToggle = (enabled: boolean) => {
     if (enabled) {
@@ -301,14 +336,20 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
       setYamlContent(generatedYaml);
       setYamlError(null);
     } else {
-      // Switching back to form: parse YAML back
-      if (yamlContent && selectedType) {
-        const parsed = parseYAMLToForm(yamlContent, selectedType);
-        if ('error' in parsed) {
-          setYamlError(parsed.error);
+      // Switching back to form: parse YAML back, refusing a switch that
+      // would drop, change, or restore anything the form cannot regenerate.
+      if (selectedType) {
+        const current = formData[selectedType as keyof typeof formData] as unknown as Record<string, unknown>;
+        const result = yamlToFormWithLoss(yamlContent, selectedType, current ?? {});
+        if ('error' in result) {
+          setYamlError(result.error);
           return; // Stay in YAML mode
         }
-        updateFormData(selectedType as keyof typeof formData, parsed.data as unknown as Record<string, unknown>);
+        if (result.lostKeys.length > 0) {
+          setYamlError(lossMessage(result.lostKeys));
+          return;
+        }
+        updateFormData(selectedType as keyof typeof formData, result.data);
         setYamlError(null);
       }
     }
@@ -364,7 +405,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
   return createPortal(
     <div className="fixed inset-0 z-modal animate-fade-in-scale bg-background/80 backdrop-blur-sm flex items-center justify-center">
       {/* Backdrop */}
-      <div className="absolute inset-0" onClick={close} />
+      <div className="absolute inset-0" onClick={requestClose} />
 
       {/* Panel */}
       <div
@@ -427,7 +468,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
             {/* Reset */}
             <button
               type="button"
-              onClick={reset}
+              onClick={requestReset}
               title="Start over"
               aria-label="Start over"
               className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors text-text-muted hover:text-text-secondary"
@@ -438,7 +479,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
             {/* Close */}
             <button
               type="button"
-              onClick={close}
+              onClick={requestClose}
               aria-label="Close"
               className="p-1.5 rounded-lg hover:bg-surface-highlight transition-colors"
             >
@@ -474,7 +515,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
                       updateFormData,
                       expertMode,
                       yamlContent,
-                      setYamlContent,
+                      editYamlContent,
                       yamlError,
                       generatedYaml,
                       counts,
@@ -506,7 +547,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
                 updateFormData,
                 expertMode,
                 yamlContent,
-                setYamlContent,
+                editYamlContent,
                 yamlError,
                 generatedYaml,
                 counts,
@@ -544,6 +585,22 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
           </div>
         </div>
         )}
+
+        <ConfirmDialog
+          isOpen={pendingAction !== null}
+          onClose={() => setPendingAction(null)}
+          onConfirm={confirmPendingAction}
+          title={pendingAction === 'reset' ? 'Start over?' : 'Discard this import?'}
+          message={
+            pendingAction === 'reset' ? (
+              <p>This clears the form and any YAML edits{importInProgress ? ', and discards the import in progress' : ''}.</p>
+            ) : (
+              <p>Closing the wizard discards the import in progress. Nothing has been imported yet.</p>
+            )
+          }
+          confirmLabel={pendingAction === 'reset' ? 'Start over' : 'Discard import'}
+          variant="danger"
+        />
       </div>
     </div>,
     document.body,
@@ -625,6 +682,14 @@ function renderStepContent(
         />
       );
   }
+}
+
+const LOST_KEYS_SHOWN = 5;
+
+function lossMessage(keys: string[]): string {
+  const shown = keys.slice(0, LOST_KEYS_SHOWN).join(', ');
+  const more = keys.length > LOST_KEYS_SHOWN ? `, and ${keys.length - LOST_KEYS_SHOWN} more` : '';
+  return `Switching to Form would drop, change, or restore: ${shown}${more}. Stay in YAML mode and continue to Review, or undo these edits.`;
 }
 
 function reviewServerData(yaml: string, fallback: MCPServerFormData): MCPServerFormData {
@@ -843,7 +908,7 @@ function ExpertEditor({
   return (
     <div className="flex flex-col gap-3 h-full">
       {error && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-status-error/10 border border-status-error/20 text-status-error text-xs">
+        <div role="alert" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-status-error/10 border border-status-error/20 text-status-error text-xs">
           <AlertCircle size={12} />
           <span>{error}</span>
         </div>
@@ -851,8 +916,8 @@ function ExpertEditor({
       <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-background/40 border border-border/40 text-text-muted text-2xs">
         <AlertCircle size={12} className="mt-0.5 shrink-0" />
         <span>
-          Python source fields, commands, mounts, and common settings return to the form when
-          you leave YAML mode. Other nested settings may remain YAML-only.
+          The form holds only some of these settings. Switching to Form is refused when it
+          would drop, change, or restore anything edited here. Review works from YAML mode.
         </span>
       </div>
       <textarea

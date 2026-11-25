@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useId } from 'react';
+import { useState, useCallback, useEffect, useRef, useId } from 'react';
 import {
   GitBranch,
   Search,
@@ -35,12 +35,15 @@ interface AddSourceStepProps {
     auth: SkillAuth | undefined,
     agents: AgentPreview[],
   ) => void;
+  /** Reports whether the preview request is in flight. Also reports false
+   *  when the step unmounts mid-request. */
+  onLoadingChange?: (loading: boolean) => void;
 }
 
 const GITHUB_URL_REGEX = /^https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/;
 const GIT_URL_REGEX = /^(?:https?:\/\/|git@)[\w.-]+[:/][\w.-]+\/[\w.-]+(?:\.git)?$/;
 
-export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
+export function AddSourceStep({ onPreviewLoaded, onLoadingChange }: AddSourceStepProps) {
   const [url, setUrl] = useState('');
   const [ref, setRef] = useState('');
   const [path, setPath] = useState('');
@@ -50,6 +53,12 @@ export function AddSourceStep({ onPreviewLoaded }: AddSourceStepProps) {
   const [loadedRecent, setLoadedRecent] = useState(false);
   const urlInputRef = useRef<HTMLInputElement>(null);
   const fieldId = useId();
+
+  useEffect(() => {
+    if (!loading) return;
+    onLoadingChange?.(true);
+    return () => onLoadingChange?.(false);
+  }, [loading, onLoadingChange]);
 
   // Auth card state — the whole card is transient, never persisted.
   const auth = useAuthCard();

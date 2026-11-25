@@ -1,4 +1,5 @@
 import { parse as parseYAML, stringify as stringifyYAML } from 'yaml';
+import { structurallyEqual } from './graph/identity';
 
 // yaml-builder.ts — Form state to YAML serialization
 // Converts structured wizard form data into valid YAML strings.
@@ -728,5 +729,95 @@ export function parseYAMLToForm(yaml: string, resourceType: ResourceType): Wizar
     }
   } catch (e) {
     return { error: e instanceof Error ? e.message : 'Failed to parse YAML' };
+  }
+}
+
+function isMapping(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function joinPath(path: string, key: string): string {
+  return path ? `${path}.${key}` : key;
+}
+
+// Records every path in the input document that the rebuild drops or changes.
+function walkInput(input: unknown, rebuilt: unknown, path: string, lost: Set<string>) {
+  if (isMapping(input)) {
+    for (const [key, value] of Object.entries(input)) {
+      const child = joinPath(path, key);
+      if (!isMapping(rebuilt) || !(key in rebuilt)) {
+        // A key with no value (a blank form row builds as `env:`) carries nothing to lose.
+        if (value !== null && value !== undefined) lost.add(child);
+      } else {
+        walkInput(value, rebuilt[key], child, lost);
+      }
+    }
+    return;
+  }
+  if (Array.isArray(input)) {
+    if (!Array.isArray(rebuilt) || rebuilt.length !== input.length) {
+      lost.add(path);
+      return;
+    }
+    input.forEach((value, i) => walkInput(value, rebuilt[i], `${path}[${i}]`, lost));
+    return;
+  }
+  if (String(input) !== String(rebuilt)) lost.add(path);
+}
+
+// Records every path the rebuild adds that the input does not have. A key
+// the builder emits from the parsed YAML alone (transport: stdio on a local
+// server, version on a stack) also appears in the bare rebuild with the same
+// value, so it is a default rather than a form value the merge put back.
+function walkRebuilt(rebuilt: unknown, input: unknown, bare: unknown, path: string, lost: Set<string>) {
+  if (isMapping(rebuilt) && isMapping(input)) {
+    const bareMap = isMapping(bare) ? bare : undefined;
+    for (const [key, value] of Object.entries(rebuilt)) {
+      const child = joinPath(path, key);
+      if (!(key in input)) {
+        if (!bareMap || !(key in bareMap) || !structurallyEqual(bareMap[key], value)) lost.add(child);
+      } else {
+        walkRebuilt(value, input[key], bareMap?.[key], child, lost);
+      }
+    }
+    return;
+  }
+  if (Array.isArray(rebuilt) && Array.isArray(input) && rebuilt.length === input.length) {
+    const bareList = Array.isArray(bare) ? bare : undefined;
+    rebuilt.forEach((value, i) => walkRebuilt(value, input[i], bareList?.[i], `${path}[${i}]`, lost));
+  }
+}
+
+// yamlToFormWithLoss parses YAML into form data and reports every key the
+// form would drop, change, or restore if the YAML were replaced by a rebuild
+// from that data. The rebuild uses the parse result merged over the current
+// form data, the same shallow merge updateFormData performs, because the
+// parser reads only some keys and the rest keep their form values. Comparing
+// against the bare parse result would refuse every unedited form whose
+// settings the parser does not read.
+export function yamlToFormWithLoss(
+  yaml: string,
+  resourceType: ResourceType,
+  current: Record<string, unknown>,
+): { error: string } | { data: Record<string, unknown>; lostKeys: string[] } {
+  const parsed = parseYAMLToForm(yaml, resourceType);
+  if ('error' in parsed) return parsed;
+  const parsedData = parsed.data as unknown as Record<string, unknown>;
+  const merged = { ...current, ...parsedData };
+  try {
+    const input: unknown = parseYAML(yaml);
+    // Unedited builder output keeps the current form data as is, so a field
+    // the parser infers (an external server with no URL reads as container)
+    // cannot change or drop what the form holds.
+    const unedited: unknown = parseYAML(buildYAML({ type: parsed.type, data: current } as unknown as WizardFormData));
+    if (structurallyEqual(input, unedited)) return { data: current, lostKeys: [] };
+    const rebuilt: unknown = parseYAML(buildYAML({ type: parsed.type, data: merged } as unknown as WizardFormData));
+    const bare: unknown = parseYAML(buildYAML(parsed));
+    const lost = new Set<string>();
+    walkInput(input, rebuilt, '', lost);
+    walkRebuilt(rebuilt, input, bare, '', lost);
+    return { data: merged, lostKeys: [...lost] };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Failed to compare YAML with the form' };
   }
 }

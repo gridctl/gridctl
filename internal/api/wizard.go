@@ -20,6 +20,7 @@ type WizardDraft struct {
 	Name         string                 `json:"name"`
 	ResourceType string                 `json:"resourceType"`
 	FormData     map[string]interface{} `json:"formData"`
+	Yaml         string                 `json:"yaml,omitempty"`
 	CreatedAt    string                 `json:"createdAt"`
 	UpdatedAt    string                 `json:"updatedAt"`
 }
@@ -91,6 +92,7 @@ func (s *Server) handleWizardDraftCreate(w http.ResponseWriter, r *http.Request)
 		Name         string                 `json:"name"`
 		ResourceType string                 `json:"resourceType"`
 		FormData     map[string]interface{} `json:"formData"`
+		Yaml         string                 `json:"yaml,omitempty"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		writeJSONError(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -128,6 +130,7 @@ func (s *Server) handleWizardDraftCreate(w http.ResponseWriter, r *http.Request)
 		Name:         req.Name,
 		ResourceType: req.ResourceType,
 		FormData:     req.FormData,
+		Yaml:         req.Yaml,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
