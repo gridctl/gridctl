@@ -129,8 +129,17 @@ describe('StackForm', () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getByText('MCP Servers'));
     expect(screen.getByRole('button', { name: 'Remove alpha' })).toBeInTheDocument();
+  });
+
+  it('shows the first server form on mount when the stack has servers', () => {
+    render(
+      <StackForm
+        data={defaultData({ mcpServers: [{ name: 'alpha', serverType: 'container' }] })}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByDisplayValue('alpha')).toBeInTheDocument();
   });
 
   it('can add MCP servers', () => {
@@ -150,7 +159,6 @@ describe('StackForm', () => {
       ],
     });
     render(<StackForm data={data} onChange={onChange} />);
-    fireEvent.click(screen.getByText('MCP Servers'));
 
     // Both servers should appear
     expect(screen.getByText('server-1')).toBeInTheDocument();
@@ -665,8 +673,8 @@ describe('StackForm element ids across servers', () => {
   it('renders unique ids whose references resolve, and the second TLS label targets the second server', async () => {
     const onChange = vi.fn<OnChange>();
     const { container } = render(<StackForm data={defaultData({ mcpServers: servers })} onChange={onChange} />);
-    fireEvent.click(screen.getByText('MCP Servers'));
-    for (const server of servers) fireEvent.click(screen.getByText(server.name));
+    // The section and the first server start expanded when servers are present.
+    for (const server of servers.slice(1)) fireEvent.click(screen.getByText(server.name));
     for (const advanced of screen.getAllByText('Advanced', { exact: true })) fireEvent.click(advanced);
     for (const tls of screen.getAllByText('TLS / mTLS')) fireEvent.click(tls);
     await waitFor(() => expect(fetchPythonPackageVersions).toHaveBeenCalledWith('mcp-server-fetch'));

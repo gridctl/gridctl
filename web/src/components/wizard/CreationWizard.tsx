@@ -31,6 +31,7 @@ import { buildYAML, customHeaderErrors, parseYAMLToForm, yamlToFormWithLoss, typ
 import { formatOperationsSummary } from '../../lib/openapiOperations';
 import { formatNextReason, validateMCPServer, validateResource, validateStack, type WizardErrors } from '../../lib/wizard-validation';
 import { catalogEntryToFormData, type CatalogContainerOptions } from '../../lib/catalog';
+import { cloneFormData, defaultFormData, templateFormData, type TemplateResourceType } from '../../lib/wizard-templates';
 import type { CatalogEntry } from '../../lib/api';
 import { TemplateGrid } from './TemplateGrid';
 import { CatalogPicker } from './CatalogPicker';
@@ -168,6 +169,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
     setSelectedTemplate,
     formData,
     updateFormData,
+    applyTemplate,
     expertMode,
     setExpertMode,
     yamlContent,
@@ -216,31 +218,45 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
     [mcpServers, resources, skills, linkedClients, variables, packs],
   );
 
-  // Map template ID to mcp-server form data so the Configure screen reflects the chosen template
-  const mcpTemplateFormData: Record<string, Partial<MCPServerFormData>> = {
-    'blank':          { serverType: 'container' },
-    'container-http': { serverType: 'container', transport: 'http' },
-    'container-stdio':{ serverType: 'container', transport: 'stdio' },
-    'external-url':   { serverType: 'external',  transport: 'sse' },
-    'local-process':  { serverType: 'local',     transport: 'stdio' },
-    'from-source':    { serverType: 'source',    transport: 'http', source: { type: 'git', dockerfile: 'Dockerfile' } },
-    'python-package': { serverType: 'source',    transport: 'stdio', source: { type: 'pypi', runtime: 'python' } },
-  };
+  const [touched, setTouched] = useState<Set<string>>(() => new Set());
+  const [nextAttempted, setNextAttempted] = useState(false);
+  const [revealKey, setRevealKey] = useState(0);
+  const focusPendingRef = useRef(false);
+  const validationScope = `${isOpen}:${selectedType}`;
+  const [prevValidationScope, setPrevValidationScope] = useState(validationScope);
+  if (prevValidationScope !== validationScope) {
+    setPrevValidationScope(validationScope);
+    setTouched(new Set());
+    setNextAttempted(false);
+  }
+
+  // A loaded draft or an applied template is a fresh form even when its type
+  // matches the current one.
+  const resetValidation = useCallback(() => {
+    setTouched(new Set());
+    setNextAttempted(false);
+  }, []);
 
   const handleTemplateSelect = useCallback((templateId: string | null) => {
-    if (selectedType === 'mcp-server' && templateId && mcpTemplateFormData[templateId]) {
-      updateFormData('mcp-server', mcpTemplateFormData[templateId] as Record<string, unknown>);
+    const data = selectedType && templateId ? templateFormData(selectedType, templateId) : null;
+    if (selectedType && templateId && data) {
+      applyTemplate(selectedType as TemplateResourceType, templateId, data);
+      resetValidation();
+      return;
     }
     setSelectedTemplate(templateId);
-  }, [selectedType, setSelectedTemplate, updateFormData]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedType, setSelectedTemplate, applyTemplate, resetValidation]);
 
-  // Catalog entries pre-fill the mcp-server form through the same
-  // updateFormData mechanism templates use, so the form, YAML preview,
-  // and review step work unchanged.
+  // Catalog entries replace the mcp-server form through the same action
+  // templates use, so the form, YAML preview, and review step work unchanged.
   const handleCatalogSelect = useCallback((entry: CatalogEntry, container?: CatalogContainerOptions) => {
-    updateFormData('mcp-server', catalogEntryToFormData(entry, container) as Record<string, unknown>);
-    setSelectedTemplate(`catalog:${entry.name}`);
-  }, [updateFormData, setSelectedTemplate]);
+    const data: MCPServerFormData = {
+      ...cloneFormData(defaultFormData['mcp-server']),
+      ...catalogEntryToFormData(entry, container),
+    };
+    applyTemplate('mcp-server', `catalog:${entry.name}`, data);
+    resetValidation();
+  }, [applyTemplate, resetValidation]);
 
   // Skill skips template step; secret, global-context, and client-link
   // close the wizard and open their own dedicated surfaces (vault panel,
@@ -380,24 +396,6 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
         return {};
     }
   }, [selectedType, formData, mcpServers, resources]);
-
-  const [touched, setTouched] = useState<Set<string>>(() => new Set());
-  const [nextAttempted, setNextAttempted] = useState(false);
-  const [revealKey, setRevealKey] = useState(0);
-  const focusPendingRef = useRef(false);
-  const validationScope = `${isOpen}:${selectedType}`;
-  const [prevValidationScope, setPrevValidationScope] = useState(validationScope);
-  if (prevValidationScope !== validationScope) {
-    setPrevValidationScope(validationScope);
-    setTouched(new Set());
-    setNextAttempted(false);
-  }
-
-  // A loaded draft is a fresh form even when its type matches the current one.
-  const resetValidation = useCallback(() => {
-    setTouched(new Set());
-    setNextAttempted(false);
-  }, []);
 
   const visibleErrors = useMemo<WizardErrors>(() => {
     if (nextAttempted) return formErrors;
@@ -993,7 +991,7 @@ function FormRenderer({
     );
   }
 
-  // Resource — full form with presets
+  // Resource: full form
   if (resourceType === 'resource') {
     return (
       <div onBlur={validation.onFieldBlur}>

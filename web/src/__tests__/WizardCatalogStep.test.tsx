@@ -69,4 +69,39 @@ describe('CreationWizard catalog step', () => {
     });
     expect(state.formData['mcp-server'].env).toBeUndefined();
   });
+
+  it('clears catalog data when Blank Server is picked after Back', async () => {
+    render(<CreationWizard />);
+
+    fireEvent.click(screen.getByText('Catalog'));
+    fireEvent.click(await screen.findByText('PostgreSQL'));
+    fireEvent.click(screen.getByText('Use this server'));
+    expect(useWizardStore.getState().formData['mcp-server'].command).toBeDefined();
+
+    fireEvent.click(screen.getByText('Back'));
+    fireEvent.click(screen.getByText('Blank Server'));
+
+    const state = useWizardStore.getState();
+    expect(state.currentStep).toBe('form');
+    expect(state.selectedTemplate).toBe('blank');
+    expect(state.formData['mcp-server']).toEqual({ name: '', serverType: 'container' });
+    expect(state.formData['mcp-server'].command).toBeUndefined();
+  });
+
+  it('drops fields the catalog entry does not set', async () => {
+    useWizardStore.getState().updateFormData('mcp-server', {
+      headers: { 'X-Team': 'core' },
+      tools: ['query'],
+    });
+    render(<CreationWizard />);
+
+    fireEvent.click(screen.getByText('Catalog'));
+    fireEvent.click(await screen.findByText('PostgreSQL'));
+    fireEvent.click(screen.getByText('Use this server'));
+
+    const server = useWizardStore.getState().formData['mcp-server'];
+    expect(server.name).toBe('postgres');
+    expect(server).not.toHaveProperty('headers');
+    expect(server).not.toHaveProperty('tools');
+  });
 });

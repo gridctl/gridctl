@@ -27,6 +27,7 @@ import { VaultSetSelector } from '../VaultSetSelector';
 import { Field, FieldError } from '../../ui/Field';
 import { MCPServerForm } from './MCPServerForm';
 import { subErrors } from '../../../lib/wizard-validation';
+import { cloneFormData, RESOURCE_PRESETS, type ResourcePreset } from '../../../lib/wizard-templates';
 
 // --- Shared form primitives ---
 
@@ -166,60 +167,6 @@ function StringArrayEditor({
     </div>
   );
 }
-
-// --- Resource Presets ---
-
-interface ResourcePreset {
-  id: string;
-  name: string;
-  icon: LucideIcon;
-  data: Partial<ResourceFormData>;
-}
-
-const RESOURCE_PRESETS: ResourcePreset[] = [
-  {
-    id: 'postgres',
-    name: 'PostgreSQL',
-    icon: Database,
-    data: {
-      name: 'postgres',
-      image: 'postgres:16',
-      env: { POSTGRES_DB: 'mydb', POSTGRES_USER: 'user', POSTGRES_PASSWORD: '${var:POSTGRES_PASSWORD}' },
-      ports: ['5432:5432'],
-    },
-  },
-  {
-    id: 'redis',
-    name: 'Redis',
-    icon: Database,
-    data: {
-      name: 'redis',
-      image: 'redis:7-alpine',
-      ports: ['6379:6379'],
-    },
-  },
-  {
-    id: 'mysql',
-    name: 'MySQL',
-    icon: Database,
-    data: {
-      name: 'mysql',
-      image: 'mysql:8',
-      env: { MYSQL_DATABASE: 'mydb', MYSQL_ROOT_PASSWORD: '${var:MYSQL_ROOT_PASSWORD}' },
-      ports: ['3306:3306'],
-    },
-  },
-  {
-    id: 'mongodb',
-    name: 'MongoDB',
-    icon: Database,
-    data: {
-      name: 'mongodb',
-      image: 'mongo:7',
-      ports: ['27017:27017'],
-    },
-  },
-];
 
 // --- Collapsible item header ---
 
@@ -412,10 +359,14 @@ function errorItems(errors: Record<string, string> | undefined, list: string): S
 }
 
 export function StackForm({ data, onChange, errors, revealKey, onRemoveItem }: StackFormProps) {
+  // A stack that arrives with servers (the Basic Stack template) opens on
+  // its first server so the user sees what the template added.
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(['identity']),
+    () => new Set(data.mcpServers?.length ? ['identity', 'servers'] : ['identity']),
   );
-  const [expandedServers, setExpandedServers] = useState<Set<number>>(new Set());
+  const [expandedServers, setExpandedServers] = useState<Set<number>>(
+    () => new Set(data.mcpServers?.length ? [0] : []),
+  );
   const [expandedResources, setExpandedResources] = useState<Set<number>>(new Set());
   const [showResourcePresets, setShowResourcePresets] = useState(false);
   const uid = useId();
@@ -513,7 +464,7 @@ export function StackForm({ data, onChange, errors, revealKey, onRemoveItem }: S
 
   const addResource = (preset?: ResourcePreset | null) => {
     const newResource: ResourceFormData = preset
-      ? { name: preset.data.name ?? '', image: preset.data.image ?? '', ...preset.data }
+      ? cloneFormData(preset.data)
       : { name: '', image: '' };
     const resources = [...(data.resources ?? []), newResource];
     onChange({ resources });
