@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useEffect } from 'react';
 import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useLocation } from 'react-router';
 import { CommandRegistryProvider, useCommandRegistry } from '../hooks/useCommandRegistry';
 import { PinsWorkspace } from '../components/workspaces/PinsWorkspace';
 import { requestGatewayPoll } from '../hooks/usePolling';
@@ -10,7 +10,8 @@ import { usePinsStore } from '../stores/usePinsStore';
 import { useStackStore } from '../stores/useStackStore';
 import { useUIStore } from '../stores/useUIStore';
 import * as api from '../lib/api';
-import type { PinsDiff, ServerPins } from '../lib/api';
+import type { ContextPin, PinsDiff, ServerPins, SkillPin } from '../lib/api';
+import { showToast } from '../components/ui/Toast';
 
 vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn(), copyWithToast: vi.fn() }));
 vi.mock('../hooks/usePolling', () => ({
@@ -941,5 +942,205 @@ describe('new tools in server drift', () => {
     expect(approve).not.toHaveBeenCalled();
     const dialog = screen.getByRole('alertdialog', { name: /approve 5 changes on zapier/i });
     expect(dialog).toHaveTextContent('5 new');
+  });
+});
+
+describe('approval confirmation for truncated server schemas', () => {
+  it('confirms a one-change drift whose new input schema passes the render cap', async () => {
+    const approve = vi.spyOn(api, 'approveServerPins').mockResolvedValue(undefined);
+    const big = JSON.stringify({
+      type: 'object',
+      properties: Object.fromEntries(Array.from({ length: 800 }, (_, i) => [`p${i}`, { type: 'string' }])),
+    });
+    vi.spyOn(api, 'fetchPinsDiff').mockResolvedValue({
+      ...zapierDiff,
+      modified_tools: [
+        {
+          ...zapierDiff.modified_tools[0],
+          old_description: 'same',
+          new_description: 'same',
+          change_kinds: ['input_schema'],
+          old_input_schema: '{}',
+          new_input_schema: big,
+        },
+      ],
+      new_tools: [],
+      removed_tools: [],
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByRole('button', { name: /approve 1 change/i }));
+    expect(approve).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('alertdialog', { name: /approve 1 change on zapier/i });
+    expect(dialog).toHaveTextContent('The diff shown is truncated');
+    expect(dialog).toHaveTextContent('gridctl pins diff zapier');
+    fireEvent.click(within(dialog).getByRole('button', { name: /approve 1 change/i }));
+    await waitFor(() => expect(approve).toHaveBeenCalledWith('zapier', 'h2:reviewed-live-fingerprint'));
+  });
+
+  it('opens the same confirmation from the palette approve command', async () => {
+    const approve = vi.spyOn(api, 'approveServerPins').mockResolvedValue(undefined);
+    vi.spyOn(api, 'fetchPinsDiff').mockResolvedValue({
+      ...zapierDiff,
+      new_tools: ['a_tool', 'b_tool', 'c_tool', 'd_tool'],
+    });
+    renderWorkspace();
+    await screen.findByText('poisoned_tool');
+
+    const command = registryProbe!.commands.find((c) => c.id === 'pins:approve');
+    act(() => {
+      command!.onSelect();
+    });
+    expect(await screen.findByRole('alertdialog', { name: /approve 6 changes on zapier/i })).toBeInTheDocument();
+    expect(approve).not.toHaveBeenCalled();
+  });
+});
+
+function StaleLocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname + location.search}</div>;
+}
+
+function renderWithLocation(initialEntry: string) {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <CommandRegistryProvider>
+        <PinsWorkspace />
+        <StaleLocationProbe />
+      </CommandRegistryProvider>
+    </MemoryRouter>,
+  );
+}
+
+const currentLocation = () => screen.getByTestId('location').textContent ?? '';
+
+function staleToasts(name: string) {
+  return vi
+    .mocked(showToast)
+    .mock.calls.filter(([type, msg]) => type === 'warning' && msg === `${name} is no longer pinned`);
+}
+
+function skillPinFixture(status: SkillPin['status']): SkillPin {
+  return {
+    skill_hash: 's1:abc',
+    files: [],
+    source: 'local',
+    pinned_at: '2026-07-01T00:00:00Z',
+    last_verified_at: '2026-07-15T00:00:00Z',
+    status,
+  };
+}
+
+function contextPinFixture(status: ContextPin['status']): ContextPin {
+  return {
+    hash: 'c1:abc',
+    pinned_at: '2026-07-01T00:00:00Z',
+    last_verified_at: '2026-07-15T00:00:00Z',
+    status,
+    findings: [],
+    document: 'doc',
+  };
+}
+
+describe('stale Pins deep links', () => {
+  beforeEach(() => {
+    vi.mocked(showToast).mockClear();
+  });
+  afterEach(() => {
+    usePinsStore.setState({ contextPins: null, contextPinsError: null });
+  });
+
+  it('warns about a missing server and moves the URL to the row shown', async () => {
+    renderWithLocation('/pins?server=ghost&view=drift');
+
+    await waitFor(() => expect(staleToasts('ghost')).toHaveLength(1));
+    await waitFor(() => expect(currentLocation()).toContain('server=zapier'));
+    expect(currentLocation()).not.toContain('ghost');
+    expect(currentLocation()).not.toContain('view=');
+    expect(await screen.findByText('poisoned_tool')).toBeInTheDocument();
+    expect(api.fetchPinsDiff).not.toHaveBeenCalledWith('ghost');
+  });
+
+  it('never mounts another server under the stale name', () => {
+    usePinsStore.setState({ pins: null });
+    renderWithLocation('/pins?server=ghost');
+    // Before the map loads nothing is known to be stale.
+    expect(staleToasts('ghost')).toHaveLength(0);
+    expect(currentLocation()).toContain('server=ghost');
+
+    act(() => {
+      usePinsStore.setState({ pins: { zapier: serverPins('drift') } });
+    });
+    // The first render with the map resolves the stale name to no selection.
+    expect(screen.queryByRole('button', { name: /approve 2 changes/i })).not.toBeInTheDocument();
+  });
+
+  it('does not toast before the pins map loads', () => {
+    usePinsStore.setState({ pins: null });
+    renderWithLocation('/pins?server=ghost');
+    expect(staleToasts('ghost')).toHaveLength(0);
+    expect(currentLocation()).toContain('server=ghost');
+  });
+
+  it('warns about a missing skill', async () => {
+    usePinsStore.setState({ skillPins: { 'release-notes': skillPinFixture('pinned') } });
+    renderWithLocation('/pins?kind=skill&skill=ghost&view=drift');
+
+    await waitFor(() => expect(staleToasts('ghost')).toHaveLength(1));
+    await waitFor(() => expect(currentLocation()).toContain('skill=release-notes'));
+    expect(currentLocation()).toContain('kind=skill');
+    expect(currentLocation()).not.toContain('ghost');
+    expect(currentLocation()).not.toContain('view=');
+  });
+
+  it('warns about a missing context fragment', async () => {
+    usePinsStore.setState({ contextPins: { style: contextPinFixture('pinned') } });
+    renderWithLocation('/pins?kind=context&fragment=ghost&view=drift');
+
+    await waitFor(() => expect(staleToasts('ghost')).toHaveLength(1));
+    await waitFor(() => expect(currentLocation()).toContain('fragment=style'));
+    expect(currentLocation()).toContain('kind=context');
+    expect(currentLocation()).not.toContain('ghost');
+    expect(currentLocation()).not.toContain('view=');
+  });
+
+  it('escapes non-printable characters in the warning', async () => {
+    renderWithLocation('/pins?server=gh%07ost');
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('warning', 'gh\\u0007ost is no longer pinned'),
+    );
+  });
+
+  it('does not warn after a reset through the danger dialog', async () => {
+    const reset = vi.spyOn(api, 'resetServerPins').mockResolvedValue(undefined);
+    vi.spyOn(api, 'fetchServerPins').mockResolvedValue({ github: serverPins('pinned') });
+    renderWithLocation('/pins?server=zapier');
+    await screen.findByText('poisoned_tool');
+
+    fireEvent.click(screen.getByRole('button', { name: /reset pins for zapier/i }));
+    const dialog = screen.getByRole('alertdialog', { name: /reset pins/i });
+    fireEvent.click(within(dialog).getByRole('button', { name: /reset pins for zapier/i }));
+
+    await waitFor(() => expect(reset).toHaveBeenCalledWith('zapier'));
+    await waitFor(() => expect(currentLocation()).toContain('server=github'));
+    expect(staleToasts('zapier')).toHaveLength(0);
+  });
+
+  it('still warns about a removed server after a failed reset', async () => {
+    const reset = vi.spyOn(api, 'resetServerPins').mockRejectedValue(new Error('boom'));
+    renderWithLocation('/pins?server=zapier');
+    await screen.findByText('poisoned_tool');
+
+    fireEvent.click(screen.getByRole('button', { name: /reset pins for zapier/i }));
+    const dialog = screen.getByRole('alertdialog', { name: /reset pins/i });
+    fireEvent.click(within(dialog).getByRole('button', { name: /reset pins for zapier/i }));
+    await waitFor(() => expect(reset).toHaveBeenCalledWith('zapier'));
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('error', expect.anything(), expect.anything()));
+
+    act(() => {
+      usePinsStore.setState({ pins: { github: serverPins('pinned') } });
+    });
+    await waitFor(() => expect(staleToasts('zapier')).toHaveLength(1));
+    await waitFor(() => expect(currentLocation()).toContain('server=github'));
   });
 });
