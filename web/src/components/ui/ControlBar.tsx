@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { RefreshCw, AlertCircle, Zap } from 'lucide-react';
 import { Button } from './Button';
 import { showToast } from './Toast';
@@ -67,25 +67,66 @@ export function ControlBar({ name }: ControlBarProps) {
   const sessionText =
     sessions === 1 ? '1 gateway session is active' : `${sessions} gateway sessions are active`;
 
+  // If the poller reports zero sessions while the row is open, fall back to
+  // the idle button, which then restarts on one click.
+  const showConfirm = confirming && sessions > 0 && !isRestarting;
+  const confirmTextId = useId();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const wasConfirming = useRef(false);
+
+  // Swapping between the idle button and the confirm row unmounts the focused
+  // element, so move focus explicitly: to Cancel when the row opens, and back
+  // to Restart when it closes and focus was lost with it.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    if (showConfirm) {
+      container.querySelector<HTMLButtonElement>('[data-restart-cancel]')?.focus();
+    } else if (wasConfirming.current) {
+      const active = document.activeElement;
+      if (!active || active === document.body) {
+        container.querySelector<HTMLButtonElement>('[data-restart-trigger]')?.focus();
+      }
+    }
+    wasConfirming.current = showConfirm;
+  }, [showConfirm]);
+
   return (
-    <div className="space-y-3">
-      {confirming && !isRestarting ? (
+    <div ref={containerRef} className="space-y-3">
+      {showConfirm ? (
         <div className="space-y-2">
-          <p className="text-xs text-text-secondary">
+          <p id={confirmTextId} className="text-xs text-text-secondary">
             Restart {name}? {sessionText}; in-flight calls to {name} will fail.
           </p>
           <div className="flex gap-2">
-            <Button onClick={() => void handleRestart()} variant="outline-danger" size="sm">
+            <Button
+              onClick={() => void handleRestart()}
+              variant="outline-danger"
+              size="sm"
+              aria-describedby={confirmTextId}
+            >
               Restart
             </Button>
-            <Button onClick={() => setConfirming(false)} variant="ghost" size="sm">
+            <Button
+              onClick={() => setConfirming(false)}
+              variant="ghost"
+              size="sm"
+              aria-describedby={confirmTextId}
+              data-restart-cancel=""
+            >
               Cancel
             </Button>
           </div>
         </div>
       ) : (
         <div className="flex gap-2">
-          <Button onClick={handleClick} disabled={isRestarting} variant="secondary" size="sm">
+          <Button
+            onClick={handleClick}
+            disabled={isRestarting}
+            variant="secondary"
+            size="sm"
+            data-restart-trigger=""
+          >
             {isRestarting ? (
               <RefreshCw size={14} className="animate-spin" />
             ) : (

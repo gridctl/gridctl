@@ -79,6 +79,39 @@ describe('ControlBar', () => {
     await waitFor(() => expect(showToast).toHaveBeenCalledWith('success', 'Restarted a'));
   });
 
+  it('moves focus to Cancel when the confirm row opens and back to Restart on Cancel', () => {
+    useStackStore.setState({ sessions: 2 });
+    render(<ControlBar name="a" />);
+    const trigger = screen.getByRole('button', { name: 'Restart' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    expect(cancel).toHaveFocus();
+    expect(cancel).toHaveAccessibleDescription(/2 gateway sessions are active/);
+
+    fireEvent.click(cancel);
+    expect(screen.getByRole('button', { name: 'Restart' })).toHaveFocus();
+  });
+
+  it('closes an open confirm row when sessions drop to zero', async () => {
+    restartMCPServer.mockResolvedValue(undefined);
+    useStackStore.setState({ sessions: 1 });
+    render(<ControlBar name="a" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Restart' }));
+    expect(screen.getByText(/1 gateway session is active/)).toBeInTheDocument();
+
+    act(() => {
+      useStackStore.setState({ sessions: 0 });
+    });
+    expect(screen.queryByText(/gateway session/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+    const trigger = screen.getByRole('button', { name: 'Restart' });
+    expect(trigger).toHaveFocus();
+
+    fireEvent.click(trigger);
+    await waitFor(() => expect(restartMCPServer).toHaveBeenCalledTimes(1));
+  });
+
   it('uses the singular for one session', () => {
     useStackStore.setState({ sessions: 1 });
     render(<ControlBar name="a" />);
