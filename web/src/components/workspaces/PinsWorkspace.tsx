@@ -347,19 +347,22 @@ export function PinsWorkspace() {
   // selection has rendered. rAF defers past the commit; scrollIntoView is
   // absent in jsdom, hence the optional call.
   const activeSkillDrifted = activeSkillPin?.status === 'drift';
+  const activeContextDrifted = activeContextPin?.status === 'drift';
   useEffect(() => {
     if (!view || !activeName) return;
-    // A drifted skill's findings render inside the drift section; scrolling
-    // to the digests table would sail straight past them.
+    // A drifted skill's or fragment's findings render inside the drift
+    // section; scrolling to the pinned content would sail straight past them.
     const id =
-      view === 'drift' || (kind === 'skill' && view === 'findings' && activeSkillDrifted)
+      view === 'drift' ||
+      (view === 'findings' &&
+        ((kind === 'skill' && activeSkillDrifted) || (kind === 'context' && activeContextDrifted)))
         ? DRIFT_SECTION_ID
         : TOOLS_SECTION_ID;
     const frame = requestAnimationFrame(() => {
       document.getElementById(id)?.scrollIntoView?.({ block: 'nearest' });
     });
     return () => cancelAnimationFrame(frame);
-  }, [view, activeName, kind, activeSkillDrifted]);
+  }, [view, activeName, kind, activeSkillDrifted, activeContextDrifted]);
 
   const selectedIndex = activeVisible.findIndex(([name]) => name === activeName);
   useListNav({

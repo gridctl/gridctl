@@ -91,7 +91,7 @@ export function usePinsCommands({
         keywords: ['approve', 'drift', 'repin', 'accept'],
         shortcut: PINS_APPROVE_KEYS,
         onSelect: () =>
-          clickById(APPROVE_BUTTON_ID, 'No reviewable drift on the selected server'),
+          clickById(APPROVE_BUTTON_ID, 'No reviewable drift on the selected item'),
       },
       {
         id: 'pins:reverify',
@@ -146,12 +146,12 @@ export function usePinsCommands({
       },
       {
         id: 'pins:reset',
-        label: 'Pins: Reset Pins for Selected Server',
+        label: 'Pins: Reset Selected Pin',
         section: 'pins',
         workspaces: ['pins'],
         icon: createElement(Trash2, { size: 14 }),
         keywords: ['reset', 'delete', 'danger', 'trust'],
-        onSelect: () => clickById(RESET_BUTTON_ID, 'No server selected'),
+        onSelect: () => clickById(RESET_BUTTON_ID, 'Nothing selected to reset'),
       },
     ];
     registerCommands('pins-workspace', commands);

@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
-import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
+import { CommandRegistryProvider, useCommandRegistry } from '../hooks/useCommandRegistry';
 import { PinDriftBadge } from '../components/pins/PinDriftBadge';
 import { PinsWorkspace } from '../components/workspaces/PinsWorkspace';
 import { ContextPinChip, ContextPinReviewModal } from '../components/context/ContextPinChip';
@@ -10,8 +10,12 @@ import { usePinsStore } from '../stores/usePinsStore';
 import type { ContextPin } from '../lib/api';
 import * as api from '../lib/api';
 import { showToast } from '../components/ui/Toast';
+import { HTTPError, type ContextPinsDiff } from '../lib/api';
+import { APPROVE_BUTTON_ID, DRIFT_SECTION_ID } from '../components/pins/PinsDriftSection';
+import { RESET_BUTTON_ID, TOOLS_SECTION_ID } from '../components/pins/PinsServerDetail';
+import { MAX_DIFF_LINES } from '../lib/diff';
 
-vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
+vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn(), copyWithToast: vi.fn() }));
 vi.mock('../hooks/usePolling', () => ({
   requestGatewayPoll: vi.fn(),
   usePolling: () => ({ refresh: vi.fn() }),
@@ -204,9 +208,13 @@ describe('ContextPinReviewModal', () => {
     const reset = vi.spyOn(api, 'resetContextPin').mockResolvedValue();
     const onClose = vi.fn();
     render(<ContextPinReviewModal name="style" onClose={onClose} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Reset' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Reset pin for style' }));
-    await waitFor(() => expect(showToast).toHaveBeenCalledWith('success', 'Pin reset for style'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Reset pin for style' }));
+    // ConfirmDialog's confirm button carries the same label.
+    const buttons = screen.getAllByRole('button', { name: 'Reset pin for style' });
+    fireEvent.click(buttons[buttons.length - 1]);
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('success', 'Pin reset for style; it re-pins on the next context sync'),
+    );
     expect(reset).toHaveBeenCalledWith('style');
     expect(onClose).toHaveBeenCalled();
   });
@@ -227,7 +235,7 @@ describe('ContextPinReviewModal', () => {
 
     fetch.mockResolvedValue({ style: pin('drift') });
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(await screen.findByRole('button', { name: 'Reset' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Reset pin for style' })).toBeInTheDocument();
     expect(screen.queryByText('Pin record unavailable')).not.toBeInTheDocument();
   });
 
@@ -235,5 +243,343 @@ describe('ContextPinReviewModal', () => {
     vi.spyOn(api, 'fetchContextPins').mockResolvedValue({});
     render(<ContextPinReviewModal name="style" onClose={vi.fn()} />);
     expect(await screen.findByText('No pin record for style.')).toBeInTheDocument();
+  });
+});
+
+function contextDiff(overrides: Partial<ContextPinsDiff> = {}): ContextPinsDiff {
+  return {
+    fragment: 'style',
+    status: 'drift',
+    composite_hash: 'abc',
+    old_document: 'a\nb',
+    new_document: 'a\nc',
+    findings: [],
+    ...overrides,
+  };
+}
+
+function renderContext(entry: string) {
+  return render(
+    <CommandRegistryProvider>
+      <MemoryRouter initialEntries={[entry]}>
+        <Routes>
+          <Route path="/pins" element={<PinsWorkspace />} />
+        </Routes>
+      </MemoryRouter>
+    </CommandRegistryProvider>,
+  );
+}
+
+function seed(pins: Record<string, ContextPin>) {
+  usePinsStore.setState({ pins: {}, skillPins: {}, contextPins: pins });
+}
+
+const lines = (n: number, last: string) =>
+  Array.from({ length: n }, (_, i) => (i === n - 1 ? last : `line-${i}`)).join('\n');
+
+describe('context pin detail review', () => {
+  it('renders one line diff with prefixed lines and a changed-line count', async () => {
+    vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(contextDiff());
+    seed({ style: pin('drift') });
+    renderContext('/pins?kind=context&fragment=style');
+    expect(await screen.findByText(/2 lines changed/)).toBeInTheDocument();
+    expect(screen.getByText((_, el) => el?.tagName === 'SPAN' && (el.textContent ?? '').startsWith('- b'))).toBeInTheDocument();
+    expect(screen.getByText((_, el) => el?.tagName === 'SPAN' && (el.textContent ?? '').startsWith('+ c'))).toBeInTheDocument();
+  });
+
+  it('shows a loading line with Approve disabled and never labels the pin as current', () => {
+    vi.spyOn(api, 'fetchContextPinDiff').mockReturnValue(new Promise(() => {}));
+    seed({ style: pin('drift') });
+    renderContext('/pins?kind=context&fragment=style');
+    expect(screen.getByText('Loading diff…')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    expect(screen.queryByText('Current document')).not.toBeInTheDocument();
+  });
+
+  it('shows an alert with Retry on a failed load and refetches', async () => {
+    const fetchDiff = vi
+      .spyOn(api, 'fetchContextPinDiff')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(contextDiff());
+    seed({ style: pin('drift') });
+    renderContext('/pins?kind=context&fragment=style');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Failed to load the pin diff for style. offline');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText(/2 lines changed/)).toBeInTheDocument();
+    expect(fetchDiff).toHaveBeenCalledTimes(2);
+  });
+
+  it('reloads the diff after a 409 on approve', async () => {
+    const fetchDiff = vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(contextDiff());
+    vi.spyOn(api, 'approveContextPin').mockRejectedValue(new HTTPError(409, 'content changed'));
+    seed({ style: pin('drift') });
+    renderContext('/pins?kind=context&fragment=style');
+    await screen.findByText(/2 lines changed/);
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(fetchDiff).toHaveBeenCalledTimes(2));
+    expect(showToast).toHaveBeenCalledWith('error', expect.stringContaining('Reloading the diff for re-review.'));
+  });
+
+  it('does not reload the diff after a 400 on approve', async () => {
+    const fetchDiff = vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(contextDiff());
+    const approve = vi.spyOn(api, 'approveContextPin').mockRejectedValue(new HTTPError(400, 'bad'));
+    seed({ style: pin('drift') });
+    renderContext('/pins?kind=context&fragment=style');
+    await screen.findByText(/2 lines changed/);
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(approve).toHaveBeenCalled());
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('error', expect.any(String), expect.anything()));
+    expect(fetchDiff).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends evidence references with the approval', async () => {
+    vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(
+      contextDiff({ fragment: 'tools', composite_hash: 'def' }),
+    );
+    const approve = vi.spyOn(api, 'approveContextPin').mockResolvedValue();
+    vi.spyOn(api, 'fetchContextPins').mockResolvedValue({ tools: pin('pinned') });
+    seed({ tools: pin('drift') });
+    renderContext('/pins?kind=context&fragment=tools');
+    const button = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.change(screen.getByLabelText('Evidence references, one per line'), {
+      target: { value: 'ref-1\nref-2' },
+    });
+    fireEvent.click(button);
+    await waitFor(() => expect(approve).toHaveBeenCalledWith('tools', 'def', undefined, ['ref-1', 'ref-2']));
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('success', 'Approved content update for tools'));
+  });
+
+  it('carries the shared ids and scrolls for view=drift', async () => {
+    vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(contextDiff());
+    seed({ style: pin('drift') });
+    const scrollSpy = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollSpy;
+    try {
+      renderContext('/pins?kind=context&fragment=style&view=drift');
+      await screen.findByText(/2 lines changed/);
+      expect(document.getElementById(APPROVE_BUTTON_ID)).not.toBeNull();
+      expect(document.getElementById(DRIFT_SECTION_ID)).not.toBeNull();
+      expect(document.getElementById(RESET_BUTTON_ID)).not.toBeNull();
+      expect(document.getElementById(TOOLS_SECTION_ID)).not.toBeNull();
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+      expect(scrollSpy.mock.contexts.some((el) => (el as Element).id === DRIFT_SECTION_ID)).toBe(true);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('scrolls view=findings to the drift section for a drifted fragment', async () => {
+    vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(contextDiff());
+    seed({ style: pin('drift') });
+    const scrollSpy = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollSpy;
+    try {
+      renderContext('/pins?kind=context&fragment=style&view=findings');
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+      expect((scrollSpy.mock.contexts[0] as Element).id).toBe(DRIFT_SECTION_ID);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('scrolls view=findings to the pinned-content findings on a pinned fragment', async () => {
+    const findings = [{ code: 'P003', severity: 'info' as const, confidence: 'low' as const, field: 'body', message: 'note' }];
+    seed({ style: pin('pinned', findings) });
+    const scrollSpy = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollSpy;
+    try {
+      renderContext('/pins?kind=context&fragment=style&view=findings');
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+      const target = scrollSpy.mock.contexts[0] as Element;
+      expect(target.id).toBe(TOOLS_SECTION_ID);
+      expect(target).toHaveTextContent('Advisory findings on the pinned content');
+      expect(target).toHaveTextContent('Pinned document');
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('approves with Ctrl+Enter and runs the palette approve and reset commands on a fragment', async () => {
+    vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(contextDiff());
+    const approve = vi.spyOn(api, 'approveContextPin').mockResolvedValue();
+    vi.spyOn(api, 'fetchContextPins').mockResolvedValue({ style: pin('pinned') });
+    seed({ style: pin('drift') });
+    renderContext('/pins?kind=context&fragment=style');
+    const button = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(fireEvent.keyDown(document, { key: 'Enter', ctrlKey: true })).toBe(false);
+    await waitFor(() => expect(approve).toHaveBeenCalledWith('style', 'abc', undefined));
+    expect(approve).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs the palette approve and reset commands on the selected fragment', async () => {
+    vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(contextDiff());
+    const approve = vi.spyOn(api, 'approveContextPin').mockResolvedValue();
+    vi.spyOn(api, 'fetchContextPins').mockResolvedValue({ style: pin('drift') });
+    seed({ style: pin('drift') });
+    function CommandProbe() {
+      const { commands } = useCommandRegistry();
+      return (
+        <div>
+          {commands
+            .filter((c) => c.id === 'pins:approve' || c.id === 'pins:reset')
+            .map((c) => (
+              <button key={c.id} data-testid={c.id} onClick={c.onSelect}>
+                {c.label}
+              </button>
+            ))}
+        </div>
+      );
+    }
+    const run = (id: string) => fireEvent.click(screen.getByTestId(id));
+    render(
+      <CommandRegistryProvider>
+        <MemoryRouter initialEntries={['/pins?kind=context&fragment=style']}>
+          <Routes>
+            <Route path="/pins" element={<PinsWorkspace />} />
+          </Routes>
+        </MemoryRouter>
+        <CommandProbe />
+      </CommandRegistryProvider>,
+    );
+    const button = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(screen.getByTestId('pins:reset')).toHaveTextContent('Pins: Reset Selected Pin');
+    run('pins:approve');
+    await waitFor(() => expect(approve).toHaveBeenCalledWith('style', 'abc', undefined));
+    run('pins:reset');
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('cannot be undone');
+    expect(showToast).not.toHaveBeenCalledWith('error', expect.stringMatching(/selected/));
+  });
+
+  it('renders approval history and the verified time', async () => {
+    vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(contextDiff());
+    seed({
+      style: {
+        ...pin('drift'),
+        approvals: [
+          { approved_at: '2026-07-10T00:00:00Z', approved_hash: 'c1:abc', bound: true, reason: 'Reviewed style edit' },
+        ],
+      },
+    });
+    renderContext('/pins?kind=context&fragment=style');
+    const history = await screen.findByRole('region', { name: 'Approval history' });
+    expect(history).toHaveTextContent('Reviewed style edit');
+    expect(screen.getByTitle('2026-07-15T00:00:00Z')).toHaveTextContent(/^verified /);
+  });
+
+  it('resets from the Danger section after a confirm that warns it cannot be undone', async () => {
+    vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(contextDiff());
+    const reset = vi.spyOn(api, 'resetContextPin').mockResolvedValue();
+    vi.spyOn(api, 'fetchContextPins').mockResolvedValue({});
+    seed({ style: pin('drift') });
+    renderContext('/pins?kind=context&fragment=style');
+    fireEvent.click(await screen.findByRole('button', { name: 'Reset pin for style' }));
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('cannot be undone');
+    expect(dialog).toHaveTextContent('re-pins from scratch');
+    const buttons = screen.getAllByRole('button', { name: 'Reset pin for style' });
+    fireEvent.click(buttons[buttons.length - 1]);
+    await waitFor(() => expect(reset).toHaveBeenCalledWith('style'));
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('success', 'Pin reset for style; it re-pins on the next context sync'),
+    );
+  });
+
+  it('toasts a failed reset and keeps the detail mounted', async () => {
+    vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(contextDiff());
+    vi.spyOn(api, 'resetContextPin').mockRejectedValue(new Error('disk full'));
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      seed({ style: pin('drift') });
+      renderContext('/pins?kind=context&fragment=style');
+      fireEvent.click(await screen.findByRole('button', { name: 'Reset pin for style' }));
+      const buttons = screen.getAllByRole('button', { name: 'Reset pin for style' });
+      fireEvent.click(buttons[buttons.length - 1]);
+      await waitFor(() => expect(showToast).toHaveBeenCalledWith('error', expect.stringContaining('disk full')));
+      expect(screen.getByRole('button', { name: 'Reset pin for style' })).toBeInTheDocument();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
+
+  it('offers the full current document past the render cap and clears it during a 409 reload', async () => {
+    const big = Array.from({ length: MAX_DIFF_LINES + 10 }, (_, i) => `n${i}`).join('\n');
+    const fetchDiff = vi
+      .spyOn(api, 'fetchContextPinDiff')
+      .mockResolvedValueOnce(contextDiff({ old_document: '', new_document: big }))
+      .mockReturnValue(new Promise(() => {}));
+    vi.spyOn(api, 'approveContextPin').mockRejectedValue(new HTTPError(409, 'content changed'));
+    seed({ style: pin('drift') });
+    renderContext('/pins?kind=context&fragment=style');
+    expect(await screen.findByText(/Full current document \(\d+ lines\)/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(fetchDiff).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Loading diff…')).toBeInTheDocument();
+    expect(screen.queryByText(/Full current document/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Diff truncated/)).not.toBeInTheDocument();
+  });
+
+  it('labels an unaligned diff and offers the full current document', async () => {
+    vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(
+      contextDiff({ old_document: lines(501, 'old-end'), new_document: lines(501, 'new-end') }),
+    );
+    seed({ style: pin('drift') });
+    renderContext('/pins?kind=context&fragment=style');
+    expect(await screen.findByText('style (too large to align)')).toBeInTheDocument();
+    expect(screen.queryByText(/lines changed/)).not.toBeInTheDocument();
+    expect(screen.getByText(/too large to compare line by line/)).toBeInTheDocument();
+    expect(await screen.findByText('Full current document (501 lines)')).toBeInTheDocument();
+  });
+
+  it('shows the equal-content note when both documents are absent', async () => {
+    vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(
+      contextDiff({ old_document: undefined, new_document: undefined }),
+    );
+    seed({ style: pin('drift') });
+    renderContext('/pins?kind=context&fragment=style');
+    expect(await screen.findByText(/The current content matches the pinned document/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeEnabled();
+  });
+
+  it('escapes a non-printable fragment name in the header and diff heading', async () => {
+    const name = 'sty\u0007le';
+    vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(contextDiff({ fragment: name }));
+    seed({ [name]: pin('drift') });
+    renderContext(`/pins?kind=context&fragment=${encodeURIComponent(name)}`);
+    expect(await screen.findByText(/2 lines changed/)).toHaveTextContent('sty\\u0007le (2 lines changed)');
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('sty\\u0007le');
+    expect(screen.getByRole('heading', { level: 2 }).textContent).not.toContain('\u0007');
+    expect(screen.getByRole('button', { name: 'Reset pin for sty\\u0007le' })).toBeInTheDocument();
+  });
+});
+
+describe('ContextPinReviewModal detail', () => {
+  it('renders no shared ids and reflects an in-modal approve in its title', async () => {
+    vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(contextDiff());
+    vi.spyOn(api, 'approveContextPin').mockResolvedValue();
+    const fetchPins = vi
+      .spyOn(api, 'fetchContextPins')
+      .mockResolvedValueOnce({ style: pin('drift') })
+      .mockResolvedValue({ style: pin('pinned') });
+    render(<ContextPinReviewModal name="style" onClose={vi.fn()} />);
+    expect(await screen.findByText('style changed since its pin')).toBeInTheDocument();
+    await screen.findByText(/2 lines changed/);
+    for (const id of [APPROVE_BUTTON_ID, DRIFT_SECTION_ID, RESET_BUTTON_ID, TOOLS_SECTION_ID]) {
+      expect(document.getElementById(id)).toBeNull();
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(fetchPins).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText('Pin drift')).not.toBeInTheDocument());
+    expect(screen.queryByText(/changed since its pin/)).not.toBeInTheDocument();
+    expect(screen.getByText('Pin for style')).toBeInTheDocument();
   });
 });
