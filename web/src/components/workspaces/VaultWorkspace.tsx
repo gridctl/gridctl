@@ -1081,16 +1081,16 @@ function VaultHeader({
       compact={compact}
       summary={(
         <span className="flex items-center gap-3 min-w-0">
-          <span className="font-mono">
+          <span className="font-mono flex-shrink-0 whitespace-nowrap">
             {totalVariables} {totalVariables === 1 ? 'variable' : 'variables'}
           </span>
           {totalSets > 0 && (
-            <span className="font-mono text-secondary">
+            <span className="font-mono text-secondary flex-shrink-0 whitespace-nowrap">
               · {totalSets} {totalSets === 1 ? 'set' : 'sets'}
             </span>
           )}
           {encrypted && !locked && (
-            <span className="text-3xs font-mono px-1.5 py-0.5 rounded bg-status-running/10 text-status-running flex items-center gap-1">
+            <span className="text-3xs font-mono px-1.5 py-0.5 rounded bg-status-running/10 text-status-running flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
               <LockOpen size={9} />
               encrypted
             </span>
@@ -1099,7 +1099,7 @@ function VaultHeader({
             <span className="font-mono truncate">{unlockLabel}</span>
           )}
           {locked && (
-            <span className="text-3xs font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary flex items-center gap-1">
+            <span className="text-3xs font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
               <Lock size={9} />
               locked
             </span>
