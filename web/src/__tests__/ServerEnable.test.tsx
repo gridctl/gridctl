@@ -52,7 +52,7 @@ describe('CustomNode disabled server', () => {
     useUIStore.setState({ compactCards: true });
   });
 
-  it('renders a muted disabled chip and hides health strips', () => {
+  it('renders one disabled badge and hides health strips', () => {
     // The disabled status lives in the card body, which compact mode
     // removes from the accessibility tree.
     useUIStore.setState({ compactCards: false });
@@ -63,15 +63,25 @@ describe('CustomNode disabled server', () => {
           healthy: false,
           healthError: 'down',
           authStatus: 'needs_auth',
+          status: 'disabled',
         })}
       />,
     );
     expect(screen.getByRole('status', { name: 'parked is disabled' })).toBeInTheDocument();
-    expect(screen.getByText('disabled')).toBeInTheDocument();
+    expect(screen.getAllByText('disabled')).toHaveLength(1);
+    expect(screen.queryByText(/initializing/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'initializing' })).not.toBeInTheDocument();
     expect(screen.queryByText('Healthy')).not.toBeInTheDocument();
     expect(screen.queryByText('down')).not.toBeInTheDocument();
     expect(screen.queryByText('Needs authorization')).not.toBeInTheDocument();
     expect(container.firstChild).toHaveClass('opacity-60');
+  });
+
+  it('shows a disabled header dot in compact mode', () => {
+    useUIStore.setState({ compactCards: true });
+    render(<CustomNode data={makeServerData({ enabled: false, status: 'disabled' })} />);
+    expect(screen.getByRole('img', { name: 'disabled' })).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'initializing' })).not.toBeInTheDocument();
   });
 
   it('still shows the healthy line for an enabled server', () => {

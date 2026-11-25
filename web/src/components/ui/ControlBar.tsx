@@ -1,51 +1,147 @@
-import { useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { RefreshCw, AlertCircle, Zap } from 'lucide-react';
 import { Button } from './Button';
+import { showToast } from './Toast';
 import { restartMCPServer } from '../../lib/api';
+import { requestGatewayPoll } from '../../hooks/usePolling';
+import { useStackStore } from '../../stores/useStackStore';
+import {
+  beginRestart,
+  endRestart,
+  isRestartInFlight,
+  useRestartInFlight,
+} from '../../lib/restartsInFlight';
 
 interface ControlBarProps {
   name: string;
-  variant: 'mcp-server';
-  onActionComplete?: () => void;
 }
 
-export function ControlBar({ name, onActionComplete }: ControlBarProps) {
-  const [isRestarting, setIsRestarting] = useState(false);
+export function ControlBar({ name }: ControlBarProps) {
+  const sessions = useStackStore((s) => s.sessions);
+  const isRestarting = useRestartInFlight(name);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const handleRestart = async () => {
-    setIsRestarting(true);
+    const target = name;
+    if (isRestartInFlight(target)) return;
+    setConfirming(false);
     setError(null);
+    beginRestart(target);
     try {
-      await restartMCPServer(name);
-      onActionComplete?.();
+      await restartMCPServer(target);
+      showToast('success', `Restarted ${target}`);
+      requestGatewayPoll();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Restart failed');
+      const message = err instanceof Error ? err.message : 'Restart failed';
+      // A control that unmounted (selection moved on) has nowhere to show
+      // the inline error, so the failure goes to a toast instead.
+      if (mounted.current) {
+        setError(message);
+      } else {
+        showToast('error', `Restart of ${target} failed: ${message}`);
+      }
     } finally {
-      setIsRestarting(false);
+      endRestart(target);
     }
   };
 
+  const handleClick = () => {
+    if (isRestarting) return;
+    if (sessions > 0) {
+      setError(null);
+      setConfirming(true);
+      return;
+    }
+    void handleRestart();
+  };
+
+  const sessionText =
+    sessions === 1 ? '1 gateway session is active' : `${sessions} gateway sessions are active`;
+
+  // If the poller reports zero sessions while the row is open, fall back to
+  // the idle button, which then restarts on one click.
+  const showConfirm = confirming && sessions > 0 && !isRestarting;
+  const confirmTextId = useId();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const wasConfirming = useRef(false);
+
+  // Swapping between the idle button and the confirm row unmounts the focused
+  // element, so move focus explicitly: to Cancel when the row opens, and back
+  // to Restart when it closes and focus was lost with it.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    if (showConfirm) {
+      container.querySelector<HTMLButtonElement>('[data-restart-cancel]')?.focus();
+    } else if (wasConfirming.current) {
+      const active = document.activeElement;
+      if (!active || active === document.body) {
+        container.querySelector<HTMLButtonElement>('[data-restart-trigger]')?.focus();
+      }
+    }
+    wasConfirming.current = showConfirm;
+  }, [showConfirm]);
+
   return (
-    <div className="space-y-3">
-      <div className="flex gap-2">
-        <Button
-          onClick={handleRestart}
-          disabled={isRestarting}
-          variant="primary"
-          size="sm"
-        >
-          {isRestarting ? (
-            <RefreshCw size={14} className="animate-spin" />
-          ) : (
-            <Zap size={14} />
-          )}
-          {isRestarting ? 'Restarting...' : 'Restart'}
-        </Button>
-      </div>
+    <div ref={containerRef} className="space-y-3">
+      {showConfirm ? (
+        <div className="space-y-2">
+          <p id={confirmTextId} className="text-xs text-text-secondary">
+            Restart {name}? {sessionText}; in-flight calls to {name} will fail.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => void handleRestart()}
+              variant="outline-danger"
+              size="sm"
+              aria-describedby={confirmTextId}
+            >
+              Restart
+            </Button>
+            <Button
+              onClick={() => setConfirming(false)}
+              variant="ghost"
+              size="sm"
+              aria-describedby={confirmTextId}
+              data-restart-cancel=""
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <Button
+            onClick={handleClick}
+            disabled={isRestarting}
+            variant="secondary"
+            size="sm"
+            data-restart-trigger=""
+          >
+            {isRestarting ? (
+              <RefreshCw size={14} className="animate-spin" />
+            ) : (
+              <Zap size={14} />
+            )}
+            {isRestarting ? 'Restarting...' : 'Restart'}
+          </Button>
+        </div>
+      )}
 
       {error && (
-        <div className="flex items-center gap-2 p-2.5 bg-status-error/10 border border-status-error/20 rounded-lg text-xs text-status-error">
+        <div
+          role="alert"
+          className="flex items-center gap-2 p-2.5 bg-status-error/10 border border-status-error/20 rounded-lg text-xs text-status-error"
+        >
           <AlertCircle size={14} className="flex-shrink-0" />
           <span>{error}</span>
         </div>

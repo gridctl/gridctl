@@ -1,4 +1,5 @@
 import { cn } from '../../lib/cn';
+import { NODE_STATUS_LABELS } from '../../lib/nodeStatus';
 import type { NodeStatus } from '../../types';
 
 interface StatusDotProps {
@@ -9,16 +10,6 @@ interface StatusDotProps {
   label?: string;
 }
 
-const STATUS_LABELS: Record<NodeStatus, string> = {
-  running: 'running',
-  stopped: 'stopped',
-  error: 'error',
-  initializing: 'initializing',
-  idle: 'idle',
-  'needs-auth': 'needs auth',
-  restarting: 'restarting',
-};
-
 const dotStyles: Record<NodeStatus, string> = {
   running: 'bg-status-running shadow-[0_0_8px_--alpha(var(--color-status-running)/40%)]',
   stopped: 'bg-status-stopped',
@@ -27,10 +18,11 @@ const dotStyles: Record<NodeStatus, string> = {
   idle: 'bg-status-idle',
   'needs-auth': 'bg-status-pending shadow-[0_0_8px_var(--color-status-pending-glow)]',
   restarting: 'bg-status-pending shadow-[0_0_8px_--alpha(var(--color-status-pending)/40%)]',
+  disabled: 'bg-transparent ring-1 ring-status-stopped',
 };
 
 export function StatusDot({ status, size = 'sm', pulse = true, label }: StatusDotProps) {
-  const name = label ?? STATUS_LABELS[status];
+  const name = label ?? NODE_STATUS_LABELS[status];
   const sizeClasses = {
     sm: 'w-2 h-2',
     md: 'w-2.5 h-2.5',
