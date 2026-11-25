@@ -279,4 +279,32 @@ describe('SkillImportWizard import progress', () => {
     expect(await screen.findByText('Import Complete')).toBeInTheDocument();
     expect(useWizardStore.getState().importInProgress).toBe(false);
   });
+
+  it('keeps a draft loaded from the header after a finished import', async () => {
+    vi.spyOn(apiModule, 'previewSkillSource').mockResolvedValue({ skills: [makeSkill()] } as never);
+    vi.spyOn(apiModule, 'addSkillSource').mockResolvedValue({ imported: [{ name: 'test-skill' }] } as never);
+    useWizardStore.setState({ isOpen: true, selectedType: 'skill', currentStep: 'form' });
+    render(<MemoryRouter><CreationWizard /></MemoryRouter>);
+    scan();
+    fireEvent.click(await screen.findByRole('button', { name: /Install 1 Skill/ }));
+    expect(await screen.findByText('Import Complete')).toBeInTheDocument();
+
+    const draftData = { name: 'draft-stack', version: '1' };
+    act(() =>
+      useWizardStore.getState().loadDraft({
+        id: 'd1',
+        name: 'Draft stack',
+        resourceType: 'stack',
+        formData: draftData,
+        createdAt: '2026-11-25T00:00:00Z',
+        updatedAt: '2026-11-25T00:00:00Z',
+      }),
+    );
+
+    await waitFor(() => expect(screen.queryByText('Import Complete')).not.toBeInTheDocument());
+    const state = useWizardStore.getState();
+    expect(state.selectedType).toBe('stack');
+    expect(state.currentStep).toBe('form');
+    expect(state.formData.stack).toEqual(draftData);
+  });
 });

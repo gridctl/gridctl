@@ -80,13 +80,20 @@ export function SkillImportWizard() {
   const currentItemRef = useRef<HTMLLIElement>(null);
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);
   const prevStepRef = useRef(step);
+  const stepFocusPendingRef = useRef(false);
   useEffect(() => {
-    if (prevStepRef.current === step) return;
-    prevStepRef.current = step;
-    // The result heading reads the outcome; a failed request renders no
-    // result, so the indicator item takes focus instead.
+    if (prevStepRef.current !== step) {
+      prevStepRef.current = step;
+      stepFocusPendingRef.current = true;
+    }
+    // The install step shows a spinner while the registry refreshes, so focus
+    // waits until the result heading has mounted. The heading reads the
+    // outcome; a failed request renders no result, so the indicator item
+    // takes focus instead.
+    if (!stepFocusPendingRef.current || installing) return;
+    stepFocusPendingRef.current = false;
     (resultHeadingRef.current ?? currentItemRef.current)?.focus();
-  }, [step]);
+  }, [step, installing]);
 
   // The Install button is disabled while the request runs, which drops focus
   // in a browser; a failed request returns it to the current indicator item.

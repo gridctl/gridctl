@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter } from 'react-router';
 import { BrowseStep } from '../components/wizard/steps/BrowseStep';
 import { SkillImportWizard } from '../components/wizard/steps/SkillImportWizard';
 import type { SkillPreview } from '../types';
-import { addSkillSource, previewSkillSource } from '../lib/api';
+import { addSkillSource, fetchRegistryStatus, previewSkillSource } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 import { useWizardStore } from '../stores/useWizardStore';
 
@@ -596,6 +596,23 @@ describe('SkillImportWizard result actions', () => {
     await waitFor(() => expect(heading).toHaveFocus());
     expect(screen.getByRole('button', { name: 'View in Library' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Import another' })).toBeInTheDocument();
+  });
+
+  it('focuses the result heading when the registry refresh finishes on a later task', async () => {
+    let release!: () => void;
+    const refresh = new Promise<never>((resolve) => {
+      release = () => resolve({} as never);
+    });
+    vi.mocked(fetchRegistryStatus).mockReturnValueOnce(refresh);
+    vi.mocked(addSkillSource).mockResolvedValueOnce({ imported: [{ name: 'test-skill' }] } as never);
+    await install();
+    await waitFor(() => expect(screen.getByText('Importing...')).toBeInTheDocument());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+      release();
+    });
+    const heading = await screen.findByRole('heading', { name: 'Import Complete' });
+    await waitFor(() => expect(heading).toHaveFocus());
   });
 
   it('returns to Add Source with an empty URL on Import another', async () => {
