@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { useEffect } from 'react';
 import '@testing-library/jest-dom';
 import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
 import { PacksWorkspace } from '../components/registry/packs/PacksWorkspace';
 import { PackImportWizard } from '../components/wizard/steps/PackImportWizard';
@@ -56,6 +57,19 @@ const cleanDetail: PackDetail = {
   ],
   needs_attention: false,
 };
+
+const visited: string[] = [];
+
+// The still-mounted PacksWorkspace clears a selected name it cannot find, so
+// the probe records every location rather than only the last one.
+function LocationProbe() {
+  const location = useLocation();
+  const url = location.pathname + location.search;
+  useEffect(() => {
+    visited.push(url);
+  }, [url]);
+  return null;
+}
 
 function renderWorkspace(url = '/library?kind=pack') {
   return render(
@@ -168,6 +182,22 @@ describe('packModel', () => {
     expect(groups[0].rows.map((r) => r.name)).toEqual(['bad', 'ok']);
   });
 
+  it('groups hook rows after rules and before wiring, labeled Hooks', () => {
+    const groups = groupPackRows([
+      { kind: 'wiring', name: 'gridctl', client: 'claude', state: 'in-sync' },
+      { kind: 'hook', name: 'block-force-push', client: 'claude-code', state: 'in-sync' },
+      { kind: 'rule', name: 'team-style', client: 'claude-code', state: 'in-sync' },
+      { kind: 'skill', name: 'ok', client: 'claude', state: 'in-sync' },
+    ]);
+    expect(groups.map((g) => g.kind)).toEqual(['skill', 'rule', 'hook', 'wiring']);
+    expect(groups[2].label).toBe('Hooks');
+  });
+
+  it('treats a missing hook as attention and an in-sync hook as clean', () => {
+    expect(rowNeedsAttention({ kind: 'hook', name: 'x', state: 'missing' })).toBe(true);
+    expect(rowNeedsAttention({ kind: 'hook', name: 'x', state: 'in-sync' })).toBe(false);
+  });
+
   it('grades a partial apply as a warning naming skipped kinds, never success', () => {
     const outcome = describeApplyDoc({
       pack: 'team-pack',
@@ -273,6 +303,51 @@ describe('PacksWorkspace', () => {
     expect(screen.getByText('team-style').closest('button')).toBeNull();
     // Skill rows deep-link.
     expect(screen.getByTitle('Open alpha')).toBeInTheDocument();
+  });
+
+  it('links a hook row to the hook and leaves a missing hook as text', async () => {
+    visited.length = 0;
+    vi.mocked(fetchPacks).mockResolvedValue([listItem()]);
+    vi.mocked(fetchPackDetail).mockResolvedValue({
+      info: listItem(),
+      rows: [
+        { kind: 'hook', name: 'block force/push', client: 'claude-code', state: 'in-sync' },
+        { kind: 'hook', name: 'gone-hook', state: 'missing', detail: 'registry directory is gone' },
+      ],
+      needs_attention: true,
+    });
+    render(
+      <MemoryRouter initialEntries={['/library?kind=pack&selected=team-pack']}>
+        <CommandRegistryProvider>
+          <PacksWorkspace onKindChange={() => {}} />
+          <Routes>
+            <Route path="*" element={<LocationProbe />} />
+          </Routes>
+        </CommandRegistryProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Hooks')).toBeInTheDocument();
+    expect(screen.getByText('gone-hook').closest('button')).toBeNull();
+    fireEvent.click(screen.getByTitle('Open block force/push'));
+    expect(visited).toContain(`/library?kind=hook&selected=${encodeURIComponent('block force/push')}`);
+  });
+
+  it('counts hooks on the pack card', async () => {
+    vi.mocked(fetchPacks).mockResolvedValue([
+      listItem({ name: 'one-hook', counts: { skills: 2, agents: 1, rules: 1, hooks: 1, wiring: true } }),
+      listItem({ name: 'two-hooks', counts: { skills: 0, agents: 0, rules: 0, hooks: 2, wiring: false } }),
+      listItem({ name: 'zero-hooks', counts: { skills: 1, agents: 0, rules: 0, hooks: 0, wiring: false } }),
+      listItem({ name: 'no-hooks', counts: { skills: 1, agents: 0, rules: 0, wiring: false } }),
+    ]);
+    renderWorkspace();
+    const list = await screen.findByLabelText('Installed packs');
+    const card = (name: string) => within(list).getAllByRole('button').find((b) => b.textContent?.includes(name))!;
+    expect(card('one-hook')).toHaveTextContent('2 skills · 1 agent · 1 rule · 1 hook · wiring');
+    expect(card('two-hooks')).toHaveTextContent('2 hooks');
+    expect(card('zero-hooks')).toHaveTextContent('1 skill');
+    expect(card('zero-hooks').textContent).not.toMatch(/\d hooks?/);
+    expect(card('no-hooks').textContent).not.toMatch(/\d hooks?/);
   });
 
   it('renders a collision 409 as a detail banner naming both repos', async () => {
