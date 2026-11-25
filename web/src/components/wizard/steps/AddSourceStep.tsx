@@ -190,14 +190,14 @@ export function AddSourceStep({ onPreviewLoaded, onLoadingChange }: AddSourceSte
         <div>
           <h3 className="text-sm font-medium text-text-primary mb-0.5">Import from Git</h3>
           <p className="text-3xs text-text-muted">
-            Enter a repository URL to discover and import skills
+            Enter a Git URL or an absolute directory on the gateway host to discover and import skills
           </p>
         </div>
 
         {/* URL field */}
         <div className="space-y-1.5">
           <label htmlFor={`${fieldId}-url`} className="text-3xs text-text-muted uppercase tracking-wider">
-            Repository URL
+            Repository URL or local path
           </label>
           <div className="relative">
             <FolderGit2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
