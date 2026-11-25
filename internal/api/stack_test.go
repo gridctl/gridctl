@@ -329,6 +329,7 @@ func TestHandleStack_Routing(t *testing.T) {
 		{"unknown path", http.MethodGet, "/api/stack/unknown", http.StatusNotFound},
 		{"validate wrong method", http.MethodGet, "/api/stack/validate", http.StatusMethodNotAllowed},
 		{"append POST no stack", http.MethodPost, "/api/stack/append", http.StatusServiceUnavailable},
+		{"append preview POST no stack", http.MethodPost, "/api/stack/append/preview", http.StatusServiceUnavailable},
 		{"stacks GET", http.MethodGet, "/api/stacks", http.StatusOK},
 		{"initialize POST no body", http.MethodPost, "/api/stack/initialize", http.StatusBadRequest},
 	}

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/hookpins"
@@ -689,6 +690,9 @@ func TestGatewayBuilder_SetupHotReload_NoWatch(t *testing.T) {
 
 	// Should set up reload handler but not start the stack watcher
 	builder.setupHotReload(ctx, inst, registrar, handler, false)
+	if inst.APIServer.StackWatching() {
+		t.Error("StackWatching() = true without --watch")
+	}
 }
 
 func TestGatewayBuilder_SetupHotReload_NoWatch_Verbose(t *testing.T) {
@@ -874,6 +878,19 @@ func TestGatewayBuilder_SetupHotReload_WithWatch(t *testing.T) {
 	defer cancel() // Stop the watchers even on early failure
 	// Should set up reload handler and start watcher
 	builder.setupHotReload(ctx, inst, registrar, handler, true)
+	if !inst.APIServer.StackWatching() {
+		t.Fatal("StackWatching() = false after the stack watcher started")
+	}
+
+	// Watch returns once the context is canceled; the flag must follow.
+	cancel()
+	deadline := time.Now().Add(5 * time.Second)
+	for inst.APIServer.StackWatching() {
+		if time.Now().After(deadline) {
+			t.Fatal("StackWatching() still true after the stack watcher returned")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func TestOAuthRedirectURL(t *testing.T) {

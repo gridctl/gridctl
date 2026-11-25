@@ -1883,7 +1883,20 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 	// so POST /api/stack/initialize can activate watching after cold-loading.
 	var overrideWatchMu sync.Mutex
 	overrideWatched := map[string]bool{}
-	startOne := func(watchPath string, extra ...string) {
+	// stackWatchers counts running stack-path watchers so the API's watching
+	// flag stays true while any of them runs. Override-directory watchers
+	// pass trackStack false and never touch it.
+	var (
+		stackWatchMu  sync.Mutex
+		stackWatchers int
+	)
+	trackStackWatcher := func(delta int) {
+		stackWatchMu.Lock()
+		defer stackWatchMu.Unlock()
+		stackWatchers += delta
+		inst.APIServer.SetStackWatching(stackWatchers > 0)
+	}
+	startOne := func(watchPath string, trackStack bool, extra ...string) {
 		watchCtx, watchCancel := context.WithCancel(ctx)
 		watcher := reload.NewWatcher(watchPath, func() error {
 			result, err := reloadHandler.Reload(watchCtx)
@@ -1903,16 +1916,23 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 			watcher.AddBasename(name)
 		}
 		watcher.SetLogger(slog.New(handler))
+		if trackStack {
+			trackStackWatcher(1)
+		}
 		go func() {
 			defer watchCancel()
-			if err := watcher.Watch(watchCtx); err != nil && err != context.Canceled {
+			err := watcher.Watch(watchCtx)
+			if trackStack {
+				trackStackWatcher(-1)
+			}
+			if err != nil && err != context.Canceled {
 				slog.New(handler).Error("file watcher error", "error", err)
 			}
 		}()
 	}
 	startWatcher := func(stackPath string) {
 		extra, separate := overrideWatchTargets(b.config, stackPath)
-		startOne(stackPath, extra...)
+		startOne(stackPath, true, extra...)
 		if separate == "" {
 			return
 		}
@@ -1928,7 +1948,7 @@ func (b *GatewayBuilder) setupHotReload(ctx context.Context, inst *GatewayInstan
 			slog.New(handler).Warn("could not create override directory for watching", "path", dir, "error", err)
 			return
 		}
-		startOne(separate)
+		startOne(separate, false)
 	}
 
 	// Expose the watcher starter so initialize can activate it on demand.
