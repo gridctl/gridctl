@@ -1080,10 +1080,20 @@ export async function fetchHookPinDiff(name: string): Promise<HookPinDiff> {
   return fetchJSON<HookPinDiff>(`/api/hook-pins/${encodeURIComponent(name)}/diff`);
 }
 
-export async function approveHookPin(name: string, expectHash: string, reason: string): Promise<void> {
+export async function fetchHookPins(): Promise<Record<string, HookPin>> {
+  return fetchJSON<Record<string, HookPin>>('/api/hook-pins');
+}
+
+export async function approveHookPin(
+  name: string,
+  expectHash: string,
+  reason: string,
+  evidence?: string[],
+): Promise<void> {
   return mutateJSON<void>(`/api/hook-pins/${encodeURIComponent(name)}/approve`, 'POST', {
     expect: expectHash,
     reason,
+    ...(evidence && evidence.length > 0 ? { evidence } : {}),
   });
 }
 

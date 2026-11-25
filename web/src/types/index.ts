@@ -1,4 +1,4 @@
-import type { PinFinding } from '../lib/api';
+import type { PinApproval, PinFinding, SkillFileDigest } from '../lib/api';
 
 // Transport type matching backend pkg/mcp/types.go
 export type Transport = 'http' | 'stdio' | 'sse';
@@ -798,13 +798,21 @@ export interface HookUnsyncResult {
   error?: string;
 }
 
+// HookPin mirrors one record of GET /api/hook-pins. status is the stored
+// pin status; the list endpoint does not re-verify against disk.
 export interface HookPin {
-  status: string;
-  definition_hash?: string;
+  status: 'pinned' | 'drift';
+  definition_hash: string;
+  files?: SkillFileDigest[];
   document?: string;
-  findings?: PinFinding[];
-  composite_hash?: string;
+  source?: string;
+  origin?: { repo?: string; ref?: string; commitSha?: string };
   approved_reason?: string;
+  pinned_at: string;
+  last_verified_at: string;
+  findings?: PinFinding[];
+  approvals?: PinApproval[];
+  composite_hash?: string;
 }
 
 export interface HookPinDiff {

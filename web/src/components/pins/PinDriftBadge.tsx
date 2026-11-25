@@ -3,6 +3,7 @@ import { Lock, LockOpen } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { skillPinsUrl } from '../../lib/skillGovernance';
 import { contextPinsUrl } from '../../lib/contextGovernance';
+import { hookPinsUrl } from '../../lib/hookGovernance';
 import {
   usePinsStore,
   useDriftedServers,
@@ -11,6 +12,8 @@ import {
   useFirstDriftedSkill,
   useDriftedContextCount,
   useFirstDriftedContext,
+  useDriftedHookCount,
+  useFirstDriftedHook,
 } from '../../stores/usePinsStore';
 
 export function PinDriftBadge() {
@@ -23,26 +26,31 @@ export function PinDriftBadge() {
   const contextPins = usePinsStore((s) => s.contextPins);
   const contextDriftCount = useDriftedContextCount();
   const firstDriftedContext = useFirstDriftedContext();
+  const hookPins = usePinsStore((s) => s.hookPins);
+  const hookDriftCount = useDriftedHookCount();
+  const firstDriftedHook = useFirstDriftedHook();
   const navigate = useGuardedNavigate();
 
   // Mirror PinFindingsBadge: skill state renders even while the server poll
   // has not landed (or transiently failed) — both maps ride the same poll,
   // but /api/pins alone failing must not hide skill drift.
-  if (pins === null && skillDriftCount === 0 && contextDriftCount === 0) return null;
+  if (pins === null && skillDriftCount === 0 && contextDriftCount === 0 && hookDriftCount === 0) return null;
   const havePinnedServers = pins !== null && Object.keys(pins).length > 0;
   const havePinnedSkills = skillPins !== null && Object.keys(skillPins).length > 0;
   const havePinnedContexts = contextPins !== null && Object.keys(contextPins).length > 0;
-  if (!havePinnedServers && !havePinnedSkills && !havePinnedContexts) return null;
+  const havePinnedHooks = hookPins !== null && Object.keys(hookPins).length > 0;
+  if (!havePinnedServers && !havePinnedSkills && !havePinnedContexts && !havePinnedHooks) return null;
 
   const serverDriftCount = driftedServers.length;
-  const driftCount = serverDriftCount + skillDriftCount + contextDriftCount;
+  const driftCount = serverDriftCount + skillDriftCount + contextDriftCount + hookDriftCount;
   const isDrifted = driftCount > 0;
 
-  // Skill and fragment drift are called out only when present, so a
+  // Skill, fragment, and hook drift are called out only when present, so a
   // server-only stack reads exactly as before.
   const callouts: string[] = [];
   if (skillDriftCount > 0) callouts.push(`${skillDriftCount} skill${skillDriftCount > 1 ? 's' : ''}`);
   if (contextDriftCount > 0) callouts.push(`${contextDriftCount} fragment${contextDriftCount > 1 ? 's' : ''}`);
+  if (hookDriftCount > 0) callouts.push(`${hookDriftCount} hook${hookDriftCount > 1 ? 's' : ''}`);
   const label = isDrifted
     ? callouts.length > 0
       ? `Pins: ${driftCount} drifted (${callouts.join(', ')})`
@@ -65,6 +73,8 @@ export function PinDriftBadge() {
       navigate(skillPinsUrl(firstDriftedSkill, 'drift'));
     } else if (firstDriftedContext) {
       navigate(contextPinsUrl(firstDriftedContext, 'drift'));
+    } else if (firstDriftedHook) {
+      navigate(hookPinsUrl(firstDriftedHook, 'drift'));
     } else {
       navigate('/pins');
     }

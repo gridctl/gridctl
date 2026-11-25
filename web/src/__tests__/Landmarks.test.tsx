@@ -96,6 +96,7 @@ vi.mock('../lib/api', async (importActual) => {
     fetchPacks: vi.fn().mockResolvedValue([]),
     fetchServerPins: vi.fn().mockResolvedValue({}),
     fetchSkillPins: vi.fn().mockResolvedValue({}),
+    fetchHookPins: vi.fn().mockResolvedValue({}),
   };
 });
 
