@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { diffLines, diffWords, diffSide, lineDiffUnaligned, MAX_DIFF_LINES } from '../lib/diff';
+import {
+  diffLines,
+  diffWords,
+  diffSide,
+  lineDiffExceedsCap,
+  lineDiffUnaligned,
+  truncateBalanced,
+  MAX_DIFF_LINES,
+} from '../lib/diff';
 
 describe('diffLines', () => {
   it('marks changed lines, keeps common ones, and numbers both sides', () => {
@@ -22,6 +30,54 @@ describe('diffLines', () => {
 
   it('exports a render cap for consumers', () => {
     expect(MAX_DIFF_LINES).toBeGreaterThan(0);
+  });
+});
+
+describe('truncateBalanced', () => {
+  const block = (n: number, tag: string) => Array.from({ length: n }, (_, i) => `${tag}-${i}`).join('\n');
+
+  it('keeps short diffs whole', () => {
+    const lines = diffLines('a\nb', 'a\nc');
+    expect(truncateBalanced(lines)).toEqual({ visible: lines, hidden: 0 });
+  });
+
+  it('keeps half of each side of an oversize fallback', () => {
+    const lines = diffLines(block(3000, 'old'), block(3000, 'new'));
+    const { visible, hidden } = truncateBalanced(lines);
+    expect(visible.filter((t) => t.kind === 'removed')).toHaveLength(1000);
+    expect(visible.filter((t) => t.kind === 'added')).toHaveLength(1000);
+    expect(hidden).toBe(4000);
+  });
+
+  it('head-slices interleaved output', () => {
+    const lines = Array.from({ length: MAX_DIFF_LINES + 10 }, (_, i) => ({
+      kind: i % 2 === 0 ? ('removed' as const) : ('added' as const),
+      text: String(i),
+    }));
+    const { visible, hidden } = truncateBalanced(lines);
+    expect(visible).toEqual(lines.slice(0, MAX_DIFF_LINES));
+    expect(hidden).toBe(10);
+  });
+});
+
+describe('lineDiffExceedsCap', () => {
+  const block = (n: number, tag: string) => Array.from({ length: n }, (_, i) => `${tag}-${i}`).join('\n');
+  const cases: [string, string, string][] = [
+    ['small', 'a\nb\nc', 'a\nx\nc'],
+    ['mid, aligned under the cap', block(1900, 'a'), block(130, 'a')],
+    ['mid, aligned over the cap', block(1900, 'a'), block(130, 'b')],
+    ['at the sum boundary', block(1000, 'a'), block(1000, 'b')],
+    ['oversize fallback', block(3000, 'a'), block(3000, 'b')],
+    ['oversize, one side empty', '', block(2500, 'b')],
+  ];
+  it.each(cases)('matches diffLines for %s', (_label, a, b) => {
+    expect(lineDiffExceedsCap(a, b)).toBe(diffLines(a, b).length > MAX_DIFF_LINES);
+  });
+
+  it('runs the alignment when the line counts do not decide it', () => {
+    // 1900 x 130 is under the alignment budget but 2030 lines in total.
+    expect(lineDiffExceedsCap(block(1900, 'a'), block(130, 'a'))).toBe(false);
+    expect(lineDiffExceedsCap(block(1900, 'a'), block(130, 'b'))).toBe(true);
   });
 });
 

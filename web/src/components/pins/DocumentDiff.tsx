@@ -1,6 +1,12 @@
 import { useEffect, useMemo } from 'react';
 import { cn } from '../../lib/cn';
-import { diffLines, lineDiffUnaligned, MAX_DIFF_LINES, type DiffToken } from '../../lib/diff';
+import {
+  diffLines,
+  lineDiffUnaligned,
+  MAX_DIFF_LINES,
+  truncateBalanced,
+  type DiffToken,
+} from '../../lib/diff';
 import { escapeNonPrintable } from '../../lib/nonPrintable';
 
 // DocumentDiff renders a pinned document delta as a unified line-level view
@@ -12,23 +18,32 @@ import { escapeNonPrintable } from '../../lib/nonPrintable';
 // were too large to align, or the lines were cut at the render cap), so the
 // caller can offer the full document. It is reported from an effect because
 // the caller holds it as state.
+//
+// tokens lets a caller that already diffed the pair (to judge the approval
+// risk) pass its result instead of diffing twice; it must be
+// diffLines(oldDocument, newDocument). fullDiffCommand names the CLI command
+// that prints the untruncated diff.
 export function DocumentDiff({
   label,
   oldDocument,
   newDocument,
+  tokens: givenTokens,
+  fullDiffCommand,
   onDegraded,
 }: {
   label: string;
   oldDocument: string;
   newDocument: string;
+  tokens?: DiffToken[];
+  fullDiffCommand?: string;
   onDegraded?: (degraded: boolean) => void;
 }) {
   const { tokens, unaligned } = useMemo(
     () => ({
-      tokens: diffLines(oldDocument, newDocument),
+      tokens: givenTokens ?? diffLines(oldDocument, newDocument),
       unaligned: lineDiffUnaligned(oldDocument, newDocument),
     }),
-    [oldDocument, newDocument],
+    [givenTokens, oldDocument, newDocument],
   );
   const truncated = tokens.length > MAX_DIFF_LINES;
   const degraded = unaligned || truncated;
@@ -37,7 +52,9 @@ export function DocumentDiff({
   }, [onDegraded, degraded]);
 
   const changed = tokens.filter((t) => t.kind !== 'same').length;
-  const shown = tokens.slice(0, MAX_DIFF_LINES);
+  // Balanced: the oversize fallback lists every removal before any addition,
+  // and a head slice would hide the new document entirely.
+  const { visible: shown, hidden } = useMemo(() => truncateBalanced(tokens), [tokens]);
   const heading = escapeNonPrintable(label);
   return (
     <div className="space-y-1">
@@ -59,9 +76,17 @@ export function DocumentDiff({
           ))}
         </pre>
       </div>
-      {truncated && (
+      {hidden > 0 && (
         <p className="text-3xs text-text-muted">
-          Diff truncated at {MAX_DIFF_LINES} lines.
+          {hidden} more {hidden === 1 ? 'line' : 'lines'} not shown
+          {fullDiffCommand ? (
+            <>
+              ; run <code className="font-mono">{escapeNonPrintable(fullDiffCommand)}</code> for
+              the full diff.
+            </>
+          ) : (
+            '.'
+          )}
         </p>
       )}
     </div>
