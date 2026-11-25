@@ -294,7 +294,9 @@ function DetailsSection({
       )}
     >
       <button
+        type="button"
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
         className="w-full flex items-center gap-1.5 px-3 py-1.5 text-3xs font-medium uppercase tracking-wider"
       >
         {open ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
