@@ -197,7 +197,7 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
           action cluster's width varies with the Persistence label. */}
       <div className="@container/header flex items-center gap-2 min-w-0 flex-1 md:gap-4">
         {/* Brand Logo — inline so "ctl" follows the theme (readable on light).
-            Shorter below sm so one workspace pill stays visible at 390px. */}
+            Shorter below sm to leave the pill strip room on narrow headers. */}
         <LogoWordmark className="h-6 w-auto block shrink-0 sm:h-10" />
         <WorkspaceSwitcher />
       </div>
