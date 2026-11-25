@@ -37,6 +37,7 @@ import { TemplateGrid } from './TemplateGrid';
 import { CatalogPicker } from './CatalogPicker';
 import { YAMLPreview } from './YAMLPreview';
 import { ExpertModeToggle } from './ExpertModeToggle';
+import { SegmentedControl } from './SegmentedControl';
 import { DraftManager } from './DraftManager';
 import { ReviewStep } from './steps/ReviewStep';
 import { MCPServerForm } from './steps/MCPServerForm';
@@ -487,6 +488,28 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
   };
 
   const currentStepIdx = stepOrder.indexOf(currentStep);
+  const isImportFlow = (selectedType === 'skill' || selectedType === 'pack') && currentStep !== 'type';
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const stepTextRef = useRef<HTMLSpanElement>(null);
+  const prevStepRef = useRef(currentStep);
+
+  // Starts at the mounted step so opening the wizard leaves initial focus to
+  // the focus trap. On a later step change the step text takes focus; when it
+  // is hidden (an import flow), the title does, but only if focus has left the
+  // dialog, so a field that autofocused in the new step keeps it.
+  useEffect(() => {
+    const changed = prevStepRef.current !== currentStep;
+    prevStepRef.current = currentStep;
+    if (!isOpen || !changed) return;
+    if (stepTextRef.current) {
+      stepTextRef.current.focus();
+      return;
+    }
+    if (!panelRef.current?.contains(document.activeElement)) {
+      titleRef.current?.focus();
+    }
+  }, [isOpen, currentStep, panelRef]);
+
   const showPreviewPanel = currentStep === 'form' && selectedType !== 'skill' && selectedType !== 'pack' && selectedType !== 'secret';
 
   if (!isOpen) return null;
@@ -507,16 +530,18 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border/30 flex-shrink-0">
           <div className="flex items-center gap-4">
-            <h2 id={titleId} className="text-sm font-medium text-text-primary">
+            <h2 id={titleId} ref={titleRef} tabIndex={-1} className="text-sm font-medium text-text-primary">
               {currentStep === 'type'
-                ? 'Create New Resource'
+                ? 'Create new'
                 : selectedType
                   ? `New ${resourceTypes.find((r) => r.type === selectedType)?.label}`
                   : 'Create'}
             </h2>
 
             {/* Step Indicator */}
-            <div className="flex items-center gap-1">
+            {!isImportFlow && (
+            <>
+            <div className="flex items-center gap-1" aria-hidden="true">
               {stepOrder.map((step, i) => (
                 <div key={step} className="flex items-center">
                   <div
@@ -535,9 +560,11 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
                 </div>
               ))}
             </div>
-            <span className="text-3xs text-text-muted uppercase tracking-wider">
-              {stepLabels[currentStep]}
+            <span ref={stepTextRef} tabIndex={-1} className="text-3xs text-text-muted tracking-wider">
+              Step {currentStepIdx + 1} of {stepOrder.length}: {stepLabels[currentStep]}
             </span>
+            </>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -814,32 +841,16 @@ function MCPTemplateStep({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="inline-flex items-center self-start bg-surface-elevated/60 border border-border/40 rounded-lg p-0.5 mb-4">
-        <button
-          onClick={() => setMode('templates')}
-          className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200',
-            mode === 'templates'
-              ? 'bg-primary/15 text-primary shadow-sm'
-              : 'text-text-muted hover:text-text-secondary',
-          )}
-        >
-          <FileCode2 size={12} />
-          Templates
-        </button>
-        <button
-          onClick={() => setMode('catalog')}
-          className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200',
-            mode === 'catalog'
-              ? 'bg-primary/15 text-primary shadow-sm'
-              : 'text-text-muted hover:text-text-secondary',
-          )}
-        >
-          <Package size={12} />
-          Catalog
-        </button>
-      </div>
+      <SegmentedControl
+        ariaLabel="Server source"
+        value={mode}
+        onChange={setMode}
+        className="self-start mb-4"
+        options={[
+          { value: 'templates', label: 'Templates', icon: FileCode2 },
+          { value: 'catalog', label: 'Catalog', icon: Package },
+        ]}
+      />
       {mode === 'templates' ? (
         <TemplateGrid resourceType="mcp-server" selected={selected} onSelect={onTemplateSelect} />
       ) : (
@@ -886,13 +897,15 @@ function TypePicker({
           return (
             <button
               key={rt.type}
+              type="button"
               onClick={() => !isGated && onSelect(rt.type)}
-              title={isGated ? 'Requires an active stack — create a Stack first' : undefined}
+              aria-disabled={isGated ? 'true' : undefined}
+              aria-pressed={isGated ? undefined : isSelected}
               className={cn(
                 'group relative flex flex-col items-center text-center p-5 rounded-xl border transition-all duration-200 focus-visible:-outline-offset-2',
                 'animate-fade-in-up',
                 isGated
-                  ? 'opacity-40 cursor-not-allowed bg-surface-overlay-2 border-border-subtle'
+                  ? 'cursor-not-allowed bg-surface-overlay-2 border-border-subtle'
                   : [
                       'bg-surface-overlay-2 hover:bg-surface-overlay-3',
                       isSelected
@@ -903,7 +916,7 @@ function TypePicker({
               style={{ animationDelay: `${i * 50}ms`, animationFillMode: 'backwards' }}
             >
               {showCount && (
-                <div className="absolute top-2.5 right-2.5 text-3xs font-medium text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full">
+                <div className={cn('absolute top-2.5 right-2.5 text-3xs font-medium text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full', isGated && 'opacity-40')}>
                   {count}
                 </div>
               )}
@@ -911,7 +924,7 @@ function TypePicker({
                 className={cn(
                   'w-10 h-10 rounded-xl flex items-center justify-center mb-3 transition-all duration-200',
                   'bg-surface-elevated border border-border/40',
-                  !isGated && 'group-hover:border-border',
+                  isGated ? 'opacity-40' : 'group-hover:border-border',
                   isSelected && !isGated && 'border-primary/30',
                 )}
                 style={
@@ -928,12 +941,18 @@ function TypePicker({
                   )}
                 />
               </div>
-              <div className="text-sm font-medium text-text-primary mb-1">
+              <div className={cn('text-sm font-medium text-text-primary mb-1', isGated && 'opacity-40')}>
                 {rt.label}
               </div>
-              <div className="text-3xs text-text-muted leading-relaxed">
-                {rt.description}
-              </div>
+              {isGated ? (
+                <div className="text-3xs text-text-secondary leading-relaxed">
+                  Requires an active stack. Create a Stack first.
+                </div>
+              ) : (
+                <div className="text-3xs text-text-muted leading-relaxed">
+                  {rt.description}
+                </div>
+              )}
             </button>
           );
         })}
