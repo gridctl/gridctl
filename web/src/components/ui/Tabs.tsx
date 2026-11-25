@@ -11,13 +11,17 @@ import {
   type Ref,
 } from 'react';
 import { cn } from '../../lib/cn';
+import { SEGMENT_GROUP_CLASS, segmentClass } from './segment';
 
 // Selection follows focus (automatic activation), matching the Library skill
 // inspector: arrow keys both move focus and call the destination tab's onSelect.
 
+export type TabsVariant = 'underline' | 'segmented';
+
 interface TabsContextValue {
   register: (id: string, onSelect: () => void) => void;
   unregister: (id: string) => void;
+  variant: TabsVariant;
 }
 
 const TabsContext = createContext<TabsContextValue | null>(null);
@@ -27,12 +31,14 @@ interface TabsProps {
   ariaLabel: string;
   children: ReactNode;
   className?: string;
+  /** `segmented` renders an inline bordered segment control. Defaults to `underline`. */
+  variant?: TabsVariant;
 }
 
 const TABLIST_CLASS =
   'px-5 pt-3 flex items-center gap-1 border-b border-border-subtle/50';
 
-export function Tabs({ ariaLabel, children, className }: TabsProps) {
+export function Tabs({ ariaLabel, children, className, variant = 'underline' }: TabsProps) {
   const ref = useRef<HTMLDivElement>(null);
   const handlers = useRef(new Map<string, () => void>());
   const api = useMemo<TabsContextValue>(() => ({
@@ -42,7 +48,8 @@ export function Tabs({ ariaLabel, children, className }: TabsProps) {
     unregister(id) {
       handlers.current.delete(id);
     },
-  }), []);
+    variant,
+  }), [variant]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'Home' && e.key !== 'End') {
@@ -81,7 +88,7 @@ export function Tabs({ ariaLabel, children, className }: TabsProps) {
         role="tablist"
         aria-label={ariaLabel}
         onKeyDown={onKeyDown}
-        className={cn(TABLIST_CLASS, className)}
+        className={cn(variant === 'segmented' ? SEGMENT_GROUP_CLASS : TABLIST_CLASS, className)}
       >
         {children}
       </div>
@@ -127,10 +134,14 @@ export function Tab({ id, selected, controls, onSelect, children, className }: T
       tabIndex={selected ? 0 : -1}
       onClick={onSelect}
       className={cn(
-        TAB_CLASS,
-        selected
-          ? 'border-primary text-text-primary'
-          : 'border-transparent text-text-muted hover:text-text-primary',
+        ctx?.variant === 'segmented'
+          ? segmentClass(selected)
+          : cn(
+              TAB_CLASS,
+              selected
+                ? 'border-primary text-text-primary'
+                : 'border-transparent text-text-muted hover:text-text-primary',
+            ),
         className,
       )}
     >
