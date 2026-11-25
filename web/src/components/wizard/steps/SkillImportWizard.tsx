@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect, useId } from 'react';
+import { useState, useCallback, useEffect, useId, useRef } from 'react';
+import { useNavigate } from 'react-router';
 import {
   ArrowLeft,
   ArrowRight,
@@ -71,9 +72,87 @@ export function SkillImportWizard() {
 
   const [previewLoading, setPreviewLoading] = useState(false);
   const setImportInProgress = useWizardStore((s) => s.setImportInProgress);
+  const navigate = useNavigate();
 
   const stepOrder: ImportStep[] = ['source', 'browse', 'configure', 'install'];
   const stepIdx = stepOrder.indexOf(step);
+
+  const currentItemRef = useRef<HTMLLIElement>(null);
+  const resultHeadingRef = useRef<HTMLHeadingElement>(null);
+  const prevStepRef = useRef(step);
+  const stepFocusPendingRef = useRef(false);
+  useEffect(() => {
+    if (prevStepRef.current !== step) {
+      prevStepRef.current = step;
+      stepFocusPendingRef.current = true;
+    }
+    // The install step shows a spinner while the registry refreshes, so focus
+    // waits until the result heading has mounted. The heading reads the
+    // outcome; a failed request renders no result, so the indicator item
+    // takes focus instead.
+    if (!stepFocusPendingRef.current || installing) return;
+    stepFocusPendingRef.current = false;
+    (resultHeadingRef.current ?? currentItemRef.current)?.focus();
+  }, [step, installing]);
+
+  // The Install button is disabled while the request runs, which drops focus
+  // in a browser; a failed request returns it to the current indicator item.
+  const focusAfterFailureRef = useRef(false);
+  useEffect(() => {
+    if (installing || !focusAfterFailureRef.current) return;
+    focusAfterFailureRef.current = false;
+    currentItemRef.current?.focus();
+  }, [installing]);
+
+  // A finished import leaves nothing to resume, so closing the wizard by any
+  // path resets the store. The isOpen check keeps a draft loaded from the
+  // header (which also unmounts this component) intact.
+  const importedCount = (installResult?.imported.length ?? 0) + (installResult?.importedAgents.length ?? 0);
+  const finishedRef = useRef(false);
+  useEffect(() => {
+    finishedRef.current = step === 'install' && importedCount > 0;
+  }, [step, importedCount]);
+  useEffect(() => () => {
+    if (finishedRef.current && !useWizardStore.getState().isOpen) {
+      useWizardStore.getState().reset();
+    }
+  }, []);
+
+  const finishAndClose = useCallback(() => {
+    const store = useWizardStore.getState();
+    store.reset();
+    store.close();
+  }, []);
+
+  const viewInLibrary = useCallback(() => {
+    if (!installResult) return;
+    const { imported, importedAgents } = installResult;
+    let target = imported.length > 0 ? '/library' : '/library?kind=agent';
+    if (imported.length === 1 && importedAgents.length === 0) {
+      target = `/library?selected=${encodeURIComponent(imported[0])}`;
+    } else if (imported.length === 0 && importedAgents.length === 1) {
+      target = `/library?kind=agent&selected=${encodeURIComponent(importedAgents[0])}`;
+    }
+    finishAndClose();
+    navigate(target);
+  }, [installResult, finishAndClose, navigate]);
+
+  const importAnother = useCallback(() => {
+    setRepoUrl('');
+    setRef('');
+    setPath('');
+    setAuth(undefined);
+    setPreviews([]);
+    setAgentPreviews([]);
+    setSelected(new Set());
+    setSelectedAgents(new Set());
+    setConfigs(new Map());
+    setAgentsTrustAck(false);
+    setSkillsTrustAck(false);
+    setInstallError('');
+    setInstallResult(null);
+    setStep('source');
+  }, []);
 
   // A dismiss would discard a preview in flight, selections on browse or
   // configure (including after a rejected install, which stays there for a
@@ -211,6 +290,7 @@ export function SkillImportWizard() {
         showToast('success', `Imported ${parts.join(', ')}`);
       }
     } catch (err) {
+      focusAfterFailureRef.current = true;
       // A rejected import stays on the submitting step with every selection
       // intact, so the footer Install button is the retry.
       if (!isCancellation(err)) {
@@ -272,10 +352,18 @@ export function SkillImportWizard() {
   return (
     <div className="flex flex-col h-full">
       {/* Step Indicator */}
-      <div className="flex items-center gap-3 px-1 pb-4 mb-4 border-b border-border/20">
+      <ol aria-label="Import steps" className="flex items-center gap-3 px-1 pb-4 mb-4 border-b border-border/20">
         {(['Add Source', 'Browse & Select', 'Configure', 'Review & Install'] as const).map((label, i) => (
-          <div key={label} className="flex items-center gap-2">
+          <li
+            key={label}
+            ref={i === stepIdx ? currentItemRef : undefined}
+            aria-current={i === stepIdx ? 'step' : undefined}
+            tabIndex={i === stepIdx ? -1 : undefined}
+            className="flex items-center gap-2"
+          >
+            <span className="sr-only">Step {i + 1} of 4: </span>
             <div
+              aria-hidden="true"
               className={cn(
                 'flex items-center justify-center w-5 h-5 rounded-full text-3xs font-bold transition-all',
                 i === stepIdx
@@ -295,10 +383,10 @@ export function SkillImportWizard() {
             >
               {label}
             </span>
-            {i < 3 && <div className="w-4 h-px bg-border/30" />}
-          </div>
+            {i < 3 && <div aria-hidden="true" className="w-4 h-px bg-border/30" />}
+          </li>
         ))}
-      </div>
+      </ol>
 
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark">
@@ -358,6 +446,11 @@ export function SkillImportWizard() {
           <InstallStep
             installing={installing}
             result={installResult}
+            headingRef={resultHeadingRef}
+            onViewInLibrary={viewInLibrary}
+            onImportAnother={importAnother}
+            onBackToSelection={() => setStep('browse')}
+            onClose={finishAndClose}
           />
         )}
       </div>
@@ -638,8 +731,18 @@ function AgentsBrowseSection({
 function InstallStep({
   installing,
   result,
+  headingRef,
+  onViewInLibrary,
+  onImportAnother,
+  onBackToSelection,
+  onClose,
 }: {
   installing: boolean;
+  headingRef: React.RefObject<HTMLHeadingElement | null>;
+  onViewInLibrary: () => void;
+  onImportAnother: () => void;
+  onBackToSelection: () => void;
+  onClose: () => void;
   result: {
     imported: string[];
     skipped: { name: string; reason: string }[];
@@ -691,7 +794,7 @@ function InstallStep({
             <AlertTriangle size={20} className="text-status-error" />
           )}
         </div>
-        <h3 className="text-sm font-medium text-text-primary">
+        <h3 ref={headingRef} tabIndex={-1} className="text-sm font-medium text-text-primary">
           {allSucceeded ? 'Import Complete' : totalImported > 0 ? 'Partially Imported' : 'Import Failed'}
         </h3>
         <p className="text-3xs text-text-muted mt-0.5">
@@ -705,6 +808,27 @@ function InstallStep({
             .join(', ')}{' '}
           imported, {totalSkipped} skipped
         </p>
+        <div className="flex items-center gap-2 mt-4">
+          {totalImported > 0 ? (
+            <>
+              <Button type="button" variant="primary" size="sm" onClick={onViewInLibrary}>
+                View in Library
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={onImportAnother}>
+                Import another
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button type="button" variant="primary" size="sm" onClick={onBackToSelection}>
+                Back to selection
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+                Close
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Imported skills */}

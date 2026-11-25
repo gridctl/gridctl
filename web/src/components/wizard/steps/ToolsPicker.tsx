@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Command } from 'cmdk';
 import { AlertCircle, ArrowLeft, Check, Edit3, Loader2, Plus, Radar, Search, X, KeyRound } from 'lucide-react';
 import { cn } from '../../../lib/cn';
@@ -11,6 +11,7 @@ import { ProbeError, type ProbedTool, type ProbeServerConfig } from '../../../li
 import { FindingsList } from '../../pins/PinFindings';
 import { maxFindingSeverity } from '../../../lib/pinFindings';
 import { escapeNonPrintable } from '../../../lib/nonPrintable';
+import { describeError, isCancellation } from '../../../lib/describeError';
 import { ShieldAlert, ChevronDown, ChevronRight } from 'lucide-react';
 
 const inputClass =
@@ -111,15 +112,18 @@ export function ToolsPicker({ value, onChange, serverName, probeConfig }: ToolsP
   const canProbe = !!probeConfig && isProbeSupported(probeConfig);
   const handleProbe = async () => {
     if (!probeConfig) return;
-    const result = await probeState.probe(probeConfig);
-    if (!result) {
-      // probe() already stored the error in state; surface as a toast so the
-      // failure is visible even if the error region is off-screen.
-      const err = probeState.error;
-      const msg = err instanceof Error ? err.message : 'Probe failed';
-      showToast('error', msg);
-    }
+    await probeState.probe(probeConfig);
   };
+
+  // Keyed on the error object so each failure toasts once, even when two in a
+  // row share a message. needs_auth renders as a notice, not a failure.
+  const probeError = probeState.error;
+  useEffect(() => {
+    if (!probeError || isCancellation(probeError)) return;
+    if (probeError instanceof ProbeError && probeError.code === 'needs_auth') return;
+    const described = describeError(probeError, 'Probe');
+    showToast('error', described.text, { detail: described.fullDetail });
+  }, [probeError]);
 
   if (inEmptyState) {
     return (

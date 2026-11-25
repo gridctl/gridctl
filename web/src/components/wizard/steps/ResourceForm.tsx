@@ -2,20 +2,17 @@ import { useState, useCallback } from 'react';
 import {
   Database,
   Box,
-  ChevronDown,
-  ChevronRight,
   Plus,
   X,
   KeyRound,
   Network,
   Settings,
-  AlertCircle,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import type { ResourceFormData } from '../../../lib/yaml-builder';
 import { KeyValueEditor } from '../KeyValueEditor';
 import { Field } from '../../ui/Field';
+import { Section } from '../Section';
 
 // --- Kebab-case validation ---
 
@@ -25,60 +22,6 @@ function toKebabCase(value: string): string {
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-/, ''); // strip leading hyphen only; trailing stripped on blur
-}
-
-// --- Accordion section ---
-
-function Section({
-  title,
-  icon: Icon,
-  expanded,
-  onToggle,
-  children,
-  badge,
-  hasError,
-}: {
-  title: string;
-  icon: LucideIcon;
-  expanded: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-  badge?: string;
-  hasError?: boolean;
-}) {
-  return (
-    <div className="border border-border/20 rounded-xl overflow-hidden transition-colors hover:border-border/30">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-surface-overlay-1 transition-colors"
-      >
-        {expanded ? (
-          <ChevronDown size={14} className="text-text-muted flex-shrink-0" />
-        ) : (
-          <ChevronRight size={14} className="text-text-muted flex-shrink-0" />
-        )}
-        <Icon size={14} className="text-secondary flex-shrink-0" />
-        <span className="text-xs font-medium text-text-primary">{title}</span>
-        {hasError && (
-          <span className="flex items-center text-status-error">
-            <AlertCircle size={12} aria-hidden="true" />
-            <span className="sr-only">, has errors</span>
-          </span>
-        )}
-        {badge && (
-          <span className="ml-auto text-3xs text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full">
-            {badge}
-          </span>
-        )}
-      </button>
-      {expanded && (
-        <div className="px-4 pb-4 pt-1 space-y-3 animate-fade-in-up" style={{ animationDuration: '200ms' }}>
-          {children}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // --- Form field components ---
@@ -190,6 +133,7 @@ export function ResourceForm({ data, onChange, errors, revealKey }: ResourceForm
     <div className="space-y-3">
       {/* Section 1: Identity */}
       <Section
+        iconClassName="text-secondary"
         title="Identity"
         icon={Box}
         expanded={expandedSections.has('identity')}
@@ -233,6 +177,7 @@ export function ResourceForm({ data, onChange, errors, revealKey }: ResourceForm
 
       {/* Section 2: Environment & Variables */}
       <Section
+        iconClassName="text-secondary"
         title="Environment & Variables"
         icon={KeyRound}
         expanded={expandedSections.has('env')}
@@ -250,6 +195,7 @@ export function ResourceForm({ data, onChange, errors, revealKey }: ResourceForm
 
       {/* Section 3: Ports */}
       <Section
+        iconClassName="text-secondary"
         title="Ports"
         icon={Network}
         expanded={expandedSections.has('ports')}
@@ -269,6 +215,7 @@ export function ResourceForm({ data, onChange, errors, revealKey }: ResourceForm
 
       {/* Section 4: Volumes */}
       <Section
+        iconClassName="text-secondary"
         title="Volumes"
         icon={Database}
         expanded={expandedSections.has('volumes')}
@@ -288,6 +235,7 @@ export function ResourceForm({ data, onChange, errors, revealKey }: ResourceForm
 
       {/* Section 5: Network */}
       <Section
+        iconClassName="text-secondary"
         title="Network"
         icon={Settings}
         expanded={expandedSections.has('network')}

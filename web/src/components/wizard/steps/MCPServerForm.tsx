@@ -13,7 +13,7 @@ import {
   Zap,
   KeyRound,
   ShieldCheck,
-  AlertCircle,
+  Check,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/cn';
@@ -29,6 +29,7 @@ import { cardPrefill, useDetectCard } from '../../../hooks/useDetectCard';
 import type { DetectedCardInput } from '../../../lib/api';
 import { Field, FieldError } from '../../ui/Field';
 import { ExecutionFields } from './ExecutionFields';
+import { Section } from '../Section';
 import { showPortField, TRANSPORT_DEFAULTS } from '../../../lib/wizard-validation';
 
 // --- Server type definitions ---
@@ -211,60 +212,6 @@ function toKebabCase(value: string): string {
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-/, ''); // strip leading hyphen only; trailing stripped on blur
-}
-
-// --- Accordion section ---
-
-function Section({
-  title,
-  icon: Icon,
-  expanded,
-  onToggle,
-  children,
-  badge,
-  hasError,
-}: {
-  title: string;
-  icon: LucideIcon;
-  expanded: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-  badge?: string;
-  hasError?: boolean;
-}) {
-  return (
-    <div className="border border-border/20 rounded-xl overflow-hidden transition-colors hover:border-border/30">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-surface-overlay-1 transition-colors"
-      >
-        {expanded ? (
-          <ChevronDown size={14} className="text-text-muted flex-shrink-0" />
-        ) : (
-          <ChevronRight size={14} className="text-text-muted flex-shrink-0" />
-        )}
-        <Icon size={14} className="text-primary flex-shrink-0" />
-        <span className="text-xs font-medium text-text-primary">{title}</span>
-        {hasError && (
-          <span className="flex items-center text-status-error">
-            <AlertCircle size={12} aria-hidden="true" />
-            <span className="sr-only">, has errors</span>
-          </span>
-        )}
-        {badge && (
-          <span className="ml-auto text-3xs text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full">
-            {badge}
-          </span>
-        )}
-      </button>
-      {expanded && (
-        <div className="px-4 pb-4 pt-1 space-y-3 animate-fade-in-up" style={{ animationDuration: '200ms' }}>
-          {children}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // --- Form field components ---
@@ -700,7 +647,7 @@ export function MCPServerForm({ data, onChange, errors, fieldPrefix = '', reveal
         onToggle={() => toggleSection('type')}
         badge={typeOption.label}
       >
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-2" role="group" aria-label="Server type">
           {SERVER_TYPES.map((opt) => {
             const Icon = opt.icon;
             const isSelected = data.serverType === opt.type;
@@ -709,14 +656,20 @@ export function MCPServerForm({ data, onChange, errors, fieldPrefix = '', reveal
                 key={opt.type}
                 type="button"
                 onClick={() => handleTypeChange(opt.type)}
+                aria-pressed={isSelected}
                 className={cn(
-                  'group flex flex-col items-center text-center p-3 rounded-xl border transition-all duration-200',
+                  'group relative flex flex-col items-center text-center p-3 rounded-xl border transition-all duration-200',
                   'bg-surface-overlay-1 hover:bg-surface-overlay-3',
                   isSelected
                     ? 'border-primary/50 bg-primary/[0.06] shadow-[0_0_16px_--alpha(var(--color-primary)/8%)]'
                     : 'border-border-subtle hover:border-border',
                 )}
               >
+                {isSelected && (
+                  <div className="absolute top-2 right-2">
+                    <Check size={12} className="text-primary" aria-hidden="true" />
+                  </div>
+                )}
                 <Icon
                   size={16}
                   className={cn(

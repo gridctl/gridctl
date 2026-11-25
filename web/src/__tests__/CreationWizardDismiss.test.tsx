@@ -240,7 +240,7 @@ describe('SkillImportWizard import progress', () => {
   it('is in progress while the preview is pending and on browse', async () => {
     const pending = deferred<unknown>();
     vi.spyOn(apiModule, 'previewSkillSource').mockReturnValue(pending.promise as never);
-    render(<SkillImportWizard />);
+    render(<MemoryRouter><SkillImportWizard /></MemoryRouter>);
     expect(useWizardStore.getState().importInProgress).toBe(false);
 
     scan();
@@ -253,7 +253,7 @@ describe('SkillImportWizard import progress', () => {
 
   it('is not in progress after a failed preview', async () => {
     vi.spyOn(apiModule, 'previewSkillSource').mockRejectedValue(new Error('not found'));
-    render(<SkillImportWizard />);
+    render(<MemoryRouter><SkillImportWizard /></MemoryRouter>);
     scan();
     await waitFor(() => expect(apiModule.previewSkillSource).toHaveBeenCalled());
     await waitFor(() => expect(useWizardStore.getState().importInProgress).toBe(false));
@@ -262,7 +262,7 @@ describe('SkillImportWizard import progress', () => {
   it('keeps progress after a rejected install, which stays on browse for a retry', async () => {
     vi.spyOn(apiModule, 'previewSkillSource').mockResolvedValue({ skills: [makeSkill()] } as never);
     vi.spyOn(apiModule, 'addSkillSource').mockRejectedValue(new Error('clone failed'));
-    render(<SkillImportWizard />);
+    render(<MemoryRouter><SkillImportWizard /></MemoryRouter>);
     scan();
     fireEvent.click(await screen.findByRole('button', { name: /Install 1 Skill/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/clone failed/);
@@ -273,10 +273,38 @@ describe('SkillImportWizard import progress', () => {
   it('is not in progress after a finished install', async () => {
     vi.spyOn(apiModule, 'previewSkillSource').mockResolvedValue({ skills: [makeSkill()] } as never);
     vi.spyOn(apiModule, 'addSkillSource').mockResolvedValue({ imported: [{ name: 'test-skill' }] } as never);
-    render(<SkillImportWizard />);
+    render(<MemoryRouter><SkillImportWizard /></MemoryRouter>);
     scan();
     fireEvent.click(await screen.findByRole('button', { name: /Install 1 Skill/ }));
     expect(await screen.findByText('Import Complete')).toBeInTheDocument();
     expect(useWizardStore.getState().importInProgress).toBe(false);
+  });
+
+  it('keeps a draft loaded from the header after a finished import', async () => {
+    vi.spyOn(apiModule, 'previewSkillSource').mockResolvedValue({ skills: [makeSkill()] } as never);
+    vi.spyOn(apiModule, 'addSkillSource').mockResolvedValue({ imported: [{ name: 'test-skill' }] } as never);
+    useWizardStore.setState({ isOpen: true, selectedType: 'skill', currentStep: 'form' });
+    render(<MemoryRouter><CreationWizard /></MemoryRouter>);
+    scan();
+    fireEvent.click(await screen.findByRole('button', { name: /Install 1 Skill/ }));
+    expect(await screen.findByText('Import Complete')).toBeInTheDocument();
+
+    const draftData = { name: 'draft-stack', version: '1' };
+    act(() =>
+      useWizardStore.getState().loadDraft({
+        id: 'd1',
+        name: 'Draft stack',
+        resourceType: 'stack',
+        formData: draftData,
+        createdAt: '2026-11-25T00:00:00Z',
+        updatedAt: '2026-11-25T00:00:00Z',
+      }),
+    );
+
+    await waitFor(() => expect(screen.queryByText('Import Complete')).not.toBeInTheDocument());
+    const state = useWizardStore.getState();
+    expect(state.selectedType).toBe('stack');
+    expect(state.currentStep).toBe('form');
+    expect(state.formData.stack).toEqual(draftData);
   });
 });

@@ -349,3 +349,59 @@ describe('PackImportWizard — held hooks', () => {
     expect(screen.getByRole('button', { name: 'Review held hook' })).toBeInTheDocument();
   });
 });
+
+describe('PackImportWizard — reset after a finished import', () => {
+  beforeEach(() => {
+    mockPreview.mockReset();
+    mockAdd.mockReset();
+    mockToast.mockReset();
+    useWizardStore.getState().reset();
+  });
+
+  async function importPack() {
+    useWizardStore.setState({ isOpen: true, selectedType: 'pack', currentStep: 'form' });
+    mockPreview.mockResolvedValueOnce(emptyPreview);
+    mockAdd.mockResolvedValueOnce({
+      doc: { pack: 'team-pack', skills: [], agents: [], wiring: false },
+      notes: [],
+    } as never);
+    const view = renderWizard();
+    enterRepo('https://github.com/acme/team-pack');
+    clickPreview();
+    await waitFor(() => screen.getByRole('button', { name: /import pack/i }));
+    fireEvent.click(screen.getByRole('button', { name: /import pack/i }));
+    await waitFor(() => screen.getByRole('button', { name: /view pack/i }));
+    return view;
+  }
+
+  it('resets the store when View pack closes the wizard', async () => {
+    await importPack();
+    fireEvent.click(screen.getByRole('button', { name: /view pack/i }));
+    const state = useWizardStore.getState();
+    expect(state.isOpen).toBe(false);
+    expect(state.selectedType).toBeNull();
+    expect(state.currentStep).toBe('type');
+  });
+
+  it('resets the store when the wizard closes another way after done', async () => {
+    const view = await importPack();
+    useWizardStore.getState().close();
+    view.unmount();
+    expect(useWizardStore.getState().selectedType).toBeNull();
+    expect(useWizardStore.getState().currentStep).toBe('type');
+  });
+
+  it('keeps the store when the component unmounts with the wizard still open', async () => {
+    const view = await importPack();
+    view.unmount();
+    expect(useWizardStore.getState().selectedType).toBe('pack');
+  });
+
+  it('does not reset an unfinished import on close', () => {
+    useWizardStore.setState({ isOpen: true, selectedType: 'pack', currentStep: 'form' });
+    const view = renderWizard();
+    useWizardStore.getState().close();
+    view.unmount();
+    expect(useWizardStore.getState().selectedType).toBe('pack');
+  });
+});

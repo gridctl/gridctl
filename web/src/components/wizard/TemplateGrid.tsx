@@ -34,7 +34,9 @@ export function TemplateGrid({ resourceType, selected, onSelect }: TemplateGridP
           return (
             <button
               key={template.id}
+              type="button"
               onClick={() => onSelect(template.id)}
+              aria-pressed={isSelected}
               className={cn(
                 'group relative text-left p-4 rounded-xl border transition-all duration-200',
                 'bg-surface-overlay-2 hover:bg-surface-overlay-3',

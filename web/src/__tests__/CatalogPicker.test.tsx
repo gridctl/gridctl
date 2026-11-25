@@ -267,3 +267,48 @@ describe('catalogEntryToFormData', () => {
     })).toBe(false);
   });
 });
+
+describe('CatalogPicker failure and empty states', () => {
+  it('offers a Retry after a failed load and reloads', async () => {
+    mockFetchCatalog
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(respond([githubEntry]));
+    render(<CatalogPicker onSelect={vi.fn()} />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Failed to load the catalog');
+    expect(screen.queryByText('0 servers')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(mockFetchCatalog).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('GitHub')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('describes an empty catalog without an empty quoted query', async () => {
+    mockFetchCatalog.mockResolvedValue(respond([]));
+    render(<CatalogPicker onSelect={vi.fn()} />);
+    expect(await screen.findByText('No servers in the catalog')).toBeInTheDocument();
+    expect(screen.queryByText(/“”|""/)).not.toBeInTheDocument();
+  });
+
+  it('quotes the answered query when a search matches nothing', async () => {
+    mockFetchCatalog.mockResolvedValue(respond([]));
+    render(<CatalogPicker onSelect={vi.fn()} />);
+    await screen.findByText('No servers in the catalog');
+    fireEvent.change(screen.getByPlaceholderText('Search servers, e.g. postgres...'), {
+      target: { value: 'zzz' },
+    });
+    expect(await screen.findByText('No servers matched “zzz”')).toBeInTheDocument();
+  });
+
+  it('exposes selection state on list rows', async () => {
+    mockFetchCatalog.mockResolvedValue(respond([githubEntry]));
+    render(<CatalogPicker onSelect={vi.fn()} />);
+    const row = (await screen.findByText('GitHub')).closest('button')!;
+    expect(row).toHaveAttribute('type', 'button');
+    expect(row).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(row);
+    expect(row).toHaveAttribute('aria-pressed', 'true');
+  });
+});

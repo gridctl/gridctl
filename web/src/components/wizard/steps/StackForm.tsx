@@ -26,6 +26,7 @@ import { KeyValueEditor } from '../KeyValueEditor';
 import { VaultSetSelector } from '../VaultSetSelector';
 import { Field, FieldError } from '../../ui/Field';
 import { MCPServerForm } from './MCPServerForm';
+import { Section } from '../Section';
 import { subErrors } from '../../../lib/wizard-validation';
 import { cloneFormData, RESOURCE_PRESETS, type ResourcePreset } from '../../../lib/wizard-templates';
 
@@ -50,55 +51,6 @@ function toKebabCase(value: string): string {
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-/, ''); // strip leading hyphen only; trailing stripped on blur
-}
-
-// --- Accordion section ---
-
-function Section({
-  title,
-  icon: Icon,
-  expanded,
-  onToggle,
-  children,
-  badge,
-  hasError,
-}: {
-  title: string;
-  icon: LucideIcon;
-  expanded: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-  badge?: string;
-  hasError?: boolean;
-}) {
-  return (
-    <div className="border border-border/20 rounded-xl overflow-hidden transition-colors hover:border-border/30">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-surface-overlay-1 transition-colors"
-      >
-        {expanded ? (
-          <ChevronDown size={14} className="text-text-muted flex-shrink-0" />
-        ) : (
-          <ChevronRight size={14} className="text-text-muted flex-shrink-0" />
-        )}
-        <Icon size={14} className="text-primary flex-shrink-0" />
-        <span className="text-xs font-medium text-text-primary">{title}</span>
-        {hasError && <ErrorIndicator />}
-        {badge && (
-          <span className="ml-auto text-3xs text-text-muted bg-surface-highlight px-1.5 py-0.5 rounded-full">
-            {badge}
-          </span>
-        )}
-      </button>
-      {expanded && (
-        <div className="px-4 pb-4 pt-1 space-y-3 animate-fade-in-up" style={{ animationDuration: '200ms' }}>
-          {children}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // --- String Array Editor ---
@@ -191,7 +143,7 @@ function ItemHeader({
 }) {
   return (
     <div className="flex items-center gap-2 px-3 py-2 bg-surface-overlay-1 border border-border/20 rounded-lg group hover:border-border/30 transition-colors">
-      <button type="button" onClick={onToggle} className="flex items-center gap-2 flex-1 text-left">
+      <button type="button" onClick={onToggle} aria-expanded={expanded} className="flex items-center gap-2 flex-1 text-left">
         {expanded ? (
           <ChevronDown size={12} className="text-text-muted flex-shrink-0" />
         ) : (
