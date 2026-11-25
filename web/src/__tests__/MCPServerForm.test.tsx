@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { useState } from 'react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MCPServerForm } from '../components/wizard/steps/MCPServerForm';
 import type { MCPServerFormData } from '../lib/yaml-builder';
@@ -1521,5 +1522,75 @@ source:
     if (!('error' in local)) {
       expect((local.data as MCPServerFormData).source?.projectPath).toBe('packages/server');
     }
+  });
+});
+
+describe('MCPServerForm key-value rows', () => {
+  function renderStateful(initial: MCPServerFormData) {
+    let latest = initial;
+    function Harness() {
+      const [data, setData] = useState(initial);
+      return (
+        <MCPServerForm
+          data={data}
+          onChange={(partial) => {
+            setData((prev) => {
+              latest = { ...prev, ...partial };
+              return latest;
+            });
+          }}
+        />
+      );
+    }
+    render(<Harness />);
+    return { data: () => latest };
+  }
+
+  const envKey = (n: number) => screen.getByRole('textbox', { name: `Environment Variables key ${n}` });
+  const envValue = (n: number) => screen.getByRole('textbox', { name: `Environment Variables value ${n}` });
+  const addTo = (label: string) =>
+    fireEvent.click(within(screen.getByText(label).parentElement as HTMLElement).getByRole('button', { name: 'Add' }));
+
+  it('keeps both env rows and focus while typing a key through a prefix', () => {
+    const form = renderStateful(defaultData({ env: { DB: 'postgres' } }));
+    fireEvent.click(screen.getByText('Environment & Variables'));
+    addTo('Environment Variables');
+    const input = envKey(2);
+    input.focus();
+    for (const text of ['D', 'DB', 'DB_', 'DB_HOST']) {
+      fireEvent.change(envKey(2), { target: { value: text } });
+      expect(screen.getAllByRole('textbox', { name: /^Environment Variables key \d+$/ })).toHaveLength(2);
+      expect(envValue(1)).toHaveValue('postgres');
+    }
+    expect(form.data().env).toEqual({ DB: 'postgres', DB_HOST: '' });
+    expect(document.activeElement).toBe(input);
+    expect(buildYAML({ type: 'mcp-server', data: form.data() })).toContain('DB_HOST');
+  });
+
+  it('keeps a pending duplicate row across collapsing and reopening the section', () => {
+    const form = renderStateful(defaultData({ env: { DB: 'postgres' } }));
+    fireEvent.click(screen.getByText('Environment & Variables'));
+    addTo('Environment Variables');
+    fireEvent.change(envValue(2), { target: { value: 'localhost' } });
+    fireEvent.change(envKey(2), { target: { value: 'DB' } });
+    expect(screen.getByText('Duplicate key "DB". Only the first row is used.')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Environment & Variables'));
+    expect(screen.queryByRole('textbox', { name: 'Environment Variables key 1' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Environment & Variables'));
+    expect(envKey(1)).toHaveValue('DB');
+    expect(envKey(2)).toHaveValue('DB');
+    expect(envValue(2)).toHaveValue('localhost');
+    expect(screen.getByText('Duplicate key "DB". Only the first row is used.')).toBeInTheDocument();
+    expect(form.data().env).toEqual({ DB: 'postgres' });
+  });
+
+  it('adds a blank custom header row for an external server', () => {
+    const form = renderStateful(defaultData({ serverType: 'external', url: 'https://example.test/mcp' }));
+    fireEvent.click(screen.getByText('Authentication'));
+    addTo('Custom headers');
+    expect(screen.getByRole('textbox', { name: 'Custom headers key 1' })).toHaveValue('');
+    expect(form.data().headers).toEqual({ '': '' });
+    addTo('Custom headers');
+    expect(screen.getAllByRole('textbox', { name: /^Custom headers key \d+$/ })).toHaveLength(2);
   });
 });
