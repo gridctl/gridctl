@@ -50,6 +50,12 @@ export function HeaderMenu({ tooltip, menuLabel, icon, spinning, items, classNam
   }, [open]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    // Tab closes the menu without preventDefault: Popover's cleanup refocuses
+    // the trigger, and the browser then moves on from it.
+    if (e.key === 'Tab') {
+      setOpen(false);
+      return;
+    }
     const list = listRef.current;
     if (!list) return;
     const enabled = Array.from(list.querySelectorAll<HTMLElement>(ITEM_SELECTOR));

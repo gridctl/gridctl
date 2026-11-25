@@ -73,6 +73,16 @@ describe('HeaderMenu', () => {
     expect(trigger).toHaveFocus();
   });
 
+  it('closes on Tab without preventing the default focus move', () => {
+    const trigger = renderMenu(items());
+    fireEvent.click(trigger);
+    const notCanceled = fireEvent.keyDown(document.activeElement!, { key: 'Tab' });
+    expect(notCanceled).toBe(true);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveFocus();
+  });
+
   it('keeps focus inside the menu when every item is disabled', () => {
     const trigger = renderMenu(items({ a: { disabled: true }, b: { disabled: true }, c: { disabled: true } }));
     fireEvent.click(trigger);
