@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { GlobalContextDialog } from '../components/context/GlobalContextDialog';
 import { useContextStore } from '../stores/useContextStore';
 import { useNavigationGuardStore } from '../stores/useNavigationGuardStore';
@@ -24,7 +24,9 @@ vi.mock('../lib/api', async () => {
 
 import { AuthError } from '../lib/gatewayRequest';
 import {
+  adoptGlobalContext,
   fetchGlobalContext,
+  fetchGlobalContextDiff,
   initGlobalContext,
   saveGlobalContext,
   scanGlobalContext,
@@ -416,5 +418,84 @@ describe('GlobalContextDialog navigation guard', () => {
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
     await waitFor(() => expect(saveGlobalContext).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(useNavigationGuardStore.getState().guards).toHaveLength(0));
+  });
+});
+
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+describe('single-file drift review evidence', () => {
+  async function openReview() {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
+    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    fireEvent.click(await screen.findByText('Review'));
+    await screen.findByText('OpenCode was edited');
+  }
+
+  it('gates Adopt and Overwrite until the diff loads, leaving Cancel enabled', async () => {
+    const d = deferred<string>();
+    vi.mocked(fetchGlobalContextDiff).mockReturnValue(d.promise);
+    vi.mocked(adoptGlobalContext).mockResolvedValue(readyDoc);
+    await openReview();
+
+    expect(screen.getByText('Loading diff…')).toBeInTheDocument();
+    const adopt = screen.getByRole('button', { name: 'Adopt into canon' });
+    const overwrite = screen.getByRole('button', { name: 'Overwrite client' });
+    expect(adopt).toBeDisabled();
+    expect(adopt).toHaveAttribute('title', 'Review the diff before choosing');
+    expect(overwrite).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+    expect(fetchGlobalContextDiff).toHaveBeenCalledWith('opencode');
+
+    await act(async () => d.resolve('--- canonical\n+++ target\n@@ -1 +1 @@\n-a\n+b\n'));
+    await waitFor(() => expect(adopt).toBeEnabled());
+    expect(overwrite).toBeEnabled();
+    expect(adopt).not.toHaveAttribute('title');
+    const diff = screen.getByLabelText('Diff for OpenCode');
+    expect(diff.querySelector('[data-kind="added"]')).toHaveTextContent('+b');
+
+    fireEvent.click(adopt);
+    await waitFor(() => expect(adoptGlobalContext).toHaveBeenCalledWith('opencode'));
+  });
+
+  it('shows a failed load as an alert with Retry and the single-file CLI route', async () => {
+    vi.mocked(fetchGlobalContextDiff)
+      .mockRejectedValueOnce(new Error('diff exploded'))
+      .mockResolvedValueOnce('@@ -1 +1 @@\n-a\n+b\n');
+    await openReview();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('diff exploded');
+    expect(alert).toHaveTextContent('gridctl ctx diff opencode');
+    expect(alert).toHaveTextContent('gridctl ctx adopt opencode');
+    expect(alert).toHaveTextContent('gridctl ctx sync opencode --force');
+    expect(screen.queryByLabelText('Diff for OpenCode')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Adopt into canon' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Overwrite client' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Adopt into canon' })).toBeEnabled());
+    expect(fetchGlobalContextDiff).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Diff for OpenCode')).not.toHaveTextContent('diff exploded');
+  });
+
+  it('treats an empty diff as ready with no line-level differences', async () => {
+    vi.mocked(fetchGlobalContextDiff).mockResolvedValue('');
+    await openReview();
+
+    expect(
+      await screen.findByText('No line-level differences between the canonical content and this file.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Adopt into canon' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Overwrite client' })).toBeEnabled();
   });
 });
