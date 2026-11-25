@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router';
 import { cn } from '../../lib/cn';
 import { WORKSPACE_CONFIG, type WorkspaceConfig } from '../../types/workspace';
@@ -15,6 +16,12 @@ function WorkspacePill({ workspace }: WorkspacePillProps) {
 
   const navigate = useNavigate();
   const target = `/${workspace.id}`;
+  const linkRef = useRef<HTMLAnchorElement>(null);
+
+  // On narrow windows the strip scrolls; keep the active pill in view.
+  useEffect(() => {
+    if (isActive) linkRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [isActive]);
 
   // An unsaved editor that this navigation would leave cancels the NavLink
   // and asks through the shared confirm. Modified clicks open a new tab and
@@ -37,19 +44,20 @@ function WorkspacePill({ workspace }: WorkspacePillProps) {
       title={workspace.label}
       data-workspace={workspace.id}
       onClick={handleClick}
+      ref={linkRef}
       className={cn(
-        // Icon-only below 1360px: eight text pills plus the right-side action
-        // cluster collide on narrower windows, so labels collapse to icons
-        // (title + aria-label keep the pills identifiable).
-        'inline-flex items-center gap-1.5 px-2 min-[1360px]:px-3 py-1 rounded-full text-xs font-medium transition-colors shrink-0',
+        // The active pill is always labeled. The others are labeled only when
+        // the header's left group (@container/header) has room for all of
+        // them; title and aria-label keep icon-only pills identifiable.
+        'inline-flex items-center justify-center gap-1.5 min-h-8 min-w-8 py-1 rounded-full text-xs font-medium transition-colors shrink-0',
         'focus-visible:-outline-offset-2',
         isActive
-          ? 'bg-primary/15 text-primary border border-primary/30'
-          : 'text-text-secondary hover:text-text-primary hover:bg-surface-highlight/60 border border-transparent',
+          ? 'px-2.5 bg-primary/15 text-primary border border-primary/30'
+          : 'px-2 @[880px]/header:px-2.5 text-text-secondary hover:text-text-primary hover:bg-surface-highlight/60 border border-transparent',
       )}
     >
       <Icon size={12} aria-hidden="true" />
-      <span className="hidden min-[1360px]:inline">{workspace.label}</span>
+      <span className={isActive ? 'inline' : 'hidden @[880px]/header:inline'}>{workspace.label}</span>
     </NavLink>
   );
 }
