@@ -636,7 +636,7 @@ export function MCPServerForm({ data, onChange, errors, fieldPrefix = '', reveal
   const visibility = useMemo(() => getFieldVisibility(data.serverType), [data.serverType]);
   const availableTransports = useMemo(() => getAvailableTransports(data.serverType), [data.serverType]);
   const typeOption = SERVER_TYPES.find((t) => t.type === data.serverType)!;
-  const portVisible = showPortField(data.serverType, data.transport ?? typeOption.transportDefault);
+  const portVisible = showPortField(data.serverType, data.transport || typeOption.transportDefault);
 
   const handleTypeChange = (newType: ServerType) => {
     const opt = SERVER_TYPES.find((t) => t.type === newType)!;
@@ -1435,7 +1435,7 @@ export function MCPServerForm({ data, onChange, errors, fieldPrefix = '', reveal
           {/* Transport compatibility advisor */}
           <TransportAdvisor
             serverType={data.serverType}
-            transport={data.transport ?? typeOption.transportDefault}
+            transport={data.transport || typeOption.transportDefault}
           />
         </div>
       </Section>

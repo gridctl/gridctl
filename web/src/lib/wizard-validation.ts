@@ -94,7 +94,7 @@ function serverRequiredErrors(data: MCPServerFormData): WizardErrors {
       break;
   }
 
-  const transport = data.transport ?? TRANSPORT_DEFAULTS[data.serverType];
+  const transport = data.transport || TRANSPORT_DEFAULTS[data.serverType];
   if ((data.serverType === 'container' || data.serverType === 'source') && showPortField(data.serverType, transport)) {
     const port = data.port;
     if (port === undefined || port === null || Number.isNaN(port)) {
