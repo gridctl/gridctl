@@ -40,8 +40,19 @@ interface AddSourceStepProps {
   onLoadingChange?: (loading: boolean) => void;
 }
 
-const GITHUB_URL_REGEX = /^https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/;
-const GIT_URL_REGEX = /^(?:https?:\/\/|git@)[\w.-]+[:/][\w.-]+\/[\w.-]+(?:\.git)?$/;
+const SCHEME_URL_REGEX = /^[a-z][a-z0-9+.-]*:\/\/\S+$/i;
+const ABSOLUTE_PATH_REGEX = /^(?:\/|[a-z]:[\\/])/i;
+
+// A shape check only; the server decides whether the source is reachable.
+function isAcceptedSourceLocation(value: string): boolean {
+  const trimmed = value.trim();
+  return SCHEME_URL_REGEX.test(trimmed) || isSSHUrl(trimmed) || ABSOLUTE_PATH_REGEX.test(trimmed);
+}
+
+function sourceNameFromLocation(value: string): string {
+  const last = value.trim().replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? '';
+  return last.replace(/\.git$/, '') || 'source';
+}
 
 export function AddSourceStep({ onPreviewLoaded, onLoadingChange }: AddSourceStepProps) {
   const [url, setUrl] = useState('');
@@ -85,16 +96,12 @@ export function AddSourceStep({ onPreviewLoaded, onLoadingChange }: AddSourceSte
     loadRecent();
   }
 
-  const isValidUrl = (val: string) => {
-    return GIT_URL_REGEX.test(val.trim()) || GITHUB_URL_REGEX.test(val.trim());
-  };
-
   const handleScan = async () => {
     const trimmedUrl = url.trim();
     if (!trimmedUrl) return;
 
-    if (!isValidUrl(trimmedUrl)) {
-      setError('Enter a valid Git repository URL');
+    if (!isAcceptedSourceLocation(trimmedUrl)) {
+      setError('Enter a Git URL (https://, ssh://, or git@host:path) or an absolute local path');
       return;
     }
 
@@ -106,7 +113,7 @@ export function AddSourceStep({ onPreviewLoaded, onLoadingChange }: AddSourceSte
     const authPayload = auth.buildAuth(ssh);
 
     try {
-      const sourceName = trimmedUrl.split('/').pop()?.replace(/\.git$/, '') ?? 'source';
+      const sourceName = sourceNameFromLocation(trimmedUrl);
       const result = await previewSkillSource(sourceName, {
         repo: trimmedUrl,
         ref: ref || undefined,
