@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Save, FolderOpen, Trash2, Clock, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { isWizardDirty, useWizardStore, type WizardDraft } from '../../stores/useWizardStore';
@@ -6,6 +6,7 @@ import { fetchWizardDrafts, saveWizardDraft, deleteWizardDraft } from '../../lib
 import { showToast } from '../ui/Toast';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { describeError, isCancellation } from '../../lib/describeError';
+import { useDismiss } from '../../hooks/useDismiss';
 
 interface DraftManagerProps {
   className?: string;
@@ -33,6 +34,26 @@ export function DraftManager({ className, onLoad }: DraftManagerProps) {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<WizardDraft | null>(null);
   const [pendingLoad, setPendingLoad] = useState<WizardDraft | null>(null);
+  const saveTriggerRef = useRef<HTMLButtonElement>(null);
+  const listTriggerRef = useRef<HTMLButtonElement>(null);
+  const saveRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Focus returns to the trigger only when it was inside the closing popover,
+  // so an outside click keeps focus where the user put it.
+  const dismissPopovers = useCallback(() => {
+    const active = document.activeElement;
+    if (saveRef.current?.contains(active)) saveTriggerRef.current?.focus();
+    else if (listRef.current?.contains(active)) listTriggerRef.current?.focus();
+    setShowSave(false);
+    setShowList(false);
+  }, []);
+  // Unbound while a confirm is open: it claims Escape on the same node, and
+  // both listeners would otherwise close in one key press.
+  const rootRef = useDismiss<HTMLDivElement>(
+    (showSave || showList) && pendingDelete === null && pendingLoad === null,
+    dismissPopovers,
+  );
 
   const refreshDrafts = useCallback(async () => {
     setDraftsLoading(true);
@@ -119,9 +140,13 @@ export function DraftManager({ className, onLoad }: DraftManagerProps) {
   };
 
   return (
-    <div className={cn('flex items-center gap-1.5', className)}>
+    <div ref={rootRef} className={cn('flex items-center gap-1.5', className)}>
       {/* Save Button */}
       <button
+        ref={saveTriggerRef}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={showSave}
         onClick={() => {
           setShowSave(!showSave);
           setShowList(false);
@@ -140,6 +165,10 @@ export function DraftManager({ className, onLoad }: DraftManagerProps) {
 
       {/* Load Button */}
       <button
+        ref={listTriggerRef}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={showList}
         onClick={() => {
           setShowList(!showList);
           setShowSave(false);
@@ -162,7 +191,7 @@ export function DraftManager({ className, onLoad }: DraftManagerProps) {
 
       {/* Save Dialog */}
       {showSave && (
-        <div className="absolute top-full right-0 mt-2 z-popover w-64 bg-surface-elevated border border-border/50 rounded-xl shadow-lg p-3 animate-fade-in-scale">
+        <div ref={saveRef} role="dialog" aria-label="Save draft" className="absolute top-full right-0 mt-2 z-popover w-64 bg-surface-elevated border border-border/50 rounded-xl shadow-lg p-3 animate-fade-in-scale">
           <div className="text-xs font-medium text-text-secondary mb-2">Save Draft</div>
           <div className="flex gap-2">
             <input
@@ -176,6 +205,7 @@ export function DraftManager({ className, onLoad }: DraftManagerProps) {
               autoFocus
             />
             <button
+              type="button"
               onClick={handleSave}
               disabled={!saveName.trim() || saving}
               className={cn(
@@ -192,7 +222,7 @@ export function DraftManager({ className, onLoad }: DraftManagerProps) {
 
       {/* Drafts List */}
       {showList && (
-        <div className="absolute top-full right-0 mt-2 z-popover w-72 bg-surface-elevated border border-border/50 rounded-xl shadow-lg overflow-hidden animate-fade-in-scale">
+        <div ref={listRef} role="dialog" aria-label="Saved drafts" className="absolute top-full right-0 mt-2 z-popover w-72 bg-surface-elevated border border-border/50 rounded-xl shadow-lg overflow-hidden animate-fade-in-scale">
           <div className="px-3 py-2.5 border-b border-border/30">
             <div className="text-xs font-medium text-text-secondary">Saved Drafts</div>
           </div>
@@ -210,6 +240,7 @@ export function DraftManager({ className, onLoad }: DraftManagerProps) {
                   className="flex items-center justify-between px-3 py-2 hover:bg-surface-highlight/60 transition-colors group"
                 >
                   <button
+                    type="button"
                     onClick={() => handleLoad(draft)}
                     className="flex-1 text-left min-w-0"
                   >

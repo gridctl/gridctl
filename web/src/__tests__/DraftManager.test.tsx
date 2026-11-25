@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { DraftManager } from '../components/wizard/DraftManager';
 import { useWizardStore } from '../stores/useWizardStore';
 import { deleteWizardDraft, fetchWizardDrafts, saveWizardDraft } from '../lib/api';
@@ -112,5 +112,62 @@ describe('DraftManager YAML and load guard', () => {
     fireEvent.click(await screen.findByText('My draft'));
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(useWizardStore.getState().currentStep).toBe('form');
+  });
+});
+
+describe('DraftManager popover dismissal', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useWizardStore.getState().reset();
+    useWizardStore.setState({ drafts: [], draftsLoading: false, selectedType: 'mcp-server' });
+    vi.mocked(fetchWizardDrafts).mockResolvedValue([draft]);
+  });
+
+  it('labels the triggers and popovers', async () => {
+    render(<DraftManager />);
+    const save = screen.getByRole('button', { name: /save/i });
+    const list = screen.getByRole('button', { name: /drafts/i });
+    for (const trigger of [save, list]) {
+      expect(trigger).toHaveAttribute('type', 'button');
+      expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
+      expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    }
+    fireEvent.click(save);
+    expect(save).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('dialog', { name: 'Save draft' })).toBeInTheDocument();
+    fireEvent.click(list);
+    expect(list).toHaveAttribute('aria-expanded', 'true');
+    expect(await screen.findByRole('dialog', { name: 'Saved drafts' })).toBeInTheDocument();
+  });
+
+  it('closes the Save popover on Escape and returns focus to its trigger', () => {
+    render(<DraftManager />);
+    const save = screen.getByRole('button', { name: /save/i });
+    fireEvent.click(save);
+    const input = screen.getByLabelText('Draft name');
+    input.focus();
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(screen.queryByLabelText('Draft name')).not.toBeInTheDocument();
+    expect(save).toHaveFocus();
+  });
+
+  it('closes only the delete confirm on Escape, keeping the list', async () => {
+    render(<DraftManager />);
+    fireEvent.click(screen.getByRole('button', { name: /drafts/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete draft My draft' }));
+    const confirm = screen.getByRole('alertdialog');
+    const inside = within(confirm).getAllByRole('button')[0];
+    inside.focus();
+    fireEvent.keyDown(inside, { key: 'Escape' });
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Saved drafts' })).toBeInTheDocument();
+  });
+
+  it('closes an open popover on an outside click', async () => {
+    render(<DraftManager />);
+    fireEvent.click(screen.getByRole('button', { name: /drafts/i }));
+    expect(await screen.findByRole('dialog', { name: 'Saved drafts' })).toBeInTheDocument();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('dialog', { name: 'Saved drafts' })).not.toBeInTheDocument();
   });
 });
