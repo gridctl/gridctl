@@ -446,6 +446,36 @@ describe('PackImportWizard', () => {
     expect(document.body.textContent).not.toContain('\u200b');
   });
 
+  it('renders findings through the shared detailed findings block', async () => {
+    vi.mocked(previewPack).mockResolvedValue({
+      ...previewResult,
+      rules: [
+        {
+          kind: 'rule',
+          name: 'danger',
+          blocking: true,
+          findings: [
+            { stepId: 'danger.md:line-4', pattern: 'curl.*sh', description: 'piped shell download', severity: 'danger' },
+          ],
+        },
+      ],
+    });
+    renderWizard();
+    fireEvent.change(screen.getByLabelText('Pack repository URL'), {
+      target: { value: 'https://github.com/acme/team-pack' },
+    });
+    fireEvent.click(screen.getByText('Preview pack'));
+
+    const group = await screen.findByRole('group', { name: 'Security findings' });
+    const list = within(group).getByLabelText('Security findings on rule/danger');
+    expect(list).toHaveTextContent('piped shell download');
+    expect(list).toHaveTextContent('danger.md:line-4');
+    expect(list).not.toHaveTextContent('curl');
+    expect(within(list).getByRole('listitem')).toHaveClass('text-status-error');
+    expect(within(group).getByText('blocks import')).toBeInTheDocument();
+    expect(within(group).getByRole('checkbox')).not.toBeChecked();
+  });
+
   it('labels a resource that came from an external source', async () => {
     vi.mocked(previewPack).mockResolvedValue({
       ...previewResult,

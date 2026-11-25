@@ -13,10 +13,16 @@ import type { PinFinding } from '../../lib/api';
 // payload, and field quote attacker-controlled text and always pass through
 // escapeNonPrintable. Field is a pack-author path for hook findings. A
 // hidden-Unicode finding rendered raw would re-hide the payload it flags.
-export function FindingsList({ findings }: { findings: PinFinding[] | undefined }) {
+export function FindingsList({
+  findings,
+  label = 'Poisoning scan findings',
+}: {
+  findings: (Omit<PinFinding, 'confidence'> & { confidence?: PinFinding['confidence'] })[] | undefined;
+  label?: string;
+}) {
   if (!findings || findings.length === 0) return null;
   return (
-    <ul className="space-y-1" aria-label="Poisoning scan findings">
+    <ul className="space-y-1" aria-label={label}>
       {findings.map((f, i) => {
         const Icon = severityIcon[f.severity] ?? Info;
         return (

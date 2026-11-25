@@ -12,6 +12,7 @@ import {
   type PackPreviewResource,
 } from '../../../lib/api';
 import { AuthCard } from '../../wizard/AuthCard';
+import { PackFindings } from './PackFindings';
 import { useAuthCard } from '../../wizard/useAuthCard';
 import {
   httpsEquivalentOf,
@@ -262,8 +263,9 @@ export function PackUpdateDialog({ packName, origin, onClose, onUpdated }: PackU
                 <div className="rounded-lg border border-status-pending/30 bg-status-pending/5 p-2.5 space-y-1.5">
                   <p className="flex items-center gap-1.5 text-status-pending">
                     <AlertTriangle size={12} aria-hidden="true" />
-                    Security findings on {flagged.map((f) => `${f.kind}/${f.name}`).join(', ')}
+                    Security findings
                   </p>
+                  <PackFindings resources={flagged} />
                   {needsTrust ? (
                     <label htmlFor={trustId} className="flex items-start gap-2 cursor-pointer text-text-secondary">
                       <input
