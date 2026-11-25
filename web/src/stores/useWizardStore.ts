@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import type { ResourceType, MCPServerFormData, ResourceFormData, StackFormData } from '../lib/yaml-builder';
+import type { ResourceType } from '../lib/yaml-builder';
 import { structurallyEqual } from '../lib/graph/identity';
+import { defaultFormData, type TemplateResourceType, type WizardFormDataByType } from '../lib/wizard-templates';
 
 export type WizardStep = 'type' | 'template' | 'form' | 'review';
 
@@ -44,11 +45,7 @@ interface WizardState {
   selectedTemplate: string | null;
 
   // Form data per resource type (persists across type switches)
-  formData: {
-    stack: StackFormData;
-    'mcp-server': MCPServerFormData;
-    resource: ResourceFormData;
-  };
+  formData: WizardFormDataByType;
 
   // Expert mode
   expertMode: boolean;
@@ -86,6 +83,7 @@ interface WizardState {
   setSelectedType: (type: ResourceType) => void;
   setSelectedTemplate: (template: string | null) => void;
   updateFormData: (type: ResourceType, data: Record<string, unknown>) => void;
+  applyTemplate: <K extends TemplateResourceType>(type: K, templateId: string, data: WizardFormDataByType[K]) => void;
   setExpertMode: (enabled: boolean) => void;
   setYamlContent: (content: string) => void;
   setYamlError: (error: string | null) => void;
@@ -102,12 +100,6 @@ interface WizardState {
 }
 
 const SESSION_KEY = 'gridctl-wizard-state';
-
-const defaultFormData: WizardState['formData'] = {
-  stack: { name: '', version: '1' },
-  'mcp-server': { name: '', serverType: 'container' },
-  resource: { name: '', image: '' },
-};
 
 const clearedYamlState = { expertMode: false, yamlContent: '', yamlError: null };
 
@@ -218,6 +210,22 @@ export const useWizardStore = create<WizardState>()(
       const updated = { ...current, [type]: { ...existing, ...data } };
       set({ formData: updated });
       saveSession({ ...get(), formData: updated });
+    },
+
+    // A template replaces the whole form object for its type. Expert mode is
+    // turned off so stale YAML cannot be parsed back over the template, and the
+    // preview regenerates from the new data.
+    applyTemplate: (type, templateId, data) => {
+      const updates: Partial<WizardState> = {
+        formData: { ...get().formData, [type]: data },
+        selectedTemplate: templateId,
+        currentStep: 'form',
+        expertMode: false,
+        yamlError: null,
+        openapiOperationStats: null,
+      };
+      set(updates);
+      saveSession({ ...get(), ...updates });
     },
 
     setExpertMode: (enabled) => {

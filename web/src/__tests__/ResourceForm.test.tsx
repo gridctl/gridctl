@@ -17,9 +17,9 @@ describe('ResourceForm', () => {
     onChange = vi.fn<OnChange>();
   });
 
-  it('renders all 6 accordion sections', () => {
+  it('renders all 5 accordion sections', () => {
     render(<ResourceForm data={defaultData()} onChange={onChange} />);
-    expect(screen.getByText('Preset')).toBeInTheDocument();
+    expect(screen.queryByText('Preset')).not.toBeInTheDocument();
     expect(screen.getByText('Identity')).toBeInTheDocument();
     expect(screen.getByText('Environment & Variables')).toBeInTheDocument();
     expect(screen.getByText('Ports')).toBeInTheDocument();
@@ -27,74 +27,11 @@ describe('ResourceForm', () => {
     expect(screen.getByText('Network')).toBeInTheDocument();
   });
 
-  it('renders 4 preset options plus custom', () => {
-    render(<ResourceForm data={defaultData()} onChange={onChange} />);
-    expect(screen.getByText('PostgreSQL')).toBeInTheDocument();
-    expect(screen.getByText('Redis')).toBeInTheDocument();
-    expect(screen.getByText('MySQL')).toBeInTheDocument();
-    expect(screen.getByText('MongoDB')).toBeInTheDocument();
-    expect(screen.getByText('Custom')).toBeInTheDocument();
-  });
-
   it('enforces kebab-case on name input', () => {
     render(<ResourceForm data={defaultData()} onChange={onChange} />);
     const nameInput = screen.getByPlaceholderText('my-resource');
     fireEvent.change(nameInput, { target: { value: 'My Resource' } });
     expect(onChange).toHaveBeenCalledWith({ name: 'my-resource' });
-  });
-
-  it('pre-fills form when selecting PostgreSQL preset', () => {
-    render(<ResourceForm data={defaultData()} onChange={onChange} />);
-    fireEvent.click(screen.getByText('PostgreSQL'));
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'postgres',
-        image: 'postgres:16',
-        ports: ['5432:5432'],
-      }),
-    );
-  });
-
-  it('pre-fills form when selecting Redis preset', () => {
-    render(<ResourceForm data={defaultData()} onChange={onChange} />);
-    fireEvent.click(screen.getByText('Redis'));
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'redis',
-        image: 'redis:7-alpine',
-        ports: ['6379:6379'],
-      }),
-    );
-  });
-
-  it('pre-fills form when selecting MySQL preset', () => {
-    render(<ResourceForm data={defaultData()} onChange={onChange} />);
-    fireEvent.click(screen.getByText('MySQL'));
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'mysql',
-        image: 'mysql:8',
-        ports: ['3306:3306'],
-      }),
-    );
-  });
-
-  it('pre-fills form when selecting MongoDB preset', () => {
-    render(<ResourceForm data={defaultData()} onChange={onChange} />);
-    fireEvent.click(screen.getByText('MongoDB'));
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'mongodb',
-        image: 'mongo:7',
-        ports: ['27017:27017'],
-      }),
-    );
-  });
-
-  it('resets form when selecting Custom', () => {
-    render(<ResourceForm data={defaultData()} onChange={onChange} />);
-    fireEvent.click(screen.getByText('Custom'));
-    expect(onChange).toHaveBeenCalledWith({ name: '', image: '' });
   });
 
   it('shows image field', () => {
@@ -149,17 +86,5 @@ describe('ResourceForm', () => {
     render(<ResourceForm data={defaultData()} onChange={onChange} />);
     fireEvent.click(screen.getByText('Network'));
     expect(screen.getByPlaceholderText('network-name')).toBeInTheDocument();
-  });
-
-  it('includes vault references in preset env vars', () => {
-    render(<ResourceForm data={defaultData()} onChange={onChange} />);
-    fireEvent.click(screen.getByText('PostgreSQL'));
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({
-        env: expect.objectContaining({
-          POSTGRES_PASSWORD: '${var:POSTGRES_PASSWORD}',
-        }),
-      }),
-    );
   });
 });

@@ -17,65 +17,6 @@ import type { ResourceFormData } from '../../../lib/yaml-builder';
 import { KeyValueEditor } from '../KeyValueEditor';
 import { Field } from '../../ui/Field';
 
-// --- Resource presets ---
-
-interface ResourcePreset {
-  id: string;
-  name: string;
-  icon: LucideIcon;
-  description: string;
-  data: Partial<ResourceFormData>;
-}
-
-const RESOURCE_PRESETS: ResourcePreset[] = [
-  {
-    id: 'postgres',
-    name: 'PostgreSQL',
-    icon: Database,
-    description: 'Relational database',
-    data: {
-      name: 'postgres',
-      image: 'postgres:16',
-      env: { POSTGRES_DB: 'mydb', POSTGRES_USER: 'user', POSTGRES_PASSWORD: '${var:POSTGRES_PASSWORD}' },
-      ports: ['5432:5432'],
-    },
-  },
-  {
-    id: 'redis',
-    name: 'Redis',
-    icon: Database,
-    description: 'In-memory cache',
-    data: {
-      name: 'redis',
-      image: 'redis:7-alpine',
-      ports: ['6379:6379'],
-    },
-  },
-  {
-    id: 'mysql',
-    name: 'MySQL',
-    icon: Database,
-    description: 'Relational database',
-    data: {
-      name: 'mysql',
-      image: 'mysql:8',
-      env: { MYSQL_DATABASE: 'mydb', MYSQL_ROOT_PASSWORD: '${var:MYSQL_ROOT_PASSWORD}' },
-      ports: ['3306:3306'],
-    },
-  },
-  {
-    id: 'mongodb',
-    name: 'MongoDB',
-    icon: Database,
-    description: 'Document database',
-    data: {
-      name: 'mongodb',
-      image: 'mongo:7',
-      ports: ['27017:27017'],
-    },
-  },
-];
-
 // --- Kebab-case validation ---
 
 function toKebabCase(value: string): string {
@@ -211,55 +152,6 @@ function StringArrayEditor({
   );
 }
 
-// --- Preset Picker ---
-
-function PresetPicker({
-  selectedPreset,
-  onSelect,
-}: {
-  selectedPreset: string | null;
-  onSelect: (preset: ResourcePreset | null) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <p className="text-3xs text-text-muted">Start from a preset or create a custom resource</p>
-      <div className="grid grid-cols-5 gap-1.5">
-        {RESOURCE_PRESETS.map((preset) => (
-          <button
-            key={preset.id}
-            type="button"
-            onClick={() => onSelect(preset)}
-            className={cn(
-              'flex flex-col items-center gap-1 p-2.5 rounded-lg border transition-all duration-200 text-center',
-              selectedPreset === preset.id
-                ? 'bg-secondary/[0.08] border-secondary/30 shadow-[0_0_12px_--alpha(var(--color-secondary)/6%)]'
-                : 'border-border-subtle bg-surface-overlay-1 hover:bg-surface-overlay-3 hover:border-border',
-            )}
-          >
-            <Database size={14} className={cn(selectedPreset === preset.id ? 'text-secondary' : 'text-text-muted')} />
-            <span className={cn('text-3xs font-medium', selectedPreset === preset.id ? 'text-secondary' : 'text-text-primary')}>
-              {preset.name}
-            </span>
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={() => onSelect(null)}
-          className={cn(
-            'flex flex-col items-center gap-1 p-2.5 rounded-lg border transition-all duration-200 text-center',
-            selectedPreset === 'custom'
-              ? 'bg-secondary/[0.08] border-secondary/30'
-              : 'border-border-subtle bg-surface-overlay-1 hover:bg-surface-overlay-3 hover:border-border',
-          )}
-        >
-          <Plus size={14} className="text-text-muted" />
-          <span className="text-3xs text-text-muted font-medium">Custom</span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // --- Main ResourceForm ---
 
 interface ResourceFormProps {
@@ -272,7 +164,7 @@ interface ResourceFormProps {
 
 export function ResourceForm({ data, onChange, errors, revealKey }: ResourceFormProps) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(['preset', 'identity', 'config']),
+    new Set(['identity', 'config']),
   );
   const identityHasError = Boolean(errors?.name || errors?.image);
   const [revealed, setRevealed] = useState<number | undefined>(undefined);
@@ -280,7 +172,6 @@ export function ResourceForm({ data, onChange, errors, revealKey }: ResourceForm
     setRevealed(revealKey);
     if (identityHasError) setExpandedSections((prev) => new Set([...prev, 'identity']));
   }
-  const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
 
   const toggleSection = useCallback((section: string) => {
     setExpandedSections((prev) => {
@@ -291,41 +182,13 @@ export function ResourceForm({ data, onChange, errors, revealKey }: ResourceForm
     });
   }, []);
 
-  const handlePresetSelect = useCallback((preset: ResourcePreset | null) => {
-    if (preset) {
-      setSelectedPreset(preset.id);
-      onChange({
-        name: preset.data.name ?? '',
-        image: preset.data.image ?? '',
-        env: preset.data.env,
-        ports: preset.data.ports,
-        volumes: preset.data.volumes,
-      });
-    } else {
-      setSelectedPreset('custom');
-      onChange({ name: '', image: '' });
-    }
-    setExpandedSections((prev) => new Set([...prev, 'identity', 'config']));
-  }, [onChange]);
-
   const envCount = data.env ? Object.keys(data.env).length : 0;
   const portCount = data.ports?.length ?? 0;
   const volumeCount = data.volumes?.length ?? 0;
 
   return (
     <div className="space-y-3">
-      {/* Section 1: Preset */}
-      <Section
-        title="Preset"
-        icon={Database}
-        expanded={expandedSections.has('preset')}
-        onToggle={() => toggleSection('preset')}
-        badge={selectedPreset && selectedPreset !== 'custom' ? RESOURCE_PRESETS.find((p) => p.id === selectedPreset)?.name : undefined}
-      >
-        <PresetPicker selectedPreset={selectedPreset} onSelect={handlePresetSelect} />
-      </Section>
-
-      {/* Section 2: Identity */}
+      {/* Section 1: Identity */}
       <Section
         title="Identity"
         icon={Box}
@@ -368,7 +231,7 @@ export function ResourceForm({ data, onChange, errors, revealKey }: ResourceForm
         </div>
       </Section>
 
-      {/* Section 3: Environment & Variables */}
+      {/* Section 2: Environment & Variables */}
       <Section
         title="Environment & Variables"
         icon={KeyRound}
@@ -385,7 +248,7 @@ export function ResourceForm({ data, onChange, errors, revealKey }: ResourceForm
         />
       </Section>
 
-      {/* Section 4: Ports */}
+      {/* Section 3: Ports */}
       <Section
         title="Ports"
         icon={Network}
@@ -404,7 +267,7 @@ export function ResourceForm({ data, onChange, errors, revealKey }: ResourceForm
         <p className="text-3xs text-text-muted">Format: host:container (e.g., 5432:5432)</p>
       </Section>
 
-      {/* Section 5: Volumes */}
+      {/* Section 4: Volumes */}
       <Section
         title="Volumes"
         icon={Database}
@@ -423,7 +286,7 @@ export function ResourceForm({ data, onChange, errors, revealKey }: ResourceForm
         <p className="text-3xs text-text-muted">Format: host:container (e.g., ./data:/var/lib/data)</p>
       </Section>
 
-      {/* Section 6: Network */}
+      {/* Section 5: Network */}
       <Section
         title="Network"
         icon={Settings}
