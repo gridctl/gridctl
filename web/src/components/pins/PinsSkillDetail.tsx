@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Clock, GitBranch, Lock, LockOpen, Trash2 } from 'lucide-react';
+import { Clock, GitBranch, Lock, LockOpen } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import {
   approveSkillPin,
@@ -10,7 +10,6 @@ import {
   type SkillPinsDiff,
 } from '../../lib/api';
 import { usePinsStore } from '../../stores/usePinsStore';
-import { diffLines, MAX_DIFF_LINES, type DiffToken } from '../../lib/diff';
 import { escapeNonPrintable, shortPinHash } from '../../lib/nonPrintable';
 import { formatRelativeTime } from '../../lib/time';
 import { pinStatusMeta } from './pinStatus';
@@ -20,8 +19,9 @@ import {
   APPROVE_BUTTON_ID,
   DRIFT_SECTION_ID,
 } from './PinsDriftSection';
-import { RESET_BUTTON_ID, TOOLS_SECTION_ID } from './PinsServerDetail';
-import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { TOOLS_SECTION_ID } from './PinsServerDetail';
+import { DocumentDiff } from './DocumentDiff';
+import { PinDangerZone } from './PinDangerZone';
 import { ShortcutKeys } from '../ui/ShortcutKeys';
 import { PINS_APPROVE_KEYS } from '../../lib/shortcuts';
 import { describeError, isCancellation } from '../../lib/describeError';
@@ -33,9 +33,10 @@ import { credentialRefusalText, splitEvidence } from './pinApproval';
 // Skill detail - pin drift review (prose diff + file changes) + pinned files
 //
 // Mirrors PinsServerDetail/DriftSection for the skill kind. The button and
-// section ids are shared with the server components on purpose: only one
-// kind's pane is mounted at a time, so ?view= scrolling and the command
-// palette's clickById dispatch keep working across the kind toggle.
+// section ids are shared by the server, skill, and context details on
+// purpose: only one kind's pane is mounted at a time, so ?view= scrolling and
+// the command palette's clickById dispatch keep working across the kind
+// toggle. The context detail also mounts in a modal, which opts out of ids.
 // ---------------------------------------------------------------------------
 
 interface PinsSkillDetailProps {
@@ -47,19 +48,7 @@ interface PinsSkillDetailProps {
 export function PinsSkillDetail({ name, pin, onReset }: PinsSkillDetailProps) {
   const { label, colorClass } = pinStatusMeta(pin.status);
   const hasDrift = pin.status === 'drift';
-  const [resetOpen, setResetOpen] = useState(false);
-  const [isResetting, setIsResetting] = useState(false);
   const files = pin.files ?? [];
-
-  const handleResetConfirm = async () => {
-    setResetOpen(false);
-    setIsResetting(true);
-    try {
-      await onReset(name);
-    } finally {
-      setIsResetting(false);
-    }
-  };
 
   return (
     <div className={cn('px-6 py-4 space-y-4', hasDrift ? 'max-w-5xl' : 'max-w-3xl')}>
@@ -151,52 +140,25 @@ export function PinsSkillDetail({ name, pin, onReset }: PinsSkillDetailProps) {
         </div>
       </section>
 
-      <section className="pt-4 mt-2 border-t border-border/30 space-y-2 max-w-3xl">
-        <h3 className="text-3xs uppercase tracking-[0.18em] text-status-error/70">Danger</h3>
-        <div className="flex items-center gap-3">
-          <button
-            id={RESET_BUTTON_ID}
-            onClick={() => {
-              if (!isResetting) setResetOpen(true);
-            }}
-            aria-busy={isResetting}
-            className={cn(
-              'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-status-error bg-status-error/10 border border-status-error/20 hover:bg-status-error/20 transition-colors',
-              isResetting && 'opacity-50',
-            )}
-          >
-            <Trash2 size={11} />
-            {isResetting ? 'Resetting…' : `Reset pin for ${name}`}
-          </button>
-          <p className="text-2xs text-text-muted">
-            Deletes the pin record; the skill re-pins on the next Library refresh.
-          </p>
-        </div>
-      </section>
-
-      <div className="contents">
-        <ConfirmDialog
-          isOpen={resetOpen}
-          onClose={() => setResetOpen(false)}
-          onConfirm={() => void handleResetConfirm()}
-          title="Reset skill pin"
-          variant="danger"
-          confirmLabel={`Reset pin for ${name}`}
-          message={
-            <div className="space-y-2">
-              <p>
-                This deletes the pin record for{' '}
-                <span className="font-mono text-text-secondary">{name}</span>, including its
-                digest set, findings history, and any approval reason.
-              </p>
-              <p>
-                On the next Library refresh the skill re-pins from scratch, trusting whatever
-                content is on disk at that moment without a diff to review. This cannot be undone.
-              </p>
-            </div>
-          }
-        />
-      </div>
+      <PinDangerZone
+        buttonLabel={`Reset pin for ${name}`}
+        hint="Deletes the pin record; the skill re-pins on the next Library refresh."
+        dialogTitle="Reset skill pin"
+        message={
+          <div className="space-y-2">
+            <p>
+              This deletes the pin record for{' '}
+              <span className="font-mono text-text-secondary">{name}</span>, including its
+              digest set, findings history, and any approval reason.
+            </p>
+            <p>
+              On the next Library refresh the skill re-pins from scratch, trusting whatever
+              content is on disk at that moment without a diff to review. This cannot be undone.
+            </p>
+          </div>
+        }
+        onReset={() => onReset(name)}
+      />
     </div>
   );
 }
@@ -346,7 +308,8 @@ function SkillDriftSection({ skillName }: { skillName: string }) {
           <FileChangeList label="Modified" paths={diff.modified_files} glyph="~" tone="text-status-pending" />
 
           {documentChanged && (
-            <SkillDocumentDiff
+            <DocumentDiff
+              label="SKILL.md"
               oldDocument={diff.old_document ?? ''}
               newDocument={diff.new_document ?? ''}
             />
@@ -398,58 +361,5 @@ function FileChangeList({
         </div>
       ))}
     </div>
-  );
-}
-
-// SkillDocumentDiff renders the canonical SKILL.md delta as a unified
-// line-level view (markdown prose, not JSON schemas — diffLines, not the
-// schema panels). Each line is escaped individually AFTER splitting:
-// escaping first would turn real newlines into literal \n and collapse the
-// document onto one line.
-function SkillDocumentDiff({
-  oldDocument,
-  newDocument,
-}: {
-  oldDocument: string;
-  newDocument: string;
-}) {
-  const tokens = diffLines(oldDocument, newDocument);
-  const changed = tokens.filter((t) => t.kind !== 'same').length;
-  const shown = tokens.slice(0, MAX_DIFF_LINES);
-  return (
-    <div className="space-y-1">
-      <h4 className="text-3xs uppercase tracking-[0.18em] text-text-muted">
-        SKILL.md ({changed} {changed === 1 ? 'line' : 'lines'} changed)
-      </h4>
-      <div className="rounded border border-border/40 bg-background/60 overflow-x-auto max-h-96 overflow-y-auto scrollbar-dark">
-        <pre className="text-2xs font-mono leading-relaxed p-2 whitespace-pre-wrap break-words">
-          {shown.map((t, i) => (
-            <DiffLine key={i} token={t} />
-          ))}
-        </pre>
-      </div>
-      {tokens.length > MAX_DIFF_LINES && (
-        <p className="text-3xs text-text-muted">
-          Diff truncated at {MAX_DIFF_LINES} lines.
-        </p>
-      )}
-    </div>
-  );
-}
-
-function DiffLine({ token }: { token: DiffToken }) {
-  const prefix = token.kind === 'added' ? '+ ' : token.kind === 'removed' ? '- ' : '  ';
-  return (
-    <span
-      className={cn(
-        'block px-1',
-        token.kind === 'added' && 'bg-status-running/10 text-status-running',
-        token.kind === 'removed' && 'bg-status-error/10 text-status-error',
-        token.kind === 'same' && 'text-text-secondary',
-      )}
-    >
-      {prefix}
-      {escapeNonPrintable(token.text)}
-    </span>
   );
 }

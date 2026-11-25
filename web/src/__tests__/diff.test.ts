@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { diffLines, diffWords, diffSide, MAX_DIFF_LINES } from '../lib/diff';
+import { diffLines, diffWords, diffSide, lineDiffUnaligned, MAX_DIFF_LINES } from '../lib/diff';
 
 describe('diffLines', () => {
   it('marks changed lines, keeps common ones, and numbers both sides', () => {
@@ -22,6 +22,28 @@ describe('diffLines', () => {
 
   it('exports a render cap for consumers', () => {
     expect(MAX_DIFF_LINES).toBeGreaterThan(0);
+  });
+});
+
+describe('lineDiffUnaligned', () => {
+  const lines = (n: number, tag: string) =>
+    Array.from({ length: n }, (_, i) => (i === 0 ? tag : `line-${i}`)).join('\n');
+  // A real fallback emits no 'same' tokens even for nearly equal inputs.
+  const fellBack = (a: string, b: string) => diffLines(a, b).every((t) => t.kind !== 'same');
+
+  it('is false at 500 by 500 lines, where diffLines still aligns', () => {
+    const a = lines(500, 'old');
+    const b = lines(500, 'new');
+    expect(lineDiffUnaligned(a, b)).toBe(false);
+    expect(fellBack(a, b)).toBe(false);
+  });
+
+  it('is true at 501 by 500 lines, where diffLines falls back', () => {
+    const a = lines(501, 'old');
+    const b = lines(500, 'new');
+    expect(lineDiffUnaligned(a, b)).toBe(true);
+    expect(fellBack(a, b)).toBe(true);
+    expect(diffLines(a, b)).toHaveLength(1001);
   });
 });
 
