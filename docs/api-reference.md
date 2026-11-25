@@ -1547,7 +1547,7 @@ The request body is the same as `POST /api/stack/append` (limited to 1 MiB).
 
 **Response:** `{resourceType, resourceName, path, before, after, watching}`. `before` is the stack file content as read, `after` is the content the append would write, and `watching` has the same meaning as on the append. The response carries raw stack file content, the same data as `GET /api/stack/spec`.
 
-Error statuses match the append: `503` with no stack file; `400` for bad JSON, an unsupported `resourceType`, an invalid snippet, or a missing name; `422` with `{error, validation}` when the post-append stack would be invalid; and `422` or `500` for variable resolution, read, parse, or patch failures.
+Error statuses match the append: `503` with no stack file; `400` for bad JSON, an unsupported `resourceType`, an invalid snippet, a missing name, or an unknown key in the existing stack file (with a `ValidationResult` body); `422` with `{error, validation}` when the post-append stack would be invalid; and `422` or `500` for variable resolution, read, parse, or patch failures.
 
 #### `POST /api/stack/initialize`
 
