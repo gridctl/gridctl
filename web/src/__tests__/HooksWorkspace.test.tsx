@@ -468,6 +468,12 @@ describe('HooksWorkspace unsync', () => {
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+
+    fireEvent.click(unsync);
+    const backdrop = screen.getByRole('alertdialog').parentElement?.firstElementChild;
+    expect(backdrop).toBeTruthy();
+    fireEvent.click(backdrop as Element);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(unsyncHookProjections).not.toHaveBeenCalled();
   });
 
@@ -549,6 +555,31 @@ describe('HooksWorkspace unsync', () => {
       'OpenCode was edited after gridctl wrote it. Its projection is kept until the drift is reviewed.',
     );
     expect(within(dialog).getByRole('button', { name: 'Unsync from 1 client' })).toBeInTheDocument();
+  });
+
+  it('reports a kept drifted client as an error after a confirmed unsync', async () => {
+    vi.mocked(unsyncHookProjections).mockResolvedValue([
+      { hook: 'block-force-push', client: 'claude-code', target: inSync.target, action: 'removed' },
+      {
+        hook: 'block-force-push',
+        client: 'opencode',
+        target: opencodeRow.target,
+        action: 'skipped-drift',
+        detail: 'target edited outside gridctl',
+      },
+    ]);
+    fireEvent.click(await openProjection([inSync, { ...opencodeRow, state: 'drifted' }]));
+    fireEvent.click(screen.getByRole('button', { name: 'Unsync from 1 client' }));
+
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        'error',
+        'block-force-push → OpenCode: target edited outside gridctl; removed from 1 other client',
+      ),
+    );
+    expect(unsyncHookProjections).toHaveBeenCalledTimes(1);
+    expect(unsyncHookProjections).toHaveBeenCalledWith({ hooks: ['block-force-push'] });
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 
   it('disables Unsync with no projections or with every projection drifted', async () => {
