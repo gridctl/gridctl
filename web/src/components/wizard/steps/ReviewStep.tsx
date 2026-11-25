@@ -20,6 +20,7 @@ import type { MCPServerFormData } from '../../../lib/yaml-builder';
 import { describeError, isCancellation } from '../../../lib/describeError';
 import { useStackStore } from '../../../stores/useStackStore';
 import { useWizardStore } from '../../../stores/useWizardStore';
+import { DeployChangesSection, SaveLoadChangesSection } from './ReviewChangesSection';
 
 type ServerKind = 'source' | 'container' | 'connect';
 
@@ -153,6 +154,7 @@ export function ReviewStep({
   const kind = serverKind(server);
   const mcpServers = useStackStore((s) => s.mcpServers);
   const stackResources = useStackStore((s) => s.resources);
+  const activeStack = useStackStore((s) => s.stackName);
   const pythonSource = server?.source &&
     (server.source.type === 'pypi' || server.source.runtime === 'python') &&
     !server.source.dockerfile;
@@ -298,6 +300,19 @@ export function ReviewStep({
         if (sentType === 'mcp-server') {
           setAppendedResource({ resourceType: sentType, name: result.resourceName, yaml: sentYaml });
         }
+        // Strictly false: an absent flag (older gateway) keeps the poll.
+        if (result.watching === false) {
+          if (sentType === 'mcp-server') {
+            setAppendedResource(null);
+            setBuildState('idle');
+            showToast('warning', `${result.resourceName} was added to the stack file. Use Reload Config to start it.`);
+          } else {
+            showToast('success', `${result.resourceType} '${result.resourceName}' added to stack`);
+            showToast('warning', 'Use Reload Config to start it.');
+          }
+          if (!signal.aborted) onDeploy?.();
+          return;
+        }
         if (signal.aborted || sentType !== 'mcp-server') {
           showToast('success', `${result.resourceType} '${result.resourceName}' added to stack`);
           if (!signal.aborted) onDeploy?.();
@@ -436,7 +451,7 @@ export function ReviewStep({
                 {errorCount} validation error{errorCount > 1 ? 's' : ''}
               </div>
               <div className="text-xs text-text-muted mt-0.5">
-                Fix errors before generating
+                {resourceType === 'stack' ? 'Fix errors before saving' : 'Fix errors before deploying'}
               </div>
             </div>
           </>
@@ -460,7 +475,7 @@ export function ReviewStep({
                 Spec is valid
               </div>
               <div className="text-xs text-text-muted mt-0.5">
-                Ready to generate
+                {resourceType === 'stack' ? 'Ready to save' : 'Ready to deploy'}
               </div>
             </div>
           </>
@@ -605,6 +620,11 @@ export function ReviewStep({
           {previouslyAppendedName} was already added to the stack from this wizard. Deploying again adds another server, so its name must differ.
         </p>
       )}
+
+      {isStackFragmentType(resourceType) && (
+        <DeployChangesSection yaml={yaml} resourceType={resourceType} ready={!validating && !hasErrors} />
+      )}
+      {resourceType === 'stack' && <SaveLoadChangesSection yaml={yaml} activeStack={activeStack} />}
 
       {/* Output Actions */}
       <div className="flex items-center gap-3">

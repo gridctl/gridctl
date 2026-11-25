@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, cleanup, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { ReviewStep } from '../components/wizard/steps/ReviewStep';
-import { appendToStack, fetchStatus, initializeStack, resolvePythonSource, saveStack, StackAlreadyActiveError, StackAppendError, validateStackResource, validateStackSpec } from '../lib/api';
+import { appendToStack, previewStackAppend, HTTPError, fetchStatus, initializeStack, resolvePythonSource, saveStack, StackAlreadyActiveError, StackAppendError, validateStackResource, validateStackSpec } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
 import { useStackStore } from '../stores/useStackStore';
 import { useWizardStore } from '../stores/useWizardStore';
@@ -22,6 +22,7 @@ vi.mock('../lib/api', async (importOriginal) => {
     saveStack: vi.fn(),
     initializeStack: vi.fn(),
     appendToStack: vi.fn(),
+    previewStackAppend: vi.fn(),
     fetchStatus: vi.fn(),
     resolvePythonSource: vi.fn(),
     validateStackResource: vi.fn(),
@@ -41,6 +42,14 @@ const YAML = 'version: "1"\nname: daily\n';
 beforeEach(() => {
   useWizardStore.getState().reset();
   useWizardStore.getState().setAppendInFlight(false);
+  vi.mocked(previewStackAppend).mockResolvedValue({
+    resourceType: 'mcp-server',
+    resourceName: 'fixture',
+    path: '/tmp/stack.yaml',
+    before: 'mcp-servers: []\n',
+    after: 'mcp-servers: []\n',
+    watching: true,
+  });
 });
 
 describe('ReviewStep handleSaveAndLoad', () => {
@@ -676,5 +685,204 @@ describe('ReviewStep deploy lifecycle', () => {
     expect(alert).toHaveTextContent('Updating stack failed: disk full');
     expect(region().queryByRole('link', { name: /View filtered logs/ })).not.toBeInTheDocument();
     expect(useWizardStore.getState().appendedResource).toBeNull();
+  });
+});
+
+describe('ReviewStep states what the primary action changes', () => {
+  const SERVER = 'name: fetch-renamed\nimage: alpine\n';
+  const preview = (over: Partial<Awaited<ReturnType<typeof previewStackAppend>>> = {}) => ({
+    resourceType: 'mcp-server',
+    resourceName: 'fetch-renamed',
+    path: '/home/me/stacks/stack.yaml',
+    before: 'version: "1"\nname: s\nmcp-servers: []\n',
+    after: 'version: "1"\nname: s\nmcp-servers:\n  - name: fetch-renamed\n    image: alpine\n',
+    watching: true,
+    ...over,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useStackStore.setState({ mcpServers: [], resources: [], stackName: '' });
+    vi.mocked(validateStackResource).mockResolvedValue({ valid: true, errorCount: 0, warningCount: 0, issues: [] });
+    vi.mocked(validateStackSpec).mockResolvedValue({ valid: true, errorCount: 0, warningCount: 0, issues: [] });
+  });
+
+  function deployGroup() {
+    return within(screen.getByRole('group', { name: 'What Deploy changes' }));
+  }
+
+  it('shows deploy wording for a valid server and the matching error line', async () => {
+    vi.mocked(previewStackAppend).mockResolvedValue(preview());
+    const view = render(<ReviewStep yaml={SERVER} resourceType="mcp-server" resourceName="fetch" />);
+    expect(await screen.findByText('Ready to deploy')).toBeInTheDocument();
+    view.unmount();
+
+    vi.mocked(validateStackResource).mockResolvedValue({
+      valid: false, errorCount: 1, warningCount: 0,
+      issues: [{ field: 'image', message: 'required', severity: 'error' }],
+    });
+    render(<ReviewStep yaml={SERVER} resourceType="resource" resourceName="db" />);
+    expect(await screen.findByText('Fix errors before deploying')).toBeInTheDocument();
+    expect(previewStackAppend).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('group', { name: 'What Deploy changes' })).toHaveTextContent('Deploy adds this resource to the active stack file.');
+  });
+
+  it('shows save wording for a valid stack and the matching error line', async () => {
+    const view = render(<ReviewStep yaml={YAML} resourceType="stack" resourceName="daily" />);
+    expect(await screen.findByText('Ready to save')).toBeInTheDocument();
+    view.unmount();
+
+    vi.mocked(validateStackSpec).mockResolvedValue({
+      valid: false, errorCount: 1, warningCount: 0,
+      issues: [{ field: 'name', message: 'required', severity: 'error' }],
+    });
+    render(<ReviewStep yaml={YAML} resourceType="stack" resourceName="daily" />);
+    expect(await screen.findByText('Fix errors before saving')).toBeInTheDocument();
+  });
+
+  it('names the path, the server from the preview, the watching attempt, and the diff', async () => {
+    vi.mocked(previewStackAppend).mockResolvedValue(preview());
+    render(<ReviewStep yaml={SERVER} resourceType="mcp-server" resourceName="fetch" />);
+
+    const group = screen.getByRole('group', { name: 'What Deploy changes' });
+    await within(group).findByText('/home/me/stacks/stack.yaml');
+    expect(group).toHaveTextContent('Deploy adds the server fetch-renamed to mcp-servers in /home/me/stacks/stack.yaml.');
+    expect(group).toHaveTextContent('tries to start the server');
+    expect(group).toHaveTextContent('3 lines added, 1 existing line rewritten');
+    const diff = deployGroup().getByLabelText('Stack file diff');
+    expect(diff.textContent).toContain('+   - name: fetch-renamed');
+    expect(diff.textContent).toContain('+     image: alpine');
+    expect(diff.textContent).toContain('- mcp-servers: []');
+  });
+
+  it('warns that nothing starts when the gateway is not watching', async () => {
+    vi.mocked(previewStackAppend).mockResolvedValue(preview({ watching: false }));
+    render(<ReviewStep yaml={SERVER} resourceType="mcp-server" resourceName="fetch" />);
+    const group = screen.getByRole('group', { name: 'What Deploy changes' });
+    await within(group).findByText(/The gateway is not watching this file\./);
+    expect(group).toHaveTextContent('Reload Config');
+    expect(within(group).getByText('gridctl reload').tagName).toBe('CODE');
+    expect(group).not.toHaveTextContent('tries to start');
+  });
+
+  it('explains re-serialization only when existing lines change', async () => {
+    vi.mocked(previewStackAppend).mockResolvedValue(preview({
+      before: 'name: s\n\nmcp-servers: []\n',
+      after: 'name: s\nmcp-servers: []\n',
+    }));
+    const view = render(<ReviewStep yaml={SERVER} resourceType="mcp-server" resourceName="fetch" />);
+    let group = screen.getByRole('group', { name: 'What Deploy changes' });
+    await within(group).findByText(/existing line rewritten/);
+    expect(group).toHaveTextContent('Deploy re-serializes the whole file');
+    view.unmount();
+
+    vi.mocked(previewStackAppend).mockResolvedValue(preview({
+      before: 'name: s\nmcp-servers:\n  - name: a\n',
+      after: 'name: s\nmcp-servers:\n  - name: a\n  - name: fetch-renamed\n',
+    }));
+    render(<ReviewStep yaml={SERVER} resourceType="mcp-server" resourceName="fetch" />);
+    group = screen.getByRole('group', { name: 'What Deploy changes' });
+    await within(group).findByText(/1 line added/);
+    expect(group).not.toHaveTextContent('rewritten');
+    expect(group).not.toHaveTextContent('re-serializes');
+  });
+
+  it('lists 422 issues without a toast and keeps Deploy enabled', async () => {
+    vi.mocked(previewStackAppend).mockRejectedValue(new HTTPError(422, 'stack validation failed after append', {
+      errors: ['mcp-servers[1].name: duplicate name'],
+    }));
+    render(<ReviewStep yaml={SERVER} resourceType="mcp-server" resourceName="fetch" />);
+    const group = screen.getByRole('group', { name: 'What Deploy changes' });
+    expect(await within(group).findByText('mcp-servers[1].name: duplicate name')).toBeInTheDocument();
+    expect(group).toHaveTextContent('The stack file would be invalid after this change:');
+    expect(group).toHaveTextContent('Deploy adds this server to the active stack file.');
+    expect(screen.getByRole('button', { name: 'Deploy' })).not.toBeDisabled();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('reports a generic preview failure', async () => {
+    vi.mocked(previewStackAppend).mockRejectedValue(new HTTPError(500, 'Failed to read stack file'));
+    render(<ReviewStep yaml={SERVER} resourceType="resource" resourceName="db" />);
+    const group = screen.getByRole('group', { name: 'What Deploy changes' });
+    expect(await within(group).findByText('Could not preview the change: Failed to read stack file.')).toBeInTheDocument();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('shows the pending line while the preview is in flight', async () => {
+    vi.mocked(previewStackAppend).mockReturnValue(new Promise(() => {}));
+    render(<ReviewStep yaml={SERVER} resourceType="mcp-server" resourceName="fetch" />);
+    expect(await screen.findByText('Checking the stack file...')).toBeInTheDocument();
+  });
+
+  it('refetches for new YAML and drops a late response for the old YAML', async () => {
+    let resolveOld: (v: ReturnType<typeof preview>) => void = () => {};
+    vi.mocked(previewStackAppend)
+      .mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }))
+      .mockResolvedValueOnce(preview({ resourceName: 'newer', path: '/new/stack.yaml' }));
+    const view = render(<ReviewStep yaml={SERVER} resourceType="mcp-server" resourceName="fetch" />);
+    await waitFor(() => expect(previewStackAppend).toHaveBeenCalledTimes(1));
+
+    view.rerender(<ReviewStep yaml={'name: newer\nimage: alpine\n'} resourceType="mcp-server" resourceName="fetch" />);
+    const group = screen.getByRole('group', { name: 'What Deploy changes' });
+    await within(group).findByText('/new/stack.yaml');
+    expect(previewStackAppend).toHaveBeenCalledTimes(2);
+    expect(previewStackAppend).toHaveBeenLastCalledWith('name: newer\nimage: alpine\n', 'mcp-server');
+
+    await act(async () => { resolveOld(preview({ path: '/old/stack.yaml' })); });
+    expect(group).not.toHaveTextContent('/old/stack.yaml');
+    expect(group).toHaveTextContent('/new/stack.yaml');
+  });
+
+  it('skips the poll and asks for a reload when the append reports not watching', async () => {
+    const onDeploy = vi.fn();
+    vi.mocked(previewStackAppend).mockResolvedValue(preview({ watching: false }));
+    vi.mocked(appendToStack).mockResolvedValue({ success: true, resourceType: 'mcp-server', resourceName: 'fetch-renamed', watching: false, path: '/p' });
+    render(<ReviewStep yaml={SERVER} resourceType="mcp-server" resourceName="fetch" onDeploy={onDeploy} />);
+    const deploy = await screen.findByRole('button', { name: 'Deploy' });
+    await waitFor(() => expect(deploy).not.toBeDisabled());
+    fireEvent.click(deploy);
+
+    await waitFor(() => expect(onDeploy).toHaveBeenCalledTimes(1));
+    expect(showToast).toHaveBeenCalledWith('warning', 'fetch-renamed was added to the stack file. Use Reload Config to start it.');
+    expect(fetchStatus).not.toHaveBeenCalled();
+    expect(useWizardStore.getState().appendedResource).toBeNull();
+  });
+
+  it('adds a reload warning after a resource append that is not watched', async () => {
+    const onDeploy = vi.fn();
+    vi.mocked(appendToStack).mockResolvedValue({ success: true, resourceType: 'resource', resourceName: 'db', watching: false, path: '/p' });
+    render(<ReviewStep yaml={'name: db\nimage: postgres\n'} resourceType="resource" resourceName="db" onDeploy={onDeploy} />);
+    const deploy = await screen.findByRole('button', { name: 'Deploy' });
+    await waitFor(() => expect(deploy).not.toBeDisabled());
+    fireEvent.click(deploy);
+
+    await waitFor(() => expect(onDeploy).toHaveBeenCalledTimes(1));
+    expect(showToast).toHaveBeenCalledWith('success', "resource 'db' added to stack");
+    expect(showToast).toHaveBeenCalledWith('warning', 'Use Reload Config to start it.');
+  });
+
+  it('describes Save & Load for a named stack against the active stack', async () => {
+    useStackStore.setState({ stackName: 'prod' });
+    const view = render(<ReviewStep yaml={YAML} resourceType="stack" resourceName="daily" />);
+    let group = screen.getByRole('group', { name: 'What Save & Load changes' });
+    expect(group).toHaveTextContent('Save & Load writes daily.yaml to the stack library and replaces a saved stack with that name.');
+    expect(group).toHaveTextContent('prod is already loaded, so this stack is saved but not loaded.');
+    view.unmount();
+
+    useStackStore.setState({ stackName: '' });
+    render(<ReviewStep yaml={YAML} resourceType="stack" resourceName="daily" />);
+    group = screen.getByRole('group', { name: 'What Save & Load changes' });
+    expect(group).toHaveTextContent('No stack is loaded, so the gateway loads this one.');
+    await screen.findByText('Ready to save');
+    expect(previewStackAppend).not.toHaveBeenCalled();
+  });
+
+  it('describes Save & Load for a stack without a name and shows no timestamp', async () => {
+    render(<ReviewStep yaml={'version: "1"\n'} resourceType="stack" resourceName="" />);
+    const group = screen.getByRole('group', { name: 'What Save & Load changes' });
+    expect(group).toHaveTextContent('Save & Load writes the stack to the stack library under a generated name.');
+    expect(group).not.toHaveTextContent(/stack-\d+/);
+    await screen.findByText('Ready to save');
+    expect(previewStackAppend).not.toHaveBeenCalled();
   });
 });

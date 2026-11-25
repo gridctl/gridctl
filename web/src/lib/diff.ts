@@ -77,6 +77,43 @@ export function lineDiffUnaligned(oldText: string, newText: string): boolean {
 }
 
 /**
+ * True when diffLines would take its oversize fallback (everything removed,
+ * then everything added). Callers check this before diffing a whole file.
+ */
+export function isLineDiffOversized(oldText: string, newText: string): boolean {
+  return lineDiffUnaligned(oldText, newText);
+}
+
+/**
+ * Groups a line diff into hunks: every changed token plus up to `context`
+ * unchanged tokens on each side. A new hunk starts wherever unchanged lines
+ * were dropped; overlapping context merges. No changes yields [].
+ */
+export function diffHunks(tokens: DiffToken[], context = 3): DiffToken[][] {
+  const keep = new Array<boolean>(tokens.length).fill(false);
+  tokens.forEach((t, i) => {
+    if (t.kind === 'same') return;
+    const lo = Math.max(0, i - context);
+    const hi = Math.min(tokens.length - 1, i + context);
+    for (let k = lo; k <= hi; k++) keep[k] = true;
+  });
+  const hunks: DiffToken[][] = [];
+  let current: DiffToken[] | null = null;
+  tokens.forEach((t, i) => {
+    if (!keep[i]) {
+      current = null;
+      return;
+    }
+    if (!current) {
+      current = [];
+      hunks.push(current);
+    }
+    current.push(t);
+  });
+  return hunks;
+}
+
+/**
  * Line-level diff with 1-based source line numbers on every token. Oversized
  * inputs fall back to plain removed/added blocks so the quadratic table
  * stays bounded.

@@ -3,6 +3,8 @@ import {
   diffLines,
   diffWords,
   diffSide,
+  diffHunks,
+  isLineDiffOversized,
   lineDiffExceedsCap,
   lineDiffUnaligned,
   truncateBalanced,
@@ -127,5 +129,56 @@ describe('diffWords', () => {
   it('returns null when the token product exceeds the DP budget', () => {
     const big = Array.from({ length: 1200 }, (_, i) => `w${i}`).join(' ');
     expect(diffWords(big, big.toUpperCase())).toBeNull();
+  });
+});
+
+describe('diffHunks', () => {
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => `l${i}`);
+
+  it('keeps three context lines each side of a single change', () => {
+    const old = lines(40);
+    const next = [...old];
+    next[20] = 'changed';
+    const hunks = diffHunks(diffLines(old.join('\n'), next.join('\n')));
+    expect(hunks).toHaveLength(1);
+    const [hunk] = hunks;
+    expect(hunk.map((t) => t.kind)).toEqual(['same', 'same', 'same', 'removed', 'added', 'same', 'same', 'same']);
+    expect(hunk[0].text).toBe('l17');
+    expect(hunk[hunk.length - 1].text).toBe('l23');
+  });
+
+  it('splits two distant changes into two hunks', () => {
+    const old = lines(60);
+    const next = [...old];
+    next[10] = 'x';
+    next[40] = 'y';
+    expect(diffHunks(diffLines(old.join('\n'), next.join('\n')))).toHaveLength(2);
+  });
+
+  it('merges two changes within six lines into one hunk', () => {
+    const old = lines(60);
+    const next = [...old];
+    next[20] = 'x';
+    next[26] = 'y';
+    const hunks = diffHunks(diffLines(old.join('\n'), next.join('\n')));
+    expect(hunks).toHaveLength(1);
+    expect(hunks[0][0].text).toBe('l17');
+    expect(hunks[0][hunks[0].length - 1].text).toBe('l29');
+  });
+
+  it('returns [] when nothing changed', () => {
+    expect(diffHunks(diffLines('a\nb\n', 'a\nb\n'))).toEqual([]);
+  });
+});
+
+describe('isLineDiffOversized', () => {
+  const text = (n: number, p: string) => Array.from({ length: n }, (_, i) => `${p}${i}`).join('\n');
+
+  it('is true for two 600-line inputs', () => {
+    expect(isLineDiffOversized(text(600, 'a'), text(600, 'b'))).toBe(true);
+  });
+
+  it('is false for two 10-line inputs', () => {
+    expect(isLineDiffOversized(text(10, 'a'), text(10, 'b'))).toBe(false);
   });
 });
