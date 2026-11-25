@@ -47,6 +47,7 @@ import { useAccessLensStore } from '../../stores/useAccessLensStore';
 import { requestInspectorLeave } from '../../stores/useInspectorToolsGuardStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { formatRelativeTime } from '../../lib/time';
+import { NODE_STATUS_LABELS } from '../../lib/nodeStatus';
 import { restoreNodeFocus } from '../../lib/inspectorFocus';
 import type { MCPServerNodeData, ResourceNodeData, ClientNodeData } from '../../types';
 
@@ -219,7 +220,7 @@ export function Sidebar() {
           <div className="space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-sm text-text-muted">State</span>
-              <Badge status={data.status}>{data.status}</Badge>
+              <Badge status={data.status}>{NODE_STATUS_LABELS[data.status]}</Badge>
             </div>
 
             {isServer &&
@@ -510,11 +511,15 @@ export function Sidebar() {
         {/* Controls Section (not for clients - they aren't containers) */}
         {!isClient && (
           <InspectorSection title="Actions" icon={Terminal} defaultOpen>
-            <ControlBar name={data.name} variant="mcp-server" />
+            {isServer && !serverDisabled && (
+              <div className="mb-3">
+                <ControlBar key={data.name} name={data.name} />
+              </div>
+            )}
             <button
               onClick={handleShowLogs}
               className={cn(
-                'mt-3 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg',
+                'inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg',
                 'bg-surface-elevated/60 border border-border/50',
                 'hover:bg-surface-highlight hover:border-text-muted/30 transition-all text-sm',
                 'text-text-secondary hover:text-text-primary'
@@ -527,7 +532,7 @@ export function Sidebar() {
               <button
                 onClick={handleViewSecrets}
                 className={cn(
-                  'mt-3 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg',
+                  'inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg',
                   'bg-surface-elevated/60 border border-border/50',
                   'hover:bg-surface-highlight hover:border-text-muted/30 transition-all text-sm',
                   'text-text-secondary hover:text-text-primary'
@@ -550,6 +555,7 @@ export function Sidebar() {
         {isServer && (
           <InspectorSection title="Availability" icon={Power}>
             <ServerEnableControl
+              key={data.name}
               name={data.name}
               enabled={!serverDisabled}
               overrides={(data as MCPServerNodeData).overrides}
