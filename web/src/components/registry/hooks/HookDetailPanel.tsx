@@ -4,6 +4,7 @@ import { InspectorHeader } from '../../inspector';
 import { Tab, Tabs } from '../../ui/Tabs';
 import { Button } from '../../ui/Button';
 import { StatePill } from '../../ui/StatePill';
+import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import { showToast } from '../../ui/Toast';
 import {
   fetchRegistryHook,
@@ -12,9 +13,22 @@ import {
 } from '../../../lib/api';
 import { describeError, isCancellation } from '../../../lib/describeError';
 import { escapeNonPrintable } from '../../../lib/nonPrintable';
-import { describeHookSync, hookClientName, projectedScriptPath } from './hookModel';
+import {
+  describeHookSync,
+  describeHookUnsync,
+  hookClientName,
+  joinProse,
+  planHookUnsync,
+  projectedScriptPath,
+} from './hookModel';
 import { HookPinReview } from './HookPinReview';
-import type { HookProjectionStatus, HookUnsupportedClient, RegistryHook } from '../../../types';
+import type {
+  HookProjectionStatus,
+  HookSyncResult,
+  HookUnsupportedClient,
+  HookUnsyncResult,
+  RegistryHook,
+} from '../../../types';
 
 type HookTab = 'definition' | 'projection' | 'pin';
 
@@ -81,13 +95,13 @@ export function HookDetailPanel({ hook, statuses, unsupported, onClose, onRefres
         )}
         {tab === 'projection' && (
           <div id="hook-tab-projection" role="tabpanel" aria-labelledby="hook-tabbtn-projection" className="p-4 flex flex-col gap-3">
-            <HookProjectionRows name={hook.name} statuses={statuses} onRefresh={onRefresh} />
+            <HookProjectionRows name={hook.name} statuses={statuses} unsupported={unsupported} onRefresh={onRefresh} />
             <UnsupportedChips clients={unsupported} />
           </div>
         )}
         {tab === 'pin' && (
           <div id="hook-tab-pin" role="tabpanel" aria-labelledby="hook-tabbtn-pin" className="p-4">
-            <HookPinReview name={hook.name} onRefresh={onRefresh} />
+            <HookPinReview name={hook.name} hookDir={detail?.dir} onRefresh={onRefresh} />
           </div>
         )}
       </div>
@@ -122,26 +136,35 @@ function MatcherGroups({ hooks, scriptDir }: { hooks: RegistryHook['hooks']; scr
   );
 }
 
+type Described = { kind: 'success' | 'error'; message: string };
+
 function HookProjectionRows({
   name,
   statuses,
+  unsupported,
   onRefresh,
 }: {
   name: string;
   statuses: HookProjectionStatus[];
+  unsupported: HookUnsupportedClient[];
   onRefresh: () => Promise<void> | void;
 }) {
   const [busy, setBusy] = useState(false);
   const [drift, setDrift] = useState<HookProjectionStatus | null>(null);
+  const [confirmUnsync, setConfirmUnsync] = useState(false);
 
-  const act = async (fn: () => Promise<unknown>) => {
+  // onSettled runs once the request settles, before the toast and refresh.
+  const act = async <T,>(fn: () => Promise<T>, describe: (result: T) => Described, onSettled?: () => void) => {
     setBusy(true);
     try {
-      const result = await fn();
-      if (Array.isArray(result)) {
-        const described = describeHookSync(result);
-        showToast(described.kind, described.message);
+      let result: T;
+      try {
+        result = await fn();
+      } finally {
+        onSettled?.();
       }
+      const described = describe(result);
+      showToast(described.kind, described.message);
       await onRefresh();
     } catch (err) {
       if (!isCancellation(err)) {
@@ -153,13 +176,38 @@ function HookProjectionRows({
     }
   };
 
+  const plan = planHookUnsync(statuses, unsupported);
+  const unsyncBlocked =
+    statuses.length === 0
+      ? 'Not projected to any client'
+      : plan.removable.length === 0
+        ? 'Every projection has drifted. Review the drift first.'
+        : '';
+
+  const unsync = () =>
+    act<HookUnsyncResult[]>(
+      () => unsyncHookProjections({ hooks: [name] }),
+      describeHookUnsync,
+      () => setConfirmUnsync(false),
+    );
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <Button size="sm" disabled={busy} onClick={() => void act(() => syncHookProjections({ hooks: [name] }))}>
+        <Button
+          size="sm"
+          disabled={busy}
+          onClick={() => void act<HookSyncResult[]>(() => syncHookProjections({ hooks: [name] }), describeHookSync)}
+        >
           Sync
         </Button>
-        <Button size="sm" variant="secondary" disabled={busy} onClick={() => void act(() => unsyncHookProjections({ hooks: [name] }))}>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={busy || unsyncBlocked !== ''}
+          title={unsyncBlocked || undefined}
+          onClick={() => setConfirmUnsync(true)}
+        >
           Unsync
         </Button>
       </div>
@@ -202,11 +250,11 @@ function HookProjectionRows({
             <Button
               size="sm"
               disabled={busy}
-              onClick={() => void act(async () => {
+              onClick={() => void act<HookSyncResult[]>(async () => {
                 const result = await syncHookProjections({ hooks: [name], clients: [drift.client], force: true });
                 setDrift(null);
                 return result;
-              })}
+              }, describeHookSync)}
             >
               Force sync
             </Button>
@@ -214,7 +262,43 @@ function HookProjectionRows({
           </div>
         </div>
       )}
+      <ConfirmDialog
+        isOpen={confirmUnsync}
+        onClose={() => setConfirmUnsync(false)}
+        onConfirm={() => void unsync()}
+        title={`Unsync ${name}?`}
+        message={<UnsyncMessage plan={plan} />}
+        confirmLabel={`Unsync from ${plan.removable.length} client${plan.removable.length === 1 ? '' : 's'}`}
+        busy={busy}
+      />
     </div>
+  );
+}
+
+function UnsyncMessage({ plan }: { plan: ReturnType<typeof planHookUnsync> }) {
+  const removable = joinProse(plan.removable.map(hookClientName));
+  const kept = joinProse(plan.kept.map(hookClientName));
+  return (
+    <>
+      <p>
+        Removes this hook's entries and script copies from {removable}.{' '}
+        {plan.removable.length === 1 ? 'That client stops' : 'Those clients stop'} running it.
+      </p>
+      {plan.covered.map(({ names, by }) => (
+        <p key={by}>
+          {joinProse(names)} {names.length === 1 ? 'reads' : 'read'} the {hookClientName(by)} projection and{' '}
+          {names.length === 1 ? 'stops' : 'stop'} running it too.
+        </p>
+      ))}
+      {plan.kept.length > 0 && (
+        <p>
+          {kept} {plan.kept.length === 1 ? 'was' : 'were'} edited after gridctl wrote{' '}
+          {plan.kept.length === 1 ? 'it. Its projection is' : 'them. Their projections are'} kept until the drift is
+          reviewed.
+        </p>
+      )}
+      <p>The registry copy and its pin stay. Sync restores the projection.</p>
+    </>
   );
 }
 
