@@ -89,6 +89,20 @@ beforeEach(() => {
 });
 
 describe('LogsWorkspace', () => {
+  it('shows a visible title with the source summary at text-xs', () => {
+    renderAt('/logs');
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Logs' });
+    expect(h1.className).not.toMatch(/sr-only|uppercase|tracking-/);
+    const summary = screen.getByTestId('workspace-header-summary');
+    expect(summary).toHaveTextContent('all sources');
+    expect(summary).toHaveClass('text-xs');
+    expect(summary.className).not.toContain('text-3xs');
+    for (const el of Array.from(summary.querySelectorAll('*'))) {
+      expect(el.className).not.toContain('text-3xs');
+    }
+    expect(h1.closest('header')).toHaveClass('py-3');
+  });
+
   it('shows the aggregate stream from every source with no selection', async () => {
     renderAt('/logs');
     await waitFor(() => {

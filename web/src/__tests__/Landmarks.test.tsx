@@ -150,7 +150,9 @@ describe('workspace landmarks', () => {
       const { unmount } = renderWorkspace(testCase.node);
       expect(screen.queryAllByRole('main')).toHaveLength(0);
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-      expect(screen.getByRole('heading', { level: 1, name: testCase.name })).toBeInTheDocument();
+      const h1 = screen.getByRole('heading', { level: 1, name: testCase.name });
+      expect(h1.className).not.toMatch(/sr-only|uppercase|tracking-/);
+      expect(h1.closest('header')).not.toBeNull();
       unmount();
     }
   });

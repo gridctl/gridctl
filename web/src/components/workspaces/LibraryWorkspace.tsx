@@ -24,6 +24,7 @@ import { WORKSPACE_LABELS } from '../../types/workspace';
 import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
 import { PopoutButton } from '../ui/PopoutButton';
+import { WorkspaceHeader } from '../ui/WorkspaceHeader';
 import { SkillEditor } from '../registry/SkillEditor';
 import { SkillCardSkeleton } from '../registry/SkillCardSkeleton';
 import { requestGatewayPoll } from '../../hooks/usePolling';
@@ -894,8 +895,9 @@ export function LibraryWorkspace() {
         right={inspector}
       >
         <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
-          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.library}</h1>
           <LibraryHeader
+            headingId={headingId}
+            skillCount={skills?.length ?? null}
             kindSwitch={<LibraryKindSwitch kind="skill" onChange={setKind} />}
             onNewSkill={handleNewSkill}
             onImportSkill={handleImportSkill}
@@ -1501,7 +1503,10 @@ const KPI_METRICS: { key: FilterTab; label: string; dot: ItemState | null }[] = 
 ];
 
 interface LibraryHeaderProps {
-  /** The Skills | Agents segment control, standing in the eyebrow slot. */
+  headingId: string;
+  /** Catalog size for the summary; null while skills are loading. */
+  skillCount: number | null;
+  /** The Library kind segment control, rendered in the header's switcher slot. */
   kindSwitch: React.ReactNode;
   onNewSkill: () => void;
   onImportSkill: () => void;
@@ -1534,21 +1539,26 @@ interface LibraryHeaderProps {
   compact: boolean;
 }
 
-function LibraryHeader({ kindSwitch, onNewSkill, onImportSkill, onGlobalContext, onRefresh, onSync, sources, syncing, onPopout, counts, activeTab, onSelectFilter, usageTracked, neverUsedCount, coldCaveat, usageFilterActive, onToggleNeverUsed, staleCount, staleUnknownReason, staleFilterActive, onToggleStale, compact }: LibraryHeaderProps) {
+function LibraryHeader({ headingId, skillCount, kindSwitch, onNewSkill, onImportSkill, onGlobalContext, onRefresh, onSync, sources, syncing, onPopout, counts, activeTab, onSelectFilter, usageTracked, neverUsedCount, coldCaveat, usageFilterActive, onToggleNeverUsed, staleCount, staleUnknownReason, staleFilterActive, onToggleStale, compact }: LibraryHeaderProps) {
   const registryDetached = useUIStore((s) => s.registryDetached);
   const hasSources = sources.length > 0;
   const updateCount = sources.filter((s) => s.updateAvailable).length;
   return (
-    <header className={cn(
-      'flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle px-6 flex flex-col gap-2',
-      compact ? 'py-2' : 'py-3',
-    )}>
-      <div className="flex items-center justify-between gap-3">
-        {/* The kind segment stands where the static "library" eyebrow label
-            used to: the header is already five actions wide, and this is the
-            sole discovery mechanism for the Agents catalog. */}
-        {kindSwitch}
-        <div className="flex items-center gap-2">
+    <WorkspaceHeader
+      title={WORKSPACE_LABELS.library}
+      headingId={headingId}
+      compact={compact}
+      // The kind segment sits beside the title: the header is already several
+      // actions wide, and this is the sole discovery mechanism for the Agents
+      // catalog.
+      switcher={kindSwitch}
+      summary={skillCount === null ? undefined : (
+        <span className="font-mono">
+          {skillCount} {skillCount === 1 ? 'skill' : 'skills'}
+        </span>
+      )}
+      actions={(
+        <>
           {/* One shared treatment for the three header actions (the
               secondary outline Import always had): uniform color, padding,
               and nowrap so no label ever two-lines and heights stay equal.
@@ -1584,9 +1594,9 @@ function LibraryHeader({ kindSwitch, onNewSkill, onImportSkill, onGlobalContext,
           />
           <IconButton icon={RefreshCw} onClick={onRefresh} tooltip="Refresh" size="sm" variant="ghost" />
           <PopoutButton onClick={onPopout} detached={registryDetached} />
-        </div>
-      </div>
-
+        </>
+      )}
+    >
       {/* KPI summary cards — the first-class dashboard signal, and the primary
           state filter. They replace the old tab strip, so the URL contract
           (?filter) and selected-state live in exactly one place. */}
@@ -1628,7 +1638,7 @@ function LibraryHeader({ kindSwitch, onNewSkill, onImportSkill, onGlobalContext,
           </>
         )}
       </div>
-    </header>
+    </WorkspaceHeader>
   );
 }
 

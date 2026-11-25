@@ -4,6 +4,8 @@ import { Copy, Download, List, Package, RefreshCw, Bot, Webhook, FileDiff } from
 import { cn } from '../../../lib/cn';
 import { WORKSPACE_LABELS } from '../../../types/workspace';
 import { IconButton } from '../../ui/IconButton';
+import { WorkspaceHeader } from '../../ui/WorkspaceHeader';
+import { useUIStore } from '../../../stores/useUIStore';
 import { showToast } from '../../ui/Toast';
 import { FailedState, FailureBanner } from '../../ui/EmptyState';
 import { WorkspaceShell } from '../../layout/WorkspaceShell';
@@ -33,6 +35,7 @@ interface PacksWorkspaceProps {
  */
 export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
   const headingId = useId();
+  const compact = useUIStore((st) => st.compactMode.library);
   const [searchParams, setSearchParams] = useSearchParams();
   const packs = useRegistryStore((s) => s.packs);
   const openWizard = useWizardStore((s) => s.open);
@@ -207,11 +210,18 @@ export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
       <WorkspaceShell workspace="library" defaultRightPct={42} minRightPx={380} right={inspector}>
         <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
-          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.library}</h1>
-          <header className="flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle px-6 py-3 flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-3">
-              <LibraryKindSwitch kind="pack" onChange={onKindChange} />
-              <div className="flex items-center gap-2">
+          <WorkspaceHeader
+            title={WORKSPACE_LABELS.library}
+            headingId={headingId}
+            compact={compact}
+            switcher={<LibraryKindSwitch kind="pack" onChange={onKindChange} />}
+            summary={isLoading ? undefined : (
+              <span className="font-mono">
+                {sorted.length} {sorted.length === 1 ? 'pack' : 'packs'}
+              </span>
+            )}
+            actions={(
+              <>
                 <button
                   onClick={handleImport}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium whitespace-nowrap text-secondary hover:text-secondary/80 border border-secondary/25 hover:bg-secondary/10 rounded-lg transition-colors"
@@ -220,16 +230,16 @@ export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
                   <Download size={12} /> Import
                 </button>
                 <IconButton icon={RefreshCw} onClick={() => void refresh()} tooltip="Refresh" size="sm" variant="ghost" />
-              </div>
-            </div>
-
+              </>
+            )}
+          >
             {/* KPI strip: Total and Attention only. A pack's completion is
                 not one number; that story lives on the detail pane. */}
             <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Pack summary">
               <PackKpi label="Total" value={isLoading ? null : sorted.length} />
               <PackKpi label="Attention" value={isLoading ? null : attentionCount} />
             </div>
-          </header>
+          </WorkspaceHeader>
 
           <div className="flex-1 overflow-y-auto scrollbar-dark flex flex-col">
             {isLoading && loadError && (

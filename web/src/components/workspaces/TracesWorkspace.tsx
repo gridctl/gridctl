@@ -1,6 +1,5 @@
 import { useEffect, useId, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { cn } from '../../lib/cn';
 import { WORKSPACE_LABELS } from '../../types/workspace';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
@@ -9,6 +8,7 @@ import { useRunsStore } from '../../stores/useRunsStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { PopoutButton } from '../ui/PopoutButton';
 import { Tab, TabPanel, Tabs } from '../ui/Tabs';
+import { WorkspaceHeader } from '../ui/WorkspaceHeader';
 import { TracesView } from '../traces/TracesView';
 import { RunsView } from '../runs/RunsView';
 
@@ -100,52 +100,42 @@ export function TracesWorkspace() {
 
   return (
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
-      <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.traces}</h1>
-      <header
-        className={cn(
-          'flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle flex items-center gap-3 px-6',
-          compact ? 'py-2' : 'py-3',
+      <WorkspaceHeader
+        title={WORKSPACE_LABELS.traces}
+        headingId={headingId}
+        compact={compact}
+        switcher={(
+          <Tabs ariaLabel="Observability view" variant="segmented">
+            <Tab
+              id="traces-tab-traces"
+              selected={view === 'traces'}
+              controls="traces-tabpanel"
+              onSelect={selectTraces}
+            >
+              Traces
+            </Tab>
+            <Tab
+              id="traces-tab-runs"
+              selected={view === 'runs'}
+              controls="traces-tabpanel"
+              onSelect={selectRuns}
+            >
+              Runs
+            </Tab>
+          </Tabs>
         )}
-      >
-        <Tabs
-          ariaLabel="Observability view"
-          className="px-0 pt-0 border-0 border-b-0 gap-1"
-        >
-          <Tab
-            id="traces-tab-traces"
-            selected={view === 'traces'}
-            controls="traces-tabpanel"
-            onSelect={selectTraces}
-            className={cn(
-              'font-sans text-3xs uppercase tracking-[0.4em] px-2 py-1 rounded border-b-0 border-transparent mb-0',
-              view === 'traces' ? 'text-primary' : 'text-text-muted',
-            )}
-          >
-            traces
-          </Tab>
-          <Tab
-            id="traces-tab-runs"
-            selected={view === 'runs'}
-            controls="traces-tabpanel"
-            onSelect={selectRuns}
-            className={cn(
-              'font-sans text-3xs uppercase tracking-[0.4em] px-2 py-1 rounded border-b-0 border-transparent mb-0',
-              view === 'runs' ? 'text-primary' : 'text-text-muted',
-            )}
-          >
-            runs
-          </Tab>
-        </Tabs>
-        <div className="font-mono text-3xs text-text-muted truncate">
-          {view === 'runs'
-            ? `${runCount} dispatch record${runCount === 1 ? '' : 's'}${runPartial ? ' (partial)' : ''}`
-            : selectedTraceId
-              ? selectedTraceId.slice(0, 16)
-              : filters.segment === 'all'
-                ? 'all traces'
-                : 'tool calls'}
-        </div>
-      </header>
+        summary={(
+          <span className="font-mono">
+            {view === 'runs'
+              ? `${runCount} dispatch record${runCount === 1 ? '' : 's'}${runPartial ? ' (partial)' : ''}`
+              : selectedTraceId
+                ? selectedTraceId.slice(0, 16)
+                : filters.segment === 'all'
+                  ? 'all traces'
+                  : 'tool calls'}
+          </span>
+        )}
+      />
       <TabPanel
         id="traces-tabpanel"
         labelledBy={view === 'runs' ? 'traces-tab-runs' : 'traces-tab-traces'}

@@ -190,8 +190,15 @@ describe('TracesWorkspace', () => {
     );
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 1, name: 'Traces' })).toBeInTheDocument();
-    const traces = screen.getByRole('tab', { name: 'traces' });
-    const runs = screen.getByRole('tab', { name: 'runs' });
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Traces' });
+    expect(h1.className).not.toMatch(/sr-only/);
+    expect(screen.getByRole('tablist', { name: 'Observability view' })).toHaveClass('rounded-lg', 'border');
+    const traces = screen.getByRole('tab', { name: 'Traces' });
+    const runs = screen.getByRole('tab', { name: 'Runs' });
+    expect(traces).toHaveClass('bg-primary/10', 'text-primary');
+    expect(runs).not.toHaveClass('bg-primary/10');
+    expect(runs.className).not.toContain('text-text-muted/60');
+    expect(runs.className).not.toMatch(/uppercase|tracking-/);
     expect(traces).toHaveAttribute('aria-controls', 'traces-tabpanel');
     expect(runs).toHaveAttribute('aria-controls', 'traces-tabpanel');
     const panel = document.getElementById('traces-tabpanel');
@@ -203,6 +210,9 @@ describe('TracesWorkspace', () => {
     expect(runs).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('location-search')).toHaveTextContent('?view=runs');
     expect(panel).toHaveAttribute('aria-labelledby', 'traces-tab-runs');
+    expect(runs).toHaveClass('bg-primary/10', 'text-primary');
+    expect(traces).not.toHaveClass('bg-primary/10');
+    expect(traces.className).not.toContain('text-text-muted/60');
   });
 
   it('shows the global trace list with the tool as the primary label', async () => {

@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router';
 import { Loader2, Pin } from 'lucide-react';
 import { requestGatewayPoll } from '../../hooks/usePolling';
 import { EmptyState, FailedState, FailureBanner } from '../ui/EmptyState';
-import { cn } from '../../lib/cn';
 import { WORKSPACE_LABELS } from '../../types/workspace';
 import {
   serverHasAlertFindings,
@@ -38,6 +37,7 @@ import { PinsHookDetail } from '../pins/PinsHookDetail';
 import { DRIFT_SECTION_ID } from '../pins/PinsDriftSection';
 import { usePinsCommands } from '../pins/usePinsCommands';
 import { showToast } from '../ui/Toast';
+import { WorkspaceHeader } from '../ui/WorkspaceHeader';
 import { describeError, isCancellation } from '../../lib/describeError';
 import { escapeNonPrintable } from '../../lib/nonPrintable';
 
@@ -528,26 +528,22 @@ export function PinsWorkspace() {
         minLeftPx={220}
       >
         <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
-          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.pins}</h1>
-          <header
-            className={cn(
-              'flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle px-6 flex items-center gap-3',
-              compact ? 'py-2' : 'py-3',
+          <WorkspaceHeader
+            title={WORKSPACE_LABELS.pins}
+            headingId={headingId}
+            compact={compact}
+            summary={(
+              <span className="font-mono">
+                {kind === 'server'
+                  ? headerTally(entries)
+                  : kind === 'skill'
+                    ? skillHeaderTally(skillEntries)
+                    : kind === 'context'
+                      ? `${contextEntries.length} ${contextEntries.length === 1 ? 'fragment' : 'fragments'} pinned`
+                      : hookHeaderTally(hookEntries)}
+              </span>
             )}
-          >
-            <div className="font-sans text-text-muted text-3xs uppercase tracking-[0.4em]">
-              pins
-            </div>
-            <div className="font-mono text-3xs text-text-muted">
-              {kind === 'server'
-                ? headerTally(entries)
-                : kind === 'skill'
-                  ? skillHeaderTally(skillEntries)
-                  : kind === 'context'
-                    ? `${contextEntries.length} ${contextEntries.length === 1 ? 'fragment' : 'fragments'} pinned`
-                    : hookHeaderTally(hookEntries)}
-            </div>
-          </header>
+          />
 
           <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark flex flex-col">
             {activeError && activeMap === null ? (

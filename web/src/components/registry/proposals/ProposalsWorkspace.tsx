@@ -4,6 +4,8 @@ import { Bot, List, Package, RefreshCw, Webhook } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { WORKSPACE_LABELS } from '../../../types/workspace';
 import { IconButton } from '../../ui/IconButton';
+import { WorkspaceHeader } from '../../ui/WorkspaceHeader';
+import { useUIStore } from '../../../stores/useUIStore';
 import { FailedState, FailureBanner } from '../../ui/EmptyState';
 import { WorkspaceShell } from '../../layout/WorkspaceShell';
 import { useCommandRegistry } from '../../../hooks/useCommandRegistry';
@@ -31,6 +33,7 @@ interface ProposalsWorkspaceProps {
 
 export function ProposalsWorkspace({ onKindChange }: ProposalsWorkspaceProps) {
   const headingId = useId();
+  const compact = useUIStore((st) => st.compactMode.library);
   const [searchParams, setSearchParams] = useSearchParams();
   const [proposals, setProposals] = useState<Proposal[] | null>(null);
   const [skipped, setSkipped] = useState<ProposalSkipped[]>([]);
@@ -154,15 +157,24 @@ export function ProposalsWorkspace({ onKindChange }: ProposalsWorkspaceProps) {
         )}
       >
         <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
-          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.library}</h1>
-          <header className="flex-shrink-0 border-b border-border-subtle px-6 py-3 flex items-center justify-between gap-3">
-            <LibraryKindSwitch
-              kind="proposal"
-              onChange={onKindChange}
-              pendingProposals={proposals === null ? undefined : pending}
-            />
-            <IconButton icon={RefreshCw} onClick={() => void refresh()} tooltip="Refresh" size="sm" variant="ghost" />
-          </header>
+          <WorkspaceHeader
+            title={WORKSPACE_LABELS.library}
+            headingId={headingId}
+            compact={compact}
+            switcher={(
+              <LibraryKindSwitch
+                kind="proposal"
+                onChange={onKindChange}
+                pendingProposals={proposals === null ? undefined : pending}
+              />
+            )}
+            summary={proposals === null ? undefined : (
+              <span className="font-mono">
+                {proposals.length} {proposals.length === 1 ? 'proposal' : 'proposals'}
+              </span>
+            )}
+            actions={<IconButton icon={RefreshCw} onClick={() => void refresh()} tooltip="Refresh" size="sm" variant="ghost" />}
+          />
           <div className="px-6 py-2 flex items-center gap-1" role="group" aria-label="Proposal status filter">
             {PROPOSAL_STATUS_FILTERS.map((opt) => (
               <button

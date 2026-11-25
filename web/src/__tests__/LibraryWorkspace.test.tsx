@@ -145,6 +145,22 @@ describe('LibraryWorkspace', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Library' })).toBeInTheDocument();
   });
 
+  it('shows a visible title with the kind switch, skill count, and compact padding', () => {
+    useUIStore.setState({ compactMode: { ...useUIStore.getState().compactMode, library: true } });
+    try {
+      renderAt('/library');
+      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+      const h1 = screen.getByRole('heading', { level: 1, name: 'Library' });
+      expect(h1.className).not.toMatch(/sr-only|uppercase|tracking-/);
+      const header = h1.closest('header')!;
+      expect(header).toHaveClass('py-2');
+      expect(within(header).getByRole('group', { name: 'Library catalog kind' })).toBeInTheDocument();
+      expect(within(header).getByTestId('workspace-header-summary')).toHaveTextContent(`${SAMPLE_SKILLS.length} skills`);
+    } finally {
+      useUIStore.setState({ compactMode: { ...useUIStore.getState().compactMode, library: false } });
+    }
+  });
+
   it('renders a failed state instead of skeleton cards when skills have not loaded', () => {
     useRegistryStore.setState({ skills: null, error: 'boom' });
     renderAt('/library');

@@ -4,6 +4,8 @@ import { List, Package, RefreshCw, Bot, FileDiff } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { WORKSPACE_LABELS } from '../../../types/workspace';
 import { IconButton } from '../../ui/IconButton';
+import { WorkspaceHeader } from '../../ui/WorkspaceHeader';
+import { useUIStore } from '../../../stores/useUIStore';
 import { FailedState, FailureBanner } from '../../ui/EmptyState';
 import { WorkspaceShell } from '../../layout/WorkspaceShell';
 import { useCommandRegistry } from '../../../hooks/useCommandRegistry';
@@ -25,6 +27,7 @@ interface HooksWorkspaceProps {
 
 export function HooksWorkspace({ onKindChange }: HooksWorkspaceProps) {
   const headingId = useId();
+  const compact = useUIStore((st) => st.compactMode.library);
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const hookPins = usePinsStore((s) => s.hookPins);
@@ -173,11 +176,18 @@ export function HooksWorkspace({ onKindChange }: HooksWorkspaceProps) {
         )}
       >
         <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
-          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.library}</h1>
-          <header className="flex-shrink-0 border-b border-border-subtle px-6 py-3 flex items-center justify-between gap-3">
-            <LibraryKindSwitch kind="hook" onChange={onKindChange} />
-            <IconButton icon={RefreshCw} onClick={() => void refresh()} tooltip="Refresh" size="sm" variant="ghost" />
-          </header>
+          <WorkspaceHeader
+            title={WORKSPACE_LABELS.library}
+            headingId={headingId}
+            compact={compact}
+            switcher={<LibraryKindSwitch kind="hook" onChange={onKindChange} />}
+            summary={hooks === null ? undefined : (
+              <span className="font-mono">
+                {hooks.length} {hooks.length === 1 ? 'hook' : 'hooks'}
+              </span>
+            )}
+            actions={<IconButton icon={RefreshCw} onClick={() => void refresh()} tooltip="Refresh" size="sm" variant="ghost" />}
+          />
           <div className="px-6 py-2">
             <input
               aria-label="Search hooks"

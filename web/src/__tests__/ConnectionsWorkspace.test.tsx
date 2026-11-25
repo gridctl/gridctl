@@ -84,7 +84,8 @@ afterEach(() => {
 
 function expectOneConnectionsHeading() {
   expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-  expect(screen.getByRole('heading', { level: 1, name: WORKSPACE_LABELS.connections })).toBeInTheDocument();
+  const h1 = screen.getByRole('heading', { level: 1, name: WORKSPACE_LABELS.connections });
+  expect(h1.className).not.toMatch(/sr-only|uppercase|tracking-/);
 }
 
 function deferred<T>() {

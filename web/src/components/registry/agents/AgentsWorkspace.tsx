@@ -4,6 +4,8 @@ import { Bot, Download, FileDiff, List, Package, RefreshCw, Search, Webhook, X }
 import { cn } from '../../../lib/cn';
 import { WORKSPACE_LABELS } from '../../../types/workspace';
 import { IconButton } from '../../ui/IconButton';
+import { WorkspaceHeader } from '../../ui/WorkspaceHeader';
+import { useUIStore } from '../../../stores/useUIStore';
 import { ConfirmDialog } from '../../ui/ConfirmDialog';
 import { showToast } from '../../ui/Toast';
 import { FailedState, FailureBanner } from '../../ui/EmptyState';
@@ -41,6 +43,7 @@ interface AgentsWorkspaceProps {
  */
 export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
   const headingId = useId();
+  const compact = useUIStore((st) => st.compactMode.library);
   const [searchParams, setSearchParams] = useSearchParams();
   const agents = useRegistryStore((s) => s.agents);
   const agentStatuses = useRegistryStore((s) => s.agentStatuses);
@@ -319,11 +322,18 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
       <WorkspaceShell workspace="library" defaultRightPct={30} minRightPx={300} right={inspector}>
         <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
-          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.library}</h1>
-          <header className="flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle px-6 py-3 flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-3">
-              <LibraryKindSwitch kind="agent" onChange={onKindChange} />
-              <div className="flex items-center gap-2">
+          <WorkspaceHeader
+            title={WORKSPACE_LABELS.library}
+            headingId={headingId}
+            compact={compact}
+            switcher={<LibraryKindSwitch kind="agent" onChange={onKindChange} />}
+            summary={isLoading ? undefined : (
+              <span className="font-mono">
+                {agents.length} {agents.length === 1 ? 'agent' : 'agents'}
+              </span>
+            )}
+            actions={(
+              <>
                 <button
                   onClick={handleImport}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium whitespace-nowrap text-secondary hover:text-secondary/80 border border-secondary/25 hover:bg-secondary/10 rounded-lg transition-colors"
@@ -348,9 +358,9 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
                   </button>
                 )}
                 <IconButton icon={RefreshCw} onClick={() => void refresh()} tooltip="Refresh" size="sm" variant="ghost" />
-              </div>
-            </div>
-
+              </>
+            )}
+          >
             {/* KPI strip: rendered unconditionally, zero included, matching
                 the Skills segment's contract. No lifecycle or usage KPIs —
                 agents have neither. */}
@@ -363,7 +373,7 @@ export function AgentsWorkspace({ onKindChange }: AgentsWorkspaceProps) {
               />
               <AgentKpi label="Drifted" value={isLoading ? null : kpis.drifted} />
             </div>
-          </header>
+          </WorkspaceHeader>
 
           {/* Search bar, mirroring the Skills segment's treatment. */}
           <div className="px-4 pt-3 pb-2.5 bg-surface/60 backdrop-blur-sm border-b border-border/40 flex-shrink-0">

@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
 import { HooksWorkspace } from '../components/registry/hooks/HooksWorkspace';
 import { usePinsStore } from '../stores/usePinsStore';
+import { useUIStore, COMPACT_MODE_DEFAULTS } from '../stores/useUIStore';
 import type { PinFinding } from '../lib/api';
 import type { HookPinDiff, HookProjectionStatus, RegistryHook, RegistryHookList } from '../types';
 
@@ -141,6 +142,25 @@ beforeEach(() => {
   vi.mocked(approveHookPin).mockResolvedValue(undefined);
   vi.mocked(fetchHookPins).mockResolvedValue({});
   usePinsStore.setState({ hookPins: null, hookPinsError: null });
+});
+
+describe('HooksWorkspace header', () => {
+  it('renders the Library title and follows the library compact preference', async () => {
+    useUIStore.setState({ compactMode: { ...COMPACT_MODE_DEFAULTS, library: true } });
+    try {
+      renderWorkspace();
+      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+      const h1 = screen.getByRole('heading', { level: 1, name: 'Library' });
+      expect(h1.className).not.toMatch(/sr-only|uppercase|tracking-/);
+      const header = h1.closest('header')!;
+      expect(header).toHaveClass('py-2', 'bg-surface/30');
+      expect(within(header).getByRole('group', { name: 'Library catalog kind' })).toBeInTheDocument();
+      expect(within(header).getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByTestId('workspace-header-summary')).toHaveTextContent(/\d+ hooks?/));
+    } finally {
+      useUIStore.setState({ compactMode: { ...COMPACT_MODE_DEFAULTS } });
+    }
+  });
 });
 
 describe('HooksWorkspace', () => {

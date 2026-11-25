@@ -26,6 +26,7 @@ import { WORKSPACE_LABELS } from '../../types/workspace';
 import { showToast } from '../ui/Toast';
 import { describeError, isCancellation } from '../../lib/describeError';
 import { EmptyState, FailedState } from '../ui/EmptyState';
+import { WorkspaceHeader } from '../ui/WorkspaceHeader';
 import { GlobalContextDialog } from '../context/GlobalContextDialog';
 import { ResetDialog } from '../system/ResetDialog';
 import { useUIStore } from '../../stores/useUIStore';
@@ -372,21 +373,40 @@ export default function ConnectionsWorkspace() {
     [clients, selectedSlug],
   );
 
-  if (clients.length === 0) {
+  const loadState = clients.length > 0
+    ? 'loaded'
+    : healthError
+      ? 'failed'
+      : healthPending
+        ? 'loading'
+        : 'empty';
+  const header = (
+    <WorkspaceHeader
+      title={WORKSPACE_LABELS.connections}
+      summary={
+        loadState === 'loaded' ? (
+          <span className="font-mono">
+            {`${clients.filter((c) => c.linked).length} linked · ${clients.filter((c) => c.detected).length} detected · access scoping lives in Tools`}
+          </span>
+        ) : loadState === 'empty' ? (
+          <span className="font-mono">No clients reported</span>
+        ) : undefined
+      }
+    />
+  );
+
+  if (loadState !== 'loaded') {
     return (
       <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
-        {healthError ? (
-          <div className="flex-1 min-h-0">
-            <h1 className="sr-only">{WORKSPACE_LABELS.connections}</h1>
+        {header}
+        <div className="flex-1 min-h-0">
+          {loadState === 'failed' ? (
             <FailedState
               feature="Connections"
-              message={healthError}
+              message={healthError ?? undefined}
               onRetry={() => void refreshHealth()}
             />
-          </div>
-        ) : healthPending ? (
-          <div className="flex-1 min-h-0">
-            <h1 className="sr-only">{WORKSPACE_LABELS.connections}</h1>
+          ) : loadState === 'loading' ? (
             <EmptyState
               icon={Loader2}
               iconClassName="animate-spin"
@@ -394,29 +414,22 @@ export default function ConnectionsWorkspace() {
               title="Loading connections…"
               description="Fetching client and wiring status from the gateway."
             />
-          </div>
-        ) : (
-          <>
-            <ConnectionsHeader subtitle="No clients reported" />
-            <div className="flex-1 min-h-0">
-              <EmptyState
-                icon={Plug}
-                tone="primary"
-                title="No clients available"
-                description="Start a stack with 'gridctl apply' to detect and link LLM clients."
-              />
-            </div>
-          </>
-        )}
+          ) : (
+            <EmptyState
+              icon={Plug}
+              tone="primary"
+              title="No clients available"
+              description="Start a stack with 'gridctl apply' to detect and link LLM clients."
+            />
+          )}
+        </div>
       </div>
     );
   }
 
   return (
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
-      <ConnectionsHeader
-        subtitle={`${clients.filter((c) => c.linked).length} linked · ${clients.filter((c) => c.detected).length} detected · access scoping lives in Tools`}
-      />
+      {header}
 
       <div className="flex-1 min-h-0 relative">
         <WorkspaceShell
@@ -567,19 +580,6 @@ function firstHealthError(
     return result.reason instanceof Error ? result.reason.message : 'Request failed';
   }
   return null;
-}
-
-function ConnectionsHeader({ subtitle }: { subtitle: string }) {
-  return (
-    <div className="flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle px-6 py-3">
-      <div className="flex items-baseline gap-3">
-        <h1 className="text-xs font-medium uppercase tracking-[0.4em] text-text-primary">
-          Connections
-        </h1>
-        <span className="font-mono text-3xs text-text-muted flex-1 truncate">{subtitle}</span>
-      </div>
-    </div>
-  );
 }
 
 /**

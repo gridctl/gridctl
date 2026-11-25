@@ -241,6 +241,9 @@ describe('PacksWorkspace', () => {
     expect(screen.queryByText('No packs imported')).not.toBeInTheDocument();
     expect(screen.queryAllByRole('main')).toHaveLength(0);
     expect(screen.getByRole('heading', { level: 1, name: 'Library' })).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole('heading', { level: 1, name: 'Library' }).className).not.toMatch(/sr-only|uppercase|tracking-/);
+    expect(screen.queryByTestId('workspace-header-summary')).toBeNull();
   });
 
   it('teaches the pack convention in the empty state', async () => {

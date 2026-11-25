@@ -55,6 +55,7 @@ import { EmptyState, FailedState, FailureBanner } from '../ui/EmptyState';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { StatusDot } from '../ui/StatusDot';
+import { WorkspaceHeader } from '../ui/WorkspaceHeader';
 import { FleetActions } from './FleetActions';
 import { ClientAccessEditor } from './ClientAccessEditor';
 import { GroupsPanel } from './GroupsPanel';
@@ -546,8 +547,8 @@ export function ToolsWorkspace() {
         minRightPx={300}
       >
         <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
-          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.tools}</h1>
           <ToolsHeader
+            headingId={headingId}
             compact={compact}
             serverCount={servers.length}
             query={globalQuery}
@@ -723,6 +724,7 @@ export function ToolsWorkspace() {
 // ---------------------------------------------------------------------------
 
 interface ToolsHeaderProps {
+  headingId: string;
   compact: boolean;
   serverCount: number;
   query: string;
@@ -750,6 +752,7 @@ interface ToolsHeaderProps {
 }
 
 function ToolsHeader({
+  headingId,
   compact,
   serverCount,
   query,
@@ -771,21 +774,17 @@ function ToolsHeader({
 }: ToolsHeaderProps) {
   const searching = query.trim().length > 0;
   return (
-    <header
-      className={cn(
-        'flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle px-6 flex flex-col gap-2',
-        compact ? 'py-2' : 'py-3',
-      )}
-    >
-      <div className="flex items-center gap-3">
-        <div className="font-sans text-text-muted text-3xs uppercase tracking-[0.4em]">
-          tools
-        </div>
-        <div className="font-mono text-3xs text-text-muted">
+    <WorkspaceHeader
+      title={WORKSPACE_LABELS.tools}
+      headingId={headingId}
+      compact={compact}
+      summary={(
+        <span className="font-mono">
           {serverCount} {serverCount === 1 ? 'server' : 'servers'}
-        </div>
-
-        <div className="ml-auto flex items-center gap-2">
+        </span>
+      )}
+      actions={(
+        <>
           {/* Always visible — the unconfigured case opens the panel's empty
               state, which teaches the stack.yaml `groups:` block (same
               discovery pattern as Access with zero linked clients). */}
@@ -863,9 +862,9 @@ function ToolsHeader({
               </select>
             </label>
           )}
-        </div>
-      </div>
-
+        </>
+      )}
+    >
       {optimizeUnusedCount !== null && (
         <p className="text-3xs text-text-muted leading-relaxed" role="status">
           <span className="text-status-pending font-medium">Optimize</span> suggests{' '}
@@ -935,7 +934,7 @@ function ToolsHeader({
           </button>
         )}
       </div>
-    </header>
+    </WorkspaceHeader>
   );
 }
 

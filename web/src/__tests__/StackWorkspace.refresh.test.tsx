@@ -37,6 +37,48 @@ beforeEach(() => {
   useUIStore.setState({ sidebarOpen: false });
 });
 
+describe('StackWorkspace header', () => {
+  it('renders a visible compact title above the canvas grid with server and tool counts', () => {
+    useStackStore.setState({
+      error: null,
+      connectionStatus: 'connected',
+      lastUpdated: new Date(),
+      isLoading: false,
+      mcpServers: [{ name: 'a' }, { name: 'b' }] as never,
+      tools: [{ name: 't1' }] as never,
+    });
+    renderStack();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Stack' });
+    expect(h1.className).not.toMatch(/sr-only|uppercase|tracking-/);
+    const header = h1.closest('header')!;
+    expect(header).toHaveClass('py-2');
+    expect(header).toHaveTextContent('2 MCP servers · 1 tool');
+    const grid = screen.getByTestId('canvas').closest('.grid') as HTMLElement;
+    expect(grid).toHaveClass('flex-1', 'min-h-0');
+    expect(header.nextElementSibling).toBe(grid);
+    expect(header.contains(grid)).toBe(false);
+  });
+
+  it('uses singular forms and keeps the title alone before the first load', () => {
+    useStackStore.setState({
+      error: null,
+      lastUpdated: new Date(),
+      isLoading: false,
+      mcpServers: [{ name: 'a' }] as never,
+      tools: [] as never,
+    });
+    const { unmount } = renderStack();
+    expect(screen.getByRole('heading', { level: 1, name: 'Stack' }).closest('header')).toHaveTextContent('1 MCP server · 0 tools');
+    unmount();
+
+    useStackStore.setState({ lastUpdated: null, isLoading: true, mcpServers: [], tools: [] });
+    renderStack();
+    expect(screen.getByRole('heading', { level: 1, name: 'Stack' })).toBeInTheDocument();
+    expect(screen.queryByTestId('workspace-header-summary')).toBeNull();
+  });
+});
+
 describe('StackWorkspace refresh states', () => {
   it('keeps the last-known graph under a banner when a refresh fails', () => {
     const lastUpdated = new Date(2026, 10, 23, 10, 15, 0);

@@ -21,6 +21,7 @@ import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { EmptyState, FailedState, FailureBanner } from '../ui/EmptyState';
 import { refreshPhase } from '../../lib/refreshPhase';
 import { PopoutButton } from '../ui/PopoutButton';
+import { WorkspaceHeader } from '../ui/WorkspaceHeader';
 import { PersistedFromMarker } from '../telemetry/PersistedFromMarker';
 import { MetricsControls } from '../metrics/MetricsControls';
 import { MetricsInspector } from '../metrics/MetricsInspector';
@@ -445,39 +446,37 @@ export function MetricsWorkspace() {
         minRightPx={300}
       >
         <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
-          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.metrics}</h1>
-          <header
-            className={cn(
-              'flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle flex items-center justify-between gap-3 px-6',
-              compact ? 'py-2' : 'py-3',
-            )}
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="font-sans text-text-muted text-3xs uppercase tracking-[0.4em]">metrics</div>
-              <div className="font-mono text-3xs text-text-muted truncate">
+          <WorkspaceHeader
+            title={WORKSPACE_LABELS.metrics}
+            headingId={headingId}
+            compact={compact}
+            summary={(
+              <span className="font-mono">
                 {kpis.total > 0 || windowTotals.total > 0
                   ? `${windowLabel} · ${windowTotals.total.toLocaleString()} tokens`
                   : 'no traffic yet'}
-              </div>
-            </div>
-            <MetricsControls
-              timeRange={timeRange}
-              onTimeRange={onTimeRange}
-              isPaused={isPaused}
-              onTogglePause={() => setIsPaused((p) => !p)}
-              onRefresh={() => {
-                reload();
-                setLiveMsg('Metrics refreshed');
-              }}
-              onClear={() => void clear()}
-              right={(
-                <PopoutButton
-                  onClick={() => (metricsDetached ? focusDetachedWindow('metrics') : openDetachedWindow('metrics'))}
-                  detached={metricsDetached}
-                />
-              )}
-            />
-          </header>
+              </span>
+            )}
+            actions={(
+              <MetricsControls
+                timeRange={timeRange}
+                onTimeRange={onTimeRange}
+                isPaused={isPaused}
+                onTogglePause={() => setIsPaused((p) => !p)}
+                onRefresh={() => {
+                  reload();
+                  setLiveMsg('Metrics refreshed');
+                }}
+                onClear={() => void clear()}
+                right={(
+                  <PopoutButton
+                    onClick={() => (metricsDetached ? focusDetachedWindow('metrics') : openDetachedWindow('metrics'))}
+                    detached={metricsDetached}
+                  />
+                )}
+              />
+            )}
+          />
 
           <div className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-6 py-4 flex flex-col">
             {/* Mutually exclusive states by refresh phase: failed, loading,
