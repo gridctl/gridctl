@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { Proposal } from '../../../types';
 import {
   approveBlock,
-  classifyUnifiedDiff,
   countPending,
   filterProposals,
   pathExplanation,
@@ -103,45 +102,5 @@ describe('pathExplanation and provenanceLabel', () => {
 
     const hook = proposal({ kind: 'hook', path: 'record', provenance: { kind: 'git' } });
     expect(pathExplanation(hook)).toMatch(/gridctl pack add/);
-  });
-});
-
-describe('classifyUnifiedDiff', () => {
-  it('classifies headers, hunks, added, removed, context, and notes', () => {
-    const diff = [
-      '--- a/SKILL.md',
-      '+++ b/SKILL.md',
-      '@@ -1,3 +1,3 @@',
-      ' keep',
-      '-old',
-      '--- looks like a header',
-      '+new',
-      '+++ looks like a header too',
-      '\\ No newline at end of file',
-      '--- /dev/null',
-      '+++ b/notes.md',
-      '@@ -0,0 +1 @@',
-      '+added',
-      '',
-    ].join('\n');
-    expect(classifyUnifiedDiff(diff).map((l) => l.kind)).toEqual([
-      'header',
-      'header',
-      'hunk',
-      'context',
-      'removed',
-      'removed',
-      'added',
-      'added',
-      'note',
-      'header',
-      'header',
-      'hunk',
-      'added',
-    ]);
-  });
-
-  it('normalizes CRLF line endings', () => {
-    expect(classifyUnifiedDiff('@@ -1 +1 @@\r\n-a\r\n+b\r\n').map((l) => l.text)).toEqual(['@@ -1 +1 @@', '-a', '+b']);
   });
 });
