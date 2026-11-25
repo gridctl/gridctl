@@ -99,6 +99,39 @@ export function diffLines(oldText: string, newText: string): DiffToken[] {
   return out;
 }
 
+/**
+ * Caps a line diff at MAX_DIFF_LINES for rendering. A plain head slice of the
+ * oversize fallback (all removals, then all additions) would hide the entire
+ * added side, so in that shape the budget is split across the boundary;
+ * interleaved LCS output keeps the simple slice.
+ */
+export function truncateBalanced(lines: DiffToken[]): { visible: DiffToken[]; hidden: number } {
+  if (lines.length <= MAX_DIFF_LINES) return { visible: lines, hidden: 0 };
+  const firstAdded = lines.findIndex((l) => l.kind === 'added');
+  const visible =
+    firstAdded > MAX_DIFF_LINES / 2
+      ? [
+          ...lines.slice(0, MAX_DIFF_LINES / 2),
+          ...lines.slice(firstAdded, firstAdded + MAX_DIFF_LINES / 2),
+        ]
+      : lines.slice(0, MAX_DIFF_LINES);
+  return { visible, hidden: lines.length - visible.length };
+}
+
+/**
+ * True exactly when diffLines(oldText, newText) yields more than
+ * MAX_DIFF_LINES tokens, skipping the LCS when the line counts decide it: the
+ * output is at least max(a, b) and at most a + b lines, and the unaligned
+ * fallback is exactly a + b.
+ */
+export function lineDiffExceedsCap(oldText: string, newText: string): boolean {
+  const a = oldText.split('\n').length;
+  const b = newText.split('\n').length;
+  if (a + b <= MAX_DIFF_LINES) return false;
+  if (a * b > MAX_DP_CELLS) return true;
+  return diffLines(oldText, newText).length > MAX_DIFF_LINES;
+}
+
 // Whitespace runs are kept as tokens so concatenating a side reproduces the
 // original string exactly; a review surface must never silently reflow the
 // text it asks a human to approve.

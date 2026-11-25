@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Equal, Minus, Plus, X } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { escapeNonPrintable } from '../../lib/nonPrintable';
-import { diffLines, prettySchema, MAX_DIFF_LINES, type DiffToken } from '../../lib/diff';
+import { diffLines, prettySchema, truncateBalanced } from '../../lib/diff';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 // SchemaDiffModal is the full-viewport reading room for a schema delta: the
@@ -22,22 +22,6 @@ interface SchemaDiffModalProps {
   oldSchema?: string;
   newSchema: string;
   onClose: () => void;
-}
-
-// Mirrors SchemaDiffBlock's balanced truncation: a head slice of the
-// oversize fallback (all removals, then all additions) must not hide the
-// entire added side.
-function truncateBalanced(lines: DiffToken[]): { visible: DiffToken[]; hidden: number } {
-  if (lines.length <= MAX_DIFF_LINES) return { visible: lines, hidden: 0 };
-  const firstAdded = lines.findIndex((l) => l.kind === 'added');
-  const visible =
-    firstAdded > MAX_DIFF_LINES / 2
-      ? [
-          ...lines.slice(0, MAX_DIFF_LINES / 2),
-          ...lines.slice(firstAdded, firstAdded + MAX_DIFF_LINES / 2),
-        ]
-      : lines.slice(0, MAX_DIFF_LINES);
-  return { visible, hidden: lines.length - visible.length };
 }
 
 export function SchemaDiffModal({ title, oldSchema, newSchema, onClose }: SchemaDiffModalProps) {

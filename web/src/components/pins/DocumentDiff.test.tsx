@@ -39,7 +39,17 @@ describe('DocumentDiff', () => {
     const big = Array.from({ length: MAX_DIFF_LINES + 5 }, (_, i) => `n${i}`).join('\n');
     render(<DocumentDiff label="doc" oldDocument="" newDocument={big} onDegraded={onDegraded} />);
     expect(onDegraded).toHaveBeenLastCalledWith(true);
-    expect(screen.getByText(`Diff truncated at ${MAX_DIFF_LINES} lines.`)).toBeInTheDocument();
+    expect(screen.getByText(/^\d+ more lines not shown\.$/)).toBeInTheDocument();
+  });
+
+  it('keeps both sides of an oversize fallback and names the full diff command', () => {
+    const side = (tag: string) => Array.from({ length: 1500 }, (_, i) => `${tag}${i}`).join('\n');
+    render(
+      <DocumentDiff label="doc" oldDocument={side('o')} newDocument={side('n')} fullDiffCommand="gridctl skill pins diff x" />,
+    );
+    expect(lineStartingWith('- o0')).toBeInTheDocument();
+    expect(lineStartingWith('+ n0')).toBeInTheDocument();
+    expect(screen.getByText(/^1000 more lines not shown/)).toHaveTextContent('gridctl skill pins diff x');
   });
 
   it('labels an unaligned diff under the cap and reports degraded true', () => {

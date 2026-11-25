@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Clock, FileText, Lock, LockOpen } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import {
@@ -27,7 +27,10 @@ import { ShortcutKeys } from '../ui/ShortcutKeys';
 import { PINS_APPROVE_KEYS } from '../../lib/shortcuts';
 import { showToast } from '../ui/Toast';
 import { ApprovalFields, PinApprovalHistory } from './PinApprovalHistory';
-import { credentialRefusalText, splitEvidence } from './pinApproval';
+import { approvalRisk, credentialRefusalText, splitEvidence } from './pinApproval';
+import { ApprovalRiskNotes } from './ApprovalRiskNotes';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { diffLines, MAX_DIFF_LINES } from '../../lib/diff';
 
 // ---------------------------------------------------------------------------
 // Context detail - fragment pin drift review (line diff) + pinned document
@@ -189,6 +192,7 @@ function ContextDriftSection({
   const [attempt, setAttempt] = useState(0);
   const [degraded, setDegraded] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [evidence, setEvidence] = useState('');
 
@@ -225,6 +229,16 @@ function ContextDriftSection({
   const documentChanged =
     diff !== null && (diff.old_document ?? '') !== (diff.new_document ?? '');
   const currentDocument = diff?.new_document ?? '';
+
+  const tokens = useMemo(
+    () => (documentChanged && diff ? diffLines(diff.old_document ?? '', currentDocument) : []),
+    [documentChanged, diff, currentDocument],
+  );
+  const risk = approvalRisk({
+    findings: diff?.findings,
+    truncated: tokens.length > MAX_DIFF_LINES,
+    changedLines: tokens.filter((t) => t.kind !== 'same').length,
+  });
 
   const doApprove = async () => {
     // The in-flight guard lives here rather than in `disabled`, so a repeated
@@ -266,7 +280,17 @@ function ContextDriftSection({
     }
   };
 
+  const handleApproveClick = () => {
+    if (!diff || isApproving) return;
+    if (risk.needsConfirm) {
+      setConfirmOpen(true);
+    } else {
+      void doApprove();
+    }
+  };
+
   return (
+    <>
     <section
       id={anchors ? DRIFT_SECTION_ID : undefined}
       className="rounded-lg border border-status-pending/30 bg-status-pending/5 p-4 space-y-3"
@@ -283,7 +307,7 @@ function ContextDriftSection({
           />
           <button
             id={anchors ? APPROVE_BUTTON_ID : undefined}
-            onClick={() => void doApprove()}
+            onClick={handleApproveClick}
             disabled={diff === null || (needsReason && reason.trim() === '')}
             aria-busy={isApproving}
             aria-keyshortcuts={anchors ? APPROVE_ARIA_KEYSHORTCUTS : undefined}
@@ -338,6 +362,8 @@ function ContextDriftSection({
               label={name}
               oldDocument={diff.old_document ?? ''}
               newDocument={currentDocument}
+              tokens={tokens}
+              fullDiffCommand={`gridctl ctx pins diff ${name}`}
               onDegraded={setDegraded}
             />
           ) : (
@@ -367,5 +393,32 @@ function ContextDriftSection({
         </>
       )}
     </section>
+
+    {/* display:contents so the parent's space-y margin cannot offset the
+        fixed-position backdrop. */}
+    <div className="contents">
+      <ConfirmDialog
+        isOpen={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={() => {
+          setConfirmOpen(false);
+          void doApprove();
+        }}
+        title={`Approve ${shown}`}
+        confirmLabel="Approve"
+        autoFocus="cancel"
+        message={
+          <div className="space-y-2">
+            <p>
+              This re-pins the current content of{' '}
+              <span className="font-mono text-text-secondary">{shown}</span>, which is injected
+              into every linked client.
+            </p>
+            <ApprovalRiskNotes risk={risk} fullDiffCommand={`gridctl ctx pins diff ${name}`} />
+          </div>
+        }
+      />
+    </div>
+    </>
   );
 }

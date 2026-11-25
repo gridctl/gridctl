@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router';
 import { Loader2, Pin } from 'lucide-react';
 import { requestGatewayPoll } from '../../hooks/usePolling';
@@ -35,6 +35,7 @@ import { DRIFT_SECTION_ID } from '../pins/PinsDriftSection';
 import { usePinsCommands } from '../pins/usePinsCommands';
 import { showToast } from '../ui/Toast';
 import { describeError, isCancellation } from '../../lib/describeError';
+import { escapeNonPrintable } from '../../lib/nonPrintable';
 
 // Valid ?view= targets: drift scrolls to the drift panel, findings and tools
 // both land on the pinned-records table (findings live inside it).
@@ -186,8 +187,11 @@ export function PinsWorkspace() {
   const activeVisible =
     kind === 'server' ? visibleEntries : kind === 'skill' ? visibleSkillEntries : visibleContextEntries;
 
+  // A named selection that is not pinned resolves to nothing rather than the
+  // first row, so a stale link never mounts another item's Approve under it.
   const activeName = useMemo(() => {
     if (activeVisible.some(([name]) => name === selectedParam)) return selectedParam;
+    if (selectedParam) return '';
     return activeVisible[0]?.[0] ?? '';
   }, [activeVisible, selectedParam]);
 
@@ -258,6 +262,37 @@ export function PinsWorkspace() {
     }
   }, [selectedParam, activeName, updateParams, selectionParamName]);
 
+  // null means the first poll for the active kind has not landed yet; both
+  // endpoints return an empty object (not an error) when pinning is quiet.
+  const activeMap = kind === 'server' ? pins : kind === 'skill' ? skillPins : contextPins;
+
+  // The name a reset in this workspace is removing. The reset handlers update
+  // the store before deleting the param, possibly in separate renders, so the
+  // stale-selection effect skips the warning for this name. Cleared when the
+  // selection moves off it or the reset fails, so it cannot silence a later
+  // real stale link.
+  const resettingRef = useRef<string | null>(null);
+
+  // A selection naming an item that is not pinned (a stale deep link, or an
+  // item removed elsewhere) is announced and dropped from the URL; the effect
+  // above then writes the first row on the next render.
+  useEffect(() => {
+    if (resettingRef.current !== null && resettingRef.current !== selectedParam) {
+      resettingRef.current = null;
+    }
+    if (activeMap === null || !selectedParam) return;
+    if (Object.prototype.hasOwnProperty.call(activeMap, selectedParam)) return;
+    if (resettingRef.current === selectedParam) {
+      resettingRef.current = null;
+    } else {
+      showToast('warning', `${escapeNonPrintable(selectedParam)} is no longer pinned`);
+    }
+    updateParams((p) => {
+      p.delete(selectionParamName);
+      p.delete('view');
+    });
+  }, [activeMap, selectedParam, selectionParamName, updateParams]);
+
   // Findings-only table filter: ?view=findings is the landing intent, the
   // persisted pref carries the explicit choice between visits.
   const findingsOnly = view === 'findings' || pinsPrefs.findingsOnly;
@@ -273,6 +308,7 @@ export function PinsWorkspace() {
 
   const handleReset = useCallback(
     async (name: string) => {
+      resettingRef.current = name;
       try {
         await resetServerPins(name);
         const updated = await fetchServerPins();
@@ -282,6 +318,7 @@ export function PinsWorkspace() {
           if (p.get('server') === name) p.delete('server');
         });
       } catch (err) {
+        resettingRef.current = null;
         if (!isCancellation(err)) {
           const described = describeError(err, `Reset pins for ${name}`);
           showToast('error', described.text, { detail: described.fullDetail });
@@ -293,21 +330,28 @@ export function PinsWorkspace() {
 
   const handleResetContext = useCallback(
     async (name: string) => {
-      await resetContextPin(name);
-      const updated = await fetchContextPins();
-      usePinsStore.getState().setContextPins(updated);
-      updateParams((p) => {
-        if (p.get('fragment') === name) {
-          p.delete('fragment');
-          p.delete('view');
-        }
-      });
+      resettingRef.current = name;
+      try {
+        await resetContextPin(name);
+        const updated = await fetchContextPins();
+        usePinsStore.getState().setContextPins(updated);
+        updateParams((p) => {
+          if (p.get('fragment') === name) {
+            p.delete('fragment');
+            p.delete('view');
+          }
+        });
+      } catch (err) {
+        resettingRef.current = null;
+        throw err;
+      }
     },
     [updateParams],
   );
 
   const handleResetSkill = useCallback(
     async (name: string) => {
+      resettingRef.current = name;
       try {
         await resetSkillPin(name);
         const updated = await fetchSkillPins();
@@ -320,6 +364,7 @@ export function PinsWorkspace() {
           }
         });
       } catch (err) {
+        resettingRef.current = null;
         if (!isCancellation(err)) {
           const described = describeError(err, `Reset pins for ${name}`);
           showToast('error', described.text, { detail: described.fullDetail });
@@ -380,9 +425,6 @@ export function PinsWorkspace() {
     toggleFindingsOnly,
   });
 
-  // null means the first poll for the active kind has not landed yet; both
-  // endpoints return an empty object (not an error) when pinning is quiet.
-  const activeMap = kind === 'server' ? pins : kind === 'skill' ? skillPins : contextPins;
   const activeError = kind === 'server' ? pinsError : kind === 'skill' ? skillPinsError : contextPinsError;
   const activeCount = kind === 'server' ? entries.length : kind === 'skill' ? skillEntries.length : contextEntries.length;
 
