@@ -257,7 +257,9 @@ workspace-specific props.
   wire this up.
 - Toast a caught failure with `describeError` from `web/src/lib/describeError.ts`.
   Pass `described.text` to `showToast`, and `described.fullDetail` as
-  `detail` when it is set. Skip the toast when `isCancellation` is true.
+  `detail` when it is set. A `detail` that differs from the message is the
+  message's title and sits behind a Details toggle on the toast. Skip the
+  toast when `isCancellation` is true.
 
 **Don't**
 
