@@ -99,6 +99,8 @@ describe('AgentsWorkspace', () => {
     });
     expect(screen.queryAllByRole('main')).toHaveLength(0);
     expect(screen.getByRole('heading', { level: 1, name: 'Library' })).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole('heading', { level: 1, name: 'Library' }).className).not.toMatch(/sr-only|uppercase|tracking-/);
     // KPI strip stays visible at zero — it is the signal that agents
     // support exists on a fresh install.
     const strip = screen.getByRole('group', { name: 'Agent projection summary' });

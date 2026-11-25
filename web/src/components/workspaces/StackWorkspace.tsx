@@ -7,6 +7,7 @@ import { AccessLens } from '../stack/AccessLens';
 import { SpecPane } from '../spec/SpecPane';
 import { ResizeHandle } from '../ui/ResizeHandle';
 import { FailedState, FailureBanner } from '../ui/EmptyState';
+import { WorkspaceHeader } from '../ui/WorkspaceHeader';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { usePollingRefresh } from '../../hooks/usePolling';
@@ -31,10 +32,10 @@ export function clampSidebarWidth(next: number, containerWidth: number): number 
   return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, next));
 }
 
-// Stack workspace body: canvas, loading/error overlays, and the right-rail
-// inspector. Rendered inside <AppShell>'s <main> outlet. CSS grid: a canvas
-// column plus a collapsible inspector column (0px when closed) so switching
-// workspaces doesn't shift the canvas.
+// Stack workspace body: a slim header, then the canvas, loading/error
+// overlays, and the right-rail inspector. Rendered inside <AppShell>'s <main>
+// outlet. CSS grid: a canvas column plus a collapsible inspector column (0px
+// when closed) so switching workspaces doesn't shift the canvas.
 export function StackWorkspace() {
   const headingId = useId();
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
@@ -60,6 +61,7 @@ export function StackWorkspace() {
   const connectionStatus = useStackStore((s) => s.connectionStatus);
   const lastUpdated = useStackStore((s) => s.lastUpdated);
   const mcpServers = useStackStore((s) => s.mcpServers);
+  const tools = useStackStore((s) => s.tools);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
 
   const accessServers = useMemo(
@@ -90,11 +92,22 @@ export function StackWorkspace() {
 
   return (
     <ReactFlowProvider>
-      <div className="absolute inset-0 overflow-hidden">
-        <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.stack}</h1>
+      <div className="absolute inset-0 flex flex-col overflow-hidden">
+        <WorkspaceHeader
+          title={WORKSPACE_LABELS.stack}
+          headingId={headingId}
+          compact
+          summary={hasLoaded ? (
+            <span className="font-mono">
+              {mcpServers.length} {mcpServers.length === 1 ? 'MCP server' : 'MCP servers'}
+              {' · '}
+              {tools.length} {tools.length === 1 ? 'tool' : 'tools'}
+            </span>
+          ) : undefined}
+        />
         <div
           ref={containerRef}
-          className="grid h-full"
+          className="grid flex-1 min-h-0"
           style={{
             // min() is a backstop after a window resize without a drag. A CSS-only
             // clamp would pin the track at 60% and ignore the drag below 280px.

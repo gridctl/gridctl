@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
 import { ProposalsWorkspace } from '../components/registry/proposals/ProposalsWorkspace';
 import { LibraryKindSwitch } from '../components/registry/LibraryKindSwitch';
+import { SEGMENT_GROUP_CLASS, segmentClass } from '../components/ui/segment';
 import { showToast } from '../components/ui/Toast';
 import type { Proposal, ProposalList } from '../types';
 
@@ -86,6 +87,13 @@ beforeEach(() => {
 });
 
 describe('ProposalsWorkspace', () => {
+  it('renders one visible Library title', async () => {
+    renderWorkspace();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole('heading', { level: 1, name: 'Library' }).className).not.toMatch(/sr-only|uppercase|tracking-/);
+    await waitFor(() => expect(screen.getByTestId('workspace-header-summary')).toHaveTextContent(/\d+ proposals?/));
+  });
+
   it('lists pending proposals by default with a badge, and filters by status', async () => {
     renderWorkspace();
     const rows = await screen.findByRole('list', { name: 'Proposals' });
@@ -300,6 +308,26 @@ describe('Proposals load failures', () => {
 });
 
 describe('LibraryKindSwitch', () => {
+  it('renders five aria-pressed segments with the shared segment chrome', async () => {
+    render(<LibraryKindSwitch kind="agent" onChange={() => {}} />);
+    const group = screen.getByRole('group', { name: 'Library catalog kind' });
+    expect(group.className).toContain(SEGMENT_GROUP_CLASS);
+    const buttons = within(group).getAllByRole('button');
+    expect(buttons).toHaveLength(5);
+    for (const button of buttons) {
+      expect(button).toHaveAttribute('type', 'button');
+      expect(button).toHaveAttribute('aria-pressed');
+      expect(button.className).not.toMatch(/uppercase|tracking-\[0\.25em\]/);
+    }
+    const agents = within(group).getByRole('button', { name: 'Agents' });
+    expect(agents).toHaveAttribute('aria-pressed', 'true');
+    expect(agents.className).toContain(segmentClass(true));
+    const skills = within(group).getByRole('button', { name: 'Skills' });
+    expect(skills).toHaveAttribute('aria-pressed', 'false');
+    expect(skills.className).toContain(segmentClass(false));
+    expect(await screen.findByLabelText('2 pending')).toBeInTheDocument();
+  });
+
   it('loads the pending count when no count is passed', async () => {
     render(<LibraryKindSwitch kind="skill" onChange={() => {}} />);
     await waitFor(() => expect(fetchProposals).toHaveBeenCalledWith({ status: 'pending' }));

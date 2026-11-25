@@ -118,7 +118,7 @@ describe('VaultWorkspace — empty state', () => {
 
   it('renders the workspace header label', async () => {
     renderWorkspace();
-    expect(await screen.findByText('variables')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Variables' })).toBeInTheDocument();
   });
 
   it('shows list keyboard hints for the bindings the list actually wires', async () => {
@@ -742,7 +742,7 @@ describe('VaultWorkspace — Lock action', () => {
   it('opens the encrypt form on a plaintext store and posts /api/var/lock', async () => {
     seed(false);
     renderWorkspace();
-    const header = (await screen.findByText('variables')).closest('header')!;
+    const header = (await screen.findByRole('heading', { level: 1, name: 'Variables' })).closest('header')!;
     const encryptBtn = within(header).getByRole('button', { name: /^encrypt$/i });
     fireEvent.click(encryptBtn);
     fireEvent.change(await screen.findByPlaceholderText('New passphrase'), {
@@ -802,7 +802,7 @@ describe('VaultWorkspace — locked state', () => {
   it('renders the unlock prompt and no header actions', async () => {
     renderWorkspace();
     // Wait for the workspace shell to settle so the lock prompt has rendered.
-    await screen.findByText('variables');
+    await screen.findByRole('heading', { level: 1, name: 'Variables' });
     await screen.findByText('Variables locked');
     const passphraseInput = document.querySelector('input[type="password"]');
     expect(passphraseInput).not.toBeNull();
@@ -896,14 +896,14 @@ describe('VaultWorkspace — drag-and-drop import', () => {
 
   it('shows the dropzone overlay while a file is dragged over the page', async () => {
     renderWithToasts();
-    await screen.findByText('variables');
+    await screen.findByRole('heading', { level: 1, name: 'Variables' });
     dispatchDrag('dragenter');
     expect(await screen.findByText(OVERLAY_COPY)).toBeInTheDocument();
   });
 
   it('opens the import modal pre-populated when a .env file is dropped', async () => {
     renderWithToasts();
-    await screen.findByText('variables');
+    await screen.findByRole('heading', { level: 1, name: 'Variables' });
     dispatchDrag('drop', [fakeFile('app.env', 'FOO=bar')]);
     expect(
       await screen.findByRole('dialog', { name: /import variables/i }),
@@ -913,7 +913,7 @@ describe('VaultWorkspace — drag-and-drop import', () => {
 
   it('parses a dropped .json file into the preview', async () => {
     renderWithToasts();
-    await screen.findByText('variables');
+    await screen.findByRole('heading', { level: 1, name: 'Variables' });
     dispatchDrag('drop', [
       fakeFile('vars.json', '{"variables":[{"key":"API_KEY","value":"sk"}]}'),
     ]);
@@ -925,7 +925,7 @@ describe('VaultWorkspace — drag-and-drop import', () => {
 
   it('rejects an unsupported file type with a toast and no modal', async () => {
     renderWithToasts();
-    await screen.findByText('variables');
+    await screen.findByRole('heading', { level: 1, name: 'Variables' });
     dispatchDrag('drop', [fakeFile('photo.png', 'binary', 'image/png')]);
     expect(
       await screen.findByText(/only \.env and \.json files/i),
@@ -937,7 +937,7 @@ describe('VaultWorkspace — drag-and-drop import', () => {
 
   it('warns and skips an empty file', async () => {
     renderWithToasts();
-    await screen.findByText('variables');
+    await screen.findByRole('heading', { level: 1, name: 'Variables' });
     dispatchDrag('drop', [fakeFile('empty.env', '   ')]);
     expect(await screen.findByText(/file looks empty/i)).toBeInTheDocument();
     expect(
@@ -947,7 +947,7 @@ describe('VaultWorkspace — drag-and-drop import', () => {
 
   it('imports the first of multiple dropped files and warns', async () => {
     renderWithToasts();
-    await screen.findByText('variables');
+    await screen.findByRole('heading', { level: 1, name: 'Variables' });
     dispatchDrag('drop', [
       fakeFile('a.env', 'FOO=bar'),
       fakeFile('b.env', 'BAZ=qux'),

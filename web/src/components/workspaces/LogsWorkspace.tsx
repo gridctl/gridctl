@@ -9,6 +9,7 @@ import { useStackStore } from '../../stores/useStackStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
 import { PopoutButton } from '../ui/PopoutButton';
+import { WorkspaceHeader } from '../ui/WorkspaceHeader';
 import { PersistedFromMarker } from '../telemetry/PersistedFromMarker';
 import { GATEWAY_LOG_SOURCE, LogsView, logSourceOf, useLogsView } from '../log';
 import { useLogsCommands } from '../log/useLogsCommands';
@@ -72,18 +73,12 @@ export function LogsWorkspace() {
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
       <WorkspaceShell workspace="logs" defaultLeftPct={16} left={leftRail} minLeftPx={180}>
         <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
-          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.logs}</h1>
-          <header
-            className={cn(
-              'flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle flex items-center gap-3 px-6',
-              compact ? 'py-2' : 'py-3',
-            )}
-          >
-            <div className="font-sans text-text-muted text-3xs uppercase tracking-[0.4em]">logs</div>
-            <div className="font-mono text-3xs text-text-muted truncate">
-              {source ?? 'all sources'}
-            </div>
-          </header>
+          <WorkspaceHeader
+            title={WORKSPACE_LABELS.logs}
+            headingId={headingId}
+            compact={compact}
+            summary={<span className="font-mono">{source ?? 'all sources'}</span>}
+          />
 
           <LogsView
             view={view}

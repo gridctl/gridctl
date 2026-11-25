@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { IconButton } from '../ui/IconButton';
+import { WorkspaceHeader } from '../ui/WorkspaceHeader';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { showToast } from '../ui/Toast';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
@@ -700,8 +701,8 @@ export function VaultWorkspace() {
         minRightPx={300}
       >
         <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
-          <h1 id={headingId} className="sr-only">{WORKSPACE_LABELS.vault}</h1>
           <VaultHeader
+            headingId={headingId}
             compact={compact}
             totalVariables={allVariables.length}
             totalSets={allSets.length}
@@ -1041,6 +1042,7 @@ interface VaultHeaderProps {
   locked: boolean;
   encrypted: boolean;
   unlockSource: string | null;
+  headingId: string;
   onRefresh: () => void;
   onOpenEncrypt: () => void;
   onRelock: () => void;
@@ -1058,6 +1060,7 @@ const UNLOCK_SOURCE_LABELS: Record<string, string> = {
 };
 
 function VaultHeader({
+  headingId,
   compact,
   totalVariables,
   totalSets,
@@ -1072,79 +1075,73 @@ function VaultHeader({
   const unlockLabel =
     encrypted && !locked && unlockSource ? UNLOCK_SOURCE_LABELS[unlockSource] : undefined;
   return (
-    <header
-      className={cn(
-        'flex-shrink-0 bg-surface/30 backdrop-blur-sm border-b border-border-subtle flex items-center justify-between px-6',
-        compact ? 'py-2' : 'py-3',
+    <WorkspaceHeader
+      title={WORKSPACE_LABELS.vault}
+      headingId={headingId}
+      compact={compact}
+      summary={(
+        <span className="flex items-center gap-3 min-w-0">
+          <span className="font-mono flex-shrink-0 whitespace-nowrap">
+            {totalVariables} {totalVariables === 1 ? 'variable' : 'variables'}
+          </span>
+          {totalSets > 0 && (
+            <span className="font-mono text-secondary flex-shrink-0 whitespace-nowrap">
+              · {totalSets} {totalSets === 1 ? 'set' : 'sets'}
+            </span>
+          )}
+          {encrypted && !locked && (
+            <span className="text-3xs font-mono px-1.5 py-0.5 rounded bg-status-running/10 text-status-running flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
+              <LockOpen size={9} />
+              encrypted
+            </span>
+          )}
+          {unlockLabel && (
+            <span className="font-mono truncate">{unlockLabel}</span>
+          )}
+          {locked && (
+            <span className="text-3xs font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
+              <Lock size={9} />
+              locked
+            </span>
+          )}
+        </span>
       )}
-    >
-      <div className="flex items-center gap-3">
-        <div className="font-sans text-text-muted text-3xs uppercase tracking-[0.4em]">
-          variables
-        </div>
-        <div className="font-mono text-3xs text-text-muted">
-          {totalVariables} {totalVariables === 1 ? 'variable' : 'variables'}
-        </div>
-        {totalSets > 0 && (
-          <div className="font-mono text-3xs text-secondary">
-            · {totalSets} {totalSets === 1 ? 'set' : 'sets'}
-          </div>
-        )}
-        {encrypted && !locked && (
-          <span className="text-3xs font-mono px-1.5 py-0.5 rounded bg-status-running/10 text-status-running flex items-center gap-1">
-            <LockOpen size={9} />
-            encrypted
-          </span>
-        )}
-        {unlockLabel && (
-          <div className="font-mono text-3xs text-text-muted">{unlockLabel}</div>
-        )}
-        {locked && (
-          <span className="text-3xs font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary flex items-center gap-1">
-            <Lock size={9} />
-            locked
-          </span>
-        )}
-      </div>
-
-      <div className="flex items-center gap-2">
-        {!locked && (
-          <>
-            <button
-              onClick={onOpenImport}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
-            >
-              <FileUp size={12} /> Import .env
-            </button>
-            {encrypted ? (
-              <IconButton
-                icon={Lock}
-                onClick={onRelock}
-                tooltip="Lock variables"
-                size="sm"
-                variant="ghost"
-              />
-            ) : (
-              totalVariables > 0 && (
-                <button
-                  onClick={onOpenEncrypt}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-2xs font-medium text-text-secondary hover:text-text-primary border border-border/40 hover:border-border rounded-lg transition-colors"
-                >
-                  <Lock size={11} /> Encrypt
-                </button>
-              )
-            )}
+      actions={locked ? undefined : (
+        <>
+          <button
+            onClick={onOpenImport}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/15 border border-primary/20 rounded-lg transition-colors"
+          >
+            <FileUp size={12} /> Import .env
+          </button>
+          {encrypted ? (
             <IconButton
-              icon={RefreshCw}
-              onClick={onRefresh}
-              tooltip="Refresh"
+              icon={Lock}
+              onClick={onRelock}
+              tooltip="Lock variables"
               size="sm"
               variant="ghost"
             />
-          </>
-        )}
-      </div>
-    </header>
+          ) : (
+            totalVariables > 0 && (
+              <button
+                onClick={onOpenEncrypt}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-2xs font-medium text-text-secondary hover:text-text-primary border border-border/40 hover:border-border rounded-lg transition-colors"
+              >
+                <Lock size={11} /> Encrypt
+              </button>
+            )
+          )}
+          <IconButton
+            icon={RefreshCw}
+            onClick={onRefresh}
+            tooltip="Refresh"
+            size="sm"
+            variant="ghost"
+          />
+        </>
+      )}
+    />
   );
 }
 

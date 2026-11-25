@@ -13,7 +13,7 @@ The encrypted store itself is the variable store. Lock state reads "Variables lo
 
 Secret-flagged variable values are secrets or secret values. That wording is allowed only when naming values with the secret flag, never as a navigation or section title. A stored variable chosen for auth is "a stored variable", not "a vault secret".
 
-The skills, agents, and packs workspace is Library. "Registry" is reserved for the external MCP Registry in `wizard/CatalogPicker.tsx` (including its lowercase `registry` tier badge) and for the on-disk `~/.gridctl/registry` directory named in `system/ResetDialog.tsx`. The subtitle for the Library header is "Skills & agents".
+The skills, agents, and packs workspace is Library. "Registry" is reserved for the external MCP Registry in `wizard/CatalogPicker.tsx` (including its lowercase `registry` tier badge) and for the on-disk `~/.gridctl/registry` directory named in `system/ResetDialog.tsx`. Every Library segment's header is titled "Library", with the kind switch beside the title and a summary that counts the segment's loaded items ("12 skills", "3 packs"); the summary is omitted while the list is loading.
 
 A server in the stack is an MCP server. Title-case labels use "MCP Server". Not "Server", and not bare "MCP".
 
@@ -74,8 +74,9 @@ returns focus to the node, but only when focus is inside the inspector or
 on `<body>`.
 
 AppShell owns the only in-shell `<main>`. A workspace root that used to
-render `<main>` is a `<section aria-labelledby>` with one `<h1>`. Give every
-`<aside>` a distinct `aria-label`.
+render `<main>` is a `<section aria-labelledby>` with one `<h1>`, rendered
+visibly by `WorkspaceHeader` in every state (loading and failed included).
+Give every `<aside>` a distinct `aria-label`.
 
 The header's action cluster is, left to right: the Persistence pill (while
 connected), Appearance, Preferences, the palette, Help, Create new, and More
@@ -194,7 +195,8 @@ workspaces. Reach for them before duplicating UI:
 | `CanvasBase` | `components/canvas/` | Stack `graph/Canvas.tsx` |
 | `InspectorHeader` | `components/inspector/` | Inspectors that need the standard icon + title + close/popout strip. `headingRef` makes the title a focus target (`tabIndex={-1}`); only the Stack inspector passes it |
 | `InspectorSection` | `components/inspector/` | Stack `Sidebar.tsx`, `GatewaySidebar.tsx`, `DetachedSidebarPage.tsx` (collapsible section pattern; contents mount on first open) |
-| `Tabs` / `Tab` / `TabPanel` | `components/ui/` | Keyboard-operable tab lists. Arrow keys move and select. `InspectorTabList` / `InspectorTabButton` are wrappers that keep inspector chrome |
+| `WorkspaceHeader` | `components/ui/` | Every workspace and Library segment. The one visible `<h1>` (`title`, `headingId`), then an optional `switcher`, a one-line truncating `summary` at `text-xs`, and right-aligned `actions`; `children` add rows below. `compact` selects `py-2`. Empty slots render no wrapper |
+| `Tabs` / `Tab` / `TabPanel` | `components/ui/` | Keyboard-operable tab lists. Arrow keys move and select. `InspectorTabList` / `InspectorTabButton` are wrappers that keep inspector chrome. `variant="segmented"` renders an inline segment control (the Traces and Runs switch); `SEGMENT_GROUP_CLASS` and `segmentClass` (`ui/segment.ts`) give a non-tab group, such as `LibraryKindSwitch`, the same chrome |
 | `EmptyState` | `components/ui/` | Anywhere a "no items / no selection" affordance is needed |
 | `FailedState` | `components/ui/` | Failed fetch with nothing loaded. Title is `<feature> unavailable`, with Retry when `onRetry` is set. Not a spinner or an empty collection |
 | `FailureBanner` | `components/ui/` | Failed refresh when data is already on screen: one alert row, with Retry when `onRetry` is set. `lastUpdated` adds a static "Last updated HH:MM:SS"; `className` overrides the default margins |
@@ -299,6 +301,9 @@ workspace-specific props.
   "Updated" age does.
 - Don't put behavior-changing logic in `CanvasBase`. Background layers,
   control bars, overlays, and node types all belong in the workspace canvas.
+- Don't hand-roll a workspace header or render an `sr-only` page title.
+  Use `WorkspaceHeader`, which owns the visible `<h1>`, and pass view
+  switchers through `switcher` rather than overriding `Tab` classes.
 - Don't render `<main>` inside a workspace, or `role="tab"` on a route link.
   AppShell owns the in-shell landmark. Give every `<aside>` a distinct
   `aria-label`.
