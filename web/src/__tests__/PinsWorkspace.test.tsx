@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter, useLocation } from 'react-router';
@@ -1075,6 +1075,42 @@ describe('stale Pins deep links', () => {
     expect(screen.queryByRole('button', { name: /approve 2 changes/i })).not.toBeInTheDocument();
   });
 
+  it('never commits another server detail while the URL names the stale server', async () => {
+    // Layout effects run after the DOM commit and before the passive effect
+    // that rewrites the URL, so each record is one committed frame.
+    const frames: Array<{ search: string; zapierDetail: boolean }> = [];
+    function FrameProbe() {
+      const location = useLocation();
+      // Subscribing to the store re-renders the probe in the same commit as
+      // the workspace, so the frame where the map lands is recorded too.
+      usePinsStore((s) => s.pins);
+      useLayoutEffect(() => {
+        frames.push({
+          search: location.search,
+          zapierDetail: screen.queryByRole('button', { name: /reset pins for zapier/i }) !== null,
+        });
+      });
+      return null;
+    }
+    usePinsStore.setState({ pins: null });
+    render(
+      <MemoryRouter initialEntries={['/pins?server=ghost']}>
+        <CommandRegistryProvider>
+          <PinsWorkspace />
+          <FrameProbe />
+        </CommandRegistryProvider>
+      </MemoryRouter>,
+    );
+
+    act(() => {
+      usePinsStore.setState({ pins: { zapier: serverPins('drift') } });
+    });
+    await waitFor(() => expect(frames.some((f) => f.search.includes('server=zapier'))).toBe(true));
+    await waitFor(() => expect(frames.some((f) => f.zapierDetail)).toBe(true));
+    expect(frames.some((f) => f.search.includes('ghost'))).toBe(true);
+    expect(frames.filter((f) => f.search.includes('ghost') && f.zapierDetail)).toEqual([]);
+  });
+
   it('does not toast before the pins map loads', () => {
     usePinsStore.setState({ pins: null });
     renderWithLocation('/pins?server=ghost');
@@ -1142,5 +1178,63 @@ describe('stale Pins deep links', () => {
     });
     await waitFor(() => expect(staleToasts('zapier')).toHaveLength(1));
     await waitFor(() => expect(currentLocation()).toContain('server=github'));
+  });
+
+  it('does not warn after a skill reset through the danger dialog', async () => {
+    usePinsStore.setState({
+      skillPins: {
+        'release-notes': skillPinFixture('pinned'),
+        triage: skillPinFixture('pinned'),
+      },
+    });
+    const reset = vi.spyOn(api, 'resetSkillPin').mockResolvedValue(undefined);
+    vi.spyOn(api, 'fetchSkillPins').mockResolvedValue({ triage: skillPinFixture('pinned') });
+    renderWithLocation('/pins?kind=skill&skill=release-notes');
+
+    fireEvent.click(await screen.findByRole('button', { name: /reset pin for release-notes/i }));
+    const dialog = screen.getByRole('alertdialog', { name: /reset skill pin/i });
+    fireEvent.click(within(dialog).getByRole('button', { name: /reset pin for release-notes/i }));
+
+    await waitFor(() => expect(reset).toHaveBeenCalledWith('release-notes'));
+    await waitFor(() => expect(currentLocation()).toContain('skill=triage'));
+    expect(staleToasts('release-notes')).toHaveLength(0);
+  });
+
+  it('does not warn after a context reset through the danger dialog', async () => {
+    usePinsStore.setState({
+      contextPins: { style: contextPinFixture('pinned'), tone: contextPinFixture('pinned') },
+    });
+    const reset = vi.spyOn(api, 'resetContextPin').mockResolvedValue(undefined);
+    vi.spyOn(api, 'fetchContextPins').mockResolvedValue({ tone: contextPinFixture('pinned') });
+    renderWithLocation('/pins?kind=context&fragment=style');
+
+    fireEvent.click(await screen.findByRole('button', { name: /reset pin for style/i }));
+    const dialog = screen.getByRole('alertdialog', { name: /reset fragment pin/i });
+    fireEvent.click(within(dialog).getByRole('button', { name: /reset pin for style/i }));
+
+    await waitFor(() => expect(reset).toHaveBeenCalledWith('style'));
+    await waitFor(() => expect(currentLocation()).toContain('fragment=tone'));
+    expect(staleToasts('style')).toHaveLength(0);
+  });
+
+  it('reports a failed context reset and still warns when the fragment later goes', async () => {
+    usePinsStore.setState({
+      contextPins: { style: contextPinFixture('pinned'), tone: contextPinFixture('pinned') },
+    });
+    const reset = vi.spyOn(api, 'resetContextPin').mockRejectedValue(new Error('boom'));
+    renderWithLocation('/pins?kind=context&fragment=style');
+
+    fireEvent.click(await screen.findByRole('button', { name: /reset pin for style/i }));
+    const dialog = screen.getByRole('alertdialog', { name: /reset fragment pin/i });
+    fireEvent.click(within(dialog).getByRole('button', { name: /reset pin for style/i }));
+    await waitFor(() => expect(reset).toHaveBeenCalledWith('style'));
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('error', expect.anything()));
+    expect(currentLocation()).toContain('fragment=style');
+
+    act(() => {
+      usePinsStore.setState({ contextPins: { tone: contextPinFixture('pinned') } });
+    });
+    await waitFor(() => expect(staleToasts('style')).toHaveLength(1));
+    await waitFor(() => expect(currentLocation()).toContain('fragment=tone'));
   });
 });
