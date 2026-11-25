@@ -103,6 +103,18 @@ describe('CreationWizard YAML mode', () => {
     expect(useWizardStore.getState().expertMode).toBe(false);
   });
 
+  it('refuses a switch from empty YAML instead of restoring the form', async () => {
+    openStackForm({ name: 'demo', version: '1', gateway: { codeMode: 'on' } });
+    const textarea = await switchToYaml();
+    fireEvent.change(textarea, { target: { value: '' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Form' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/mapping/);
+    expect((screen.getByRole('textbox', { name: 'YAML' }) as HTMLTextAreaElement).value).toBe('');
+    expect(useWizardStore.getState().expertMode).toBe(true);
+  });
+
   it('notice no longer promises YAML-only settings', async () => {
     openStackForm({ name: 'demo', version: '1' });
     await switchToYaml();

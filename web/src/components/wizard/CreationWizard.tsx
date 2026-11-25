@@ -338,7 +338,7 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
     } else {
       // Switching back to form: parse YAML back, refusing a switch that
       // would drop, change, or restore anything the form cannot regenerate.
-      if (yamlContent && selectedType) {
+      if (selectedType) {
         const current = formData[selectedType as keyof typeof formData] as unknown as Record<string, unknown>;
         const result = yamlToFormWithLoss(yamlContent, selectedType, current ?? {});
         if ('error' in result) {
