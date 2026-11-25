@@ -36,6 +36,7 @@ vi.mock('../components/ui/Toast', () => ({
 
 // Import after vi.mock so we get the mocked version
 import { showToast } from '../components/ui/Toast';
+import { isModalOpen } from '../lib/modalPresence';
 
 // --- Helpers ---
 
@@ -347,5 +348,25 @@ describe('CommandPalette', () => {
       const liveRegion = document.querySelector('[aria-live="polite"]');
       expect(liveRegion?.textContent).toBe('No results');
     });
+  });
+});
+
+describe('CommandPalette modal presence', () => {
+  beforeEach(() => {
+    mockGetRecentCommands.mockReturnValue([]);
+    mockGetSortedCommands.mockReturnValue([]);
+  });
+
+  it('marks a modal open only while the palette is open', () => {
+    const view = render(<CommandPalette isOpen={false} onClose={vi.fn()} />);
+    expect(isModalOpen()).toBe(false);
+    view.rerender(<CommandPalette isOpen onClose={vi.fn()} />);
+    expect(isModalOpen()).toBe(true);
+    view.rerender(<CommandPalette isOpen={false} onClose={vi.fn()} />);
+    expect(isModalOpen()).toBe(false);
+    view.rerender(<CommandPalette isOpen onClose={vi.fn()} />);
+    expect(isModalOpen()).toBe(true);
+    view.unmount();
+    expect(isModalOpen()).toBe(false);
   });
 });

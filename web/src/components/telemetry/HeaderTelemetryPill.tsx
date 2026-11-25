@@ -197,6 +197,7 @@ function handleError(err: unknown) {
       // The hint guides the user to the Reload affordance which already
       // exists in the header; we surface it as the action label so the
       // toast doesn't disappear before the operator reads it.
+      persistent: Boolean(err.hint),
       action: err.hint
         ? { label: 'Got it', onClick: () => undefined }
         : undefined,

@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { ToastContainer, showToast } from '../components/ui/Toast';
+import { ToastContainer, dismissToast, showToast } from '../components/ui/Toast';
+import { useFocusTrap } from '../hooks/useFocusTrap';
+import { enterModal } from '../lib/modalPresence';
 
 describe('ToastContainer', () => {
   beforeEach(() => {
@@ -154,5 +156,146 @@ describe('ToastContainer', () => {
       vi.advanceTimersByTime(1);
     });
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('honors duration on an action toast', () => {
+    render(<ToastContainer />);
+    act(() => {
+      showToast('warning', 'drifted', { action: { label: 'View', onClick: () => undefined }, duration: 6000 });
+    });
+    act(() => {
+      vi.advanceTimersByTime(5999);
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('drifted');
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('adopts the new action when the same message repeats', () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    render(<ToastContainer />);
+    act(() => {
+      showToast('warning', 'drift', { action: { label: 'View', onClick: first } });
+      showToast('warning', 'drift', { action: { label: 'View', onClick: second } });
+    });
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'View' }));
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces the detail when the same message repeats', () => {
+    render(<ToastContainer />);
+    act(() => {
+      showToast('error', 'failed', { detail: 'first detail' });
+      showToast('error', 'failed');
+    });
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Details' })).not.toBeInTheDocument();
+  });
+
+  function TrapHarness({ active }: { active: boolean }) {
+    const ref = useFocusTrap<HTMLDivElement>({ active, restoreFocus: false });
+    return (
+      <>
+        {active && <div ref={ref} />}
+        <ToastContainer />
+      </>
+    );
+  }
+
+  it('holds a deferred toast while a dialog is open', () => {
+    const view = render(<TrapHarness active />);
+    act(() => {
+      showToast('warning', 'held', { duration: 1000, deferWhileModal: true });
+      showToast('success', 'shown', { duration: 100_000 });
+    });
+    expect(screen.queryByText('held')).not.toBeInTheDocument();
+    expect(screen.getByText('shown')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    view.rerender(<TrapHarness active={false} />);
+    expect(screen.getByText('held')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(999);
+    });
+    expect(screen.getByText('held')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.queryByText('held')).not.toBeInTheDocument();
+  });
+
+  it('hides a visible deferred toast when a dialog opens and pauses its timer', () => {
+    const view = render(<TrapHarness active={false} />);
+    act(() => {
+      showToast('warning', 'pinned', { duration: 1000, deferWhileModal: true });
+    });
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(screen.getByText('pinned')).toBeInTheDocument();
+    view.rerender(<TrapHarness active />);
+    expect(screen.queryByText('pinned')).not.toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    view.rerender(<TrapHarness active={false} />);
+    expect(screen.getByText('pinned')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(599);
+    });
+    expect(screen.getByText('pinned')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.queryByText('pinned')).not.toBeInTheDocument();
+  });
+
+  it('holds a deferred toast raised with no container mounted', () => {
+    const release = enterModal();
+    let id = '';
+    act(() => {
+      id = showToast('warning', 'early', { duration: 1000, deferWhileModal: true });
+    });
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    render(<ToastContainer />);
+    expect(screen.queryByText('early')).not.toBeInTheDocument();
+    act(() => release());
+    expect(screen.getByText('early')).toBeInTheDocument();
+    act(() => dismissToast(id));
+  });
+
+  it('shows the detail behind a Details toggle', () => {
+    render(<ToastContainer />);
+    act(() => {
+      showToast('error', 'short', { detail: 'long text' });
+    });
+    const toggle = screen.getByRole('button', { name: 'Details' });
+    expect(toggle).toHaveAttribute('type', 'button');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('long text')).not.toBeInTheDocument();
+    expect(screen.getByText('short')).toHaveAttribute('title', 'long text');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('long text')).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(screen.queryByText('long text')).not.toBeInTheDocument();
+  });
+
+  it('has no Details toggle when the detail is absent or matches the message', () => {
+    render(<ToastContainer />);
+    act(() => {
+      showToast('error', 'same', { detail: 'same' });
+      showToast('error', 'plain');
+    });
+    expect(screen.getAllByRole('alert')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'Details' })).not.toBeInTheDocument();
   });
 });
