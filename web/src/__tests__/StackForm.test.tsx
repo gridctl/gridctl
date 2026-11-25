@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { StackForm } from '../components/wizard/steps/StackForm';
 import { MCPServerForm } from '../components/wizard/steps/MCPServerForm';
 import type { MCPServerFormData, StackFormData } from '../lib/yaml-builder';
 import { buildYAML } from '../lib/yaml-builder';
-import { fetchVariableSets } from '../lib/api';
+import { fetchPythonPackageVersions, fetchVariableSets } from '../lib/api';
 
 // Mock VariablesPopover to avoid variable store API calls.
 vi.mock('../components/wizard/VariablesPopover', () => ({
@@ -669,8 +669,7 @@ describe('StackForm element ids across servers', () => {
     for (const server of servers) fireEvent.click(screen.getByText(server.name));
     for (const advanced of screen.getAllByText('Advanced', { exact: true })) fireEvent.click(advanced);
     for (const tls of screen.getAllByText('TLS / mTLS')) fireEvent.click(tls);
-    // Let the PyPI version lookup settle.
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    await waitFor(() => expect(fetchPythonPackageVersions).toHaveBeenCalledWith('mcp-server-fetch'));
 
     expect(screen.getByLabelText('Scale to zero when idle')).toBeInTheDocument();
     expect(screen.getByLabelText(/^Project name/)).toBeInTheDocument();
@@ -719,7 +718,7 @@ describe('MCPServerForm error ids across forms', () => {
     const { container } = render(
       <Pair a={pypi} b={{ ...pypi, name: 'q' }} errors={{ 'source.package': 'Package is required', 'source.ref': 'Version is required' }} />,
     );
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
+    await waitFor(() => expect(fetchPythonPackageVersions).toHaveBeenCalledWith('pkg'));
     expectUniqueIdsAndResolvedRefs(container);
     for (const form of [screen.getByTestId('form-a'), screen.getByTestId('form-b')]) {
       expectDescribedByOwnError(form, /^Project name/, 'Package is required');
