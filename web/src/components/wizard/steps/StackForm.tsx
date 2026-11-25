@@ -22,6 +22,7 @@ import type {
   ResourceFormData,
 } from '../../../lib/yaml-builder';
 import { VariablesPopover } from '../VariablesPopover';
+import { KeyValueEditor } from '../KeyValueEditor';
 import { VaultSetSelector } from '../VaultSetSelector';
 import { Field, FieldError } from '../../ui/Field';
 import { MCPServerForm } from './MCPServerForm';
@@ -95,99 +96,6 @@ function Section({
           {children}
         </div>
       )}
-    </div>
-  );
-}
-
-// --- Key-Value Editor ---
-
-function KeyValueEditor({
-  label,
-  value,
-  onChange,
-  placeholder,
-  showSecrets = false,
-}: {
-  label: string;
-  value: Record<string, string>;
-  onChange: (val: Record<string, string>) => void;
-  placeholder?: { key: string; value: string };
-  showSecrets?: boolean;
-}) {
-  const entries = Object.entries(value);
-
-  const addEntry = () => onChange({ ...value, '': '' });
-
-  const updateKey = (_oldKey: string, newKey: string, idx: number) => {
-    const newVal: Record<string, string> = {};
-    Object.entries(value).forEach(([k, v], i) => {
-      newVal[i === idx ? newKey : k] = v;
-    });
-    onChange(newVal);
-  };
-
-  const updateValue = (key: string, newValue: string) => {
-    onChange({ ...value, [key]: newValue });
-  };
-
-  const removeEntry = (key: string) => {
-    const next = { ...value };
-    delete next[key];
-    onChange(next);
-  };
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <label className="text-xs text-text-secondary">{label}</label>
-        <button
-          type="button"
-          onClick={addEntry}
-          className="flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors"
-        >
-          <Plus size={10} />
-          Add
-        </button>
-      </div>
-      {entries.length === 0 && (
-        <p className="text-3xs text-text-muted italic py-2">No entries</p>
-      )}
-      <div className="space-y-1.5">
-        {entries.map(([key, val], i) => (
-          <div key={i} className="flex items-center gap-1.5">
-            <input
-              type="text"
-              value={key}
-              onChange={(e) => updateKey(key, e.target.value, i)}
-              placeholder={placeholder?.key ?? 'KEY'}
-              aria-label={`${label} key ${i + 1}`}
-              className={cn(inputClass, 'w-[40%] font-mono')}
-            />
-            <span className="text-text-muted text-xs">=</span>
-            <div className="flex-1 flex items-center gap-0.5">
-              <input
-                type="text"
-                value={val}
-                onChange={(e) => updateValue(key, e.target.value)}
-                placeholder={placeholder?.value ?? 'value'}
-                aria-label={`${label} value ${i + 1}`}
-                className={cn(inputClass, 'flex-1', val.startsWith('${var:') && 'text-tertiary font-medium')}
-              />
-              {showSecrets && (
-                <VariablesPopover onSelect={(ref) => updateValue(key, ref)} />
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => removeEntry(key)}
-              aria-label={`Remove ${key || 'entry'}`}
-              className="p-1 text-text-muted hover:text-status-error transition-colors flex-shrink-0"
-            >
-              <X size={12} />
-            </button>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
