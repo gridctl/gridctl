@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { Button } from '../ui/Button';
 import { fetchCatalog, type CatalogEntry } from '../../lib/api';
 import { catalogInstallLabel, catalogServerName, isContainerEligible, type CatalogContainerOptions } from '../../lib/catalog';
 
@@ -56,6 +57,8 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
   const [stale, setStale] = useState(false);
   const [registryError, setRegistryError] = useState('');
   const [failed, setFailed] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const [answeredQuery, setAnsweredQuery] = useState('');
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [runInContainer, setRunInContainer] = useState(false);
   const [hostPath, setHostPath] = useState('');
@@ -66,8 +69,13 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
   // results of a newer query.
   const generation = useRef(0);
 
+  const lastRetry = useRef(0);
+
   useEffect(() => {
     const gen = ++generation.current;
+    // A retry reruns the current query at once instead of waiting out the debounce.
+    const retrying = lastRetry.current !== retryCount;
+    lastRetry.current = retryCount;
     const timer = setTimeout(() => {
       setLoading(true);
       fetchCatalog(query)
@@ -76,18 +84,21 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
           setEntries(resp.servers);
           setStale(resp.stale ?? false);
           setRegistryError(resp.registry_error ?? '');
+          setAnsweredQuery(query);
           setFailed(false);
           setLoading(false);
         })
         .catch(() => {
           if (generation.current !== gen) return;
           setEntries([]);
+          setStale(false);
+          setRegistryError('');
           setFailed(true);
           setLoading(false);
         });
-    }, query ? 300 : 0);
+    }, query && !retrying ? 300 : 0);
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, retryCount]);
 
   const selected = entries.find((e) => e.name === selectedName);
   const filepathInput = selected?.inputs?.find((input) => input.format === 'filepath');
@@ -140,7 +151,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
           )}
         />
         <span className="text-3xs text-text-muted">
-          {loading ? 'Searching...' : `${entries.length} servers`}
+          {loading ? 'Searching...' : failed ? '' : `${entries.length} servers`}
         </span>
       </div>
 
@@ -160,13 +171,18 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
         {/* Entry list */}
         <div className="w-1/2 border-r border-border/10 overflow-y-auto scrollbar-dark">
           {failed ? (
-            <div className="flex items-center justify-center py-16">
+            <div role="alert" className="flex flex-col items-center justify-center gap-2 py-16">
               <span className="text-3xs text-text-muted">Failed to load the catalog</span>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setRetryCount((n) => n + 1)}>
+                Retry
+              </Button>
             </div>
           ) : entries.length === 0 && !loading ? (
             <div className="flex items-center justify-center py-16">
               <span className="text-3xs text-text-muted">
-                No servers matched &ldquo;{query}&rdquo;
+                {answeredQuery.trim() === ''
+                  ? 'No servers in the catalog'
+                  : <>No servers matched &ldquo;{answeredQuery}&rdquo;</>}
               </span>
             </div>
           ) : (
@@ -176,7 +192,9 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
               return (
                 <button
                   key={entry.name}
+                  type="button"
                   onClick={() => selectEntry(entry.name)}
+                  aria-pressed={isSelected}
                   className={cn(
                     'w-full text-left px-4 py-3 border-b border-border/10 transition-all',
                     isSelected ? 'bg-primary/5 border-l-2 border-l-primary' : 'hover:bg-surface-overlay-1',
