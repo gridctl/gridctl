@@ -321,15 +321,16 @@ describe('context pin detail review', () => {
     expect(showToast).toHaveBeenCalledWith('error', expect.stringContaining('Reloading the diff for re-review.'));
   });
 
-  it('does not reload the diff after a 400 on approve', async () => {
+  it('toasts the refusal and does not reload the diff after a 400 on approve', async () => {
+    const refusal = 'evidence reference looks like a credential';
     const fetchDiff = vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(contextDiff());
-    const approve = vi.spyOn(api, 'approveContextPin').mockRejectedValue(new HTTPError(400, 'bad'));
+    const approve = vi.spyOn(api, 'approveContextPin').mockRejectedValue(new HTTPError(400, refusal));
     seed({ style: pin('drift') });
     renderContext('/pins?kind=context&fragment=style');
     await screen.findByText(/2 lines changed/);
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
     await waitFor(() => expect(approve).toHaveBeenCalled());
-    await waitFor(() => expect(showToast).toHaveBeenCalledWith('error', expect.any(String), expect.anything()));
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('error', refusal, { detail: refusal }));
     expect(fetchDiff).toHaveBeenCalledTimes(1);
   });
 
@@ -404,7 +405,7 @@ describe('context pin detail review', () => {
     }
   });
 
-  it('approves with Ctrl+Enter and runs the palette approve and reset commands on a fragment', async () => {
+  it('approves with Ctrl+Enter through the Approve button', async () => {
     vi.spyOn(api, 'fetchContextPinDiff').mockResolvedValue(contextDiff());
     const approve = vi.spyOn(api, 'approveContextPin').mockResolvedValue();
     vi.spyOn(api, 'fetchContextPins').mockResolvedValue({ style: pin('pinned') });
