@@ -19,7 +19,7 @@ A server in the stack is an MCP server. Title-case labels use "MCP Server". Not 
 
 The declared stack is Stack. That label is already consistent.
 
-Pin drift toasts use "Pin drift". Both server and skill drift toasts use "Pin drift detected on N …". Per-pane section headers are unchanged.
+Pin drift toasts use "Pin drift". One toast covers every server, skill, and fragment newly drifted in a poll: "Pin drift detected on server github" for a single item, or "Pin drift detected on 1 server and 2 skills" for several. Findings toasts read "New findings on …" the same way. Per-pane section headers are unchanged.
 
 Creation wizard entry points use "Create new". The header "+" tooltip and the palette command use the same words.
 
@@ -204,6 +204,8 @@ Overlay stacking uses named steps from `web/src/index.css`. Tailwind maps `--z-i
 | `toast` | 70 | Toasts and window-only credential notices |
 
 `popover` outranks `modal` because portaled dropdowns opened from inside a modal must paint over it. A popover inside the header (`relative z-header`, its own stacking context) only ranks against header children, so it cannot reach the toast layer. Reload results use that toast layer. A fixed dialog inside a `backdrop-blur` header is trapped the same way. The metrics clear confirm is portaled to `document.body` so it covers the viewport. Run recording confirms stay in the workspace and are not portaled.
+
+Toasts raised with `deferWhileModal` (the pin drift and findings toasts) are held, with their timers paused, while a dialog is open, and show for their remaining time once the last dialog closes. "A dialog is open" comes from `web/src/lib/modalPresence.ts`: `useFocusTrap` registers with it while active, and a dialog that traps focus another way (`CommandPalette`) registers itself with `enterModal`.
 
 `CanvasBase` is intentionally small (~120 LOC) - it owns the React Flow
 boilerplate (wrapper element, Background layers, proOptions) and exposes
