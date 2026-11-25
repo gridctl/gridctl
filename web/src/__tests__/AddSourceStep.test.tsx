@@ -314,3 +314,40 @@ describe('AddSourceStep — unreachable ssh-agent', () => {
     expect(screen.queryByRole('button', { name: /try https instead/i })).not.toBeInTheDocument();
   });
 });
+
+describe('AddSourceStep — source location check', () => {
+  beforeEach(() => {
+    mockPreview.mockReset();
+    mockPreview.mockResolvedValue({ skills: [], agents: [] } as never);
+  });
+
+  function scan(value: string) {
+    render(<AddSourceStep onPreviewLoaded={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText(/https:\/\/github/i), { target: { value } });
+    fireEvent.click(screen.getByRole('button', { name: /scan for skills/i }));
+  }
+
+  it.each([
+    ['https://gitlab.com/group/subgroup/repo', 'repo'],
+    ['https://git.example.com:8443/org/repo.git', 'repo'],
+    ['ssh://git@github.com/org/repo.git', 'repo'],
+    ['git@gitlab.com:group/sub/repo.git', 'repo'],
+    ['https://dev.azure.com/org/project/_git/repo', 'repo'],
+    ['https://gitlab.com/o/r/', 'r'],
+    ['https://github.com/o/r/', 'r'],
+    ['/home/me/skills', 'skills'],
+    ['C:\\Users\\me\\skills', 'skills'],
+  ])('sends %s with source name %s', async (value, name) => {
+    scan(value);
+    await waitFor(() => expect(mockPreview).toHaveBeenCalledTimes(1));
+    const [sourceName, request] = mockPreview.mock.calls[0];
+    expect(sourceName).toBe(name);
+    expect(request).toMatchObject({ repo: value });
+  });
+
+  it('rejects a value that is not a URL or absolute path', () => {
+    scan('notaurl');
+    expect(screen.getByText('Enter a Git URL (https://, ssh://, or git@host:path) or an absolute local path')).toBeInTheDocument();
+    expect(mockPreview).not.toHaveBeenCalled();
+  });
+});

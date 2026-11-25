@@ -743,25 +743,28 @@ export function StackForm({ data, onChange, errors, revealKey, onRemoveItem }: S
         {/* Tracing sub-group */}
         <div className="space-y-3">
           <p className="text-2xs font-medium text-text-muted uppercase tracking-wide">Tracing</p>
-          <div className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              id="tracing-enabled"
-              checked={data.gateway?.tracing?.enabled ?? false}
+          <div>
+            <label htmlFor={`${uid}-tracing-enabled`} className={labelClass}>Tracing enabled</label>
+            <select
+              id={`${uid}-tracing-enabled`}
+              value={data.gateway?.tracing?.enabled === undefined ? '' : String(data.gateway.tracing.enabled)}
               onChange={(e) =>
                 onChange({
                   gateway: {
                     ...data.gateway,
-                    tracing: { ...data.gateway?.tracing, enabled: e.target.checked || undefined },
+                    tracing: {
+                      ...data.gateway?.tracing,
+                      enabled: e.target.value === '' ? undefined : e.target.value === 'true',
+                    },
                   },
                 })
               }
-              className="accent-primary"
-            />
-            <label htmlFor="tracing-enabled" className="text-xs text-text-secondary cursor-pointer">
-              Enabled
-            </label>
-            <p className="text-3xs text-text-muted">Default: on</p>
+              className={inputClass}
+            >
+              <option value="">Default (on)</option>
+              <option value="true">On</option>
+              <option value="false">Off</option>
+            </select>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
@@ -855,7 +858,7 @@ export function StackForm({ data, onChange, errors, revealKey, onRemoveItem }: S
           <div className="flex items-center gap-3">
             <input
               type="checkbox"
-              id="schema-pinning-enabled"
+              id={`${uid}-schema-pinning-enabled`}
               checked={data.gateway?.security?.schemaPinning?.enabled ?? false}
               onChange={(e) =>
                 onChange({
@@ -873,7 +876,7 @@ export function StackForm({ data, onChange, errors, revealKey, onRemoveItem }: S
               }
               className="accent-primary"
             />
-            <label htmlFor="schema-pinning-enabled" className="text-xs text-text-secondary cursor-pointer">
+            <label htmlFor={`${uid}-schema-pinning-enabled`} className="text-xs text-text-secondary cursor-pointer">
               Enabled
             </label>
           </div>

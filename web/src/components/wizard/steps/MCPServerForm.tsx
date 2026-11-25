@@ -384,6 +384,7 @@ function PythonSourceFields({
   errors,
   fieldPrefix = '',
 }: MCPServerFormProps) {
+  const pid = useId();
   const source = data.source ?? { type: 'git' };
   const [versionResult, setVersionResult] = useState<{
     project: string;
@@ -478,15 +479,15 @@ function PythonSourceFields({
       {source.type === 'pypi' ? (
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label htmlFor="python-package" className={labelClass}>Project name <span className="text-status-error">*</span></label>
-            <input id="python-package" data-wizard-field={`${fieldPrefix}source.package`} value={source.package ?? ''} onChange={(event) => updateSource({ package: event.target.value })} placeholder="mcp-server-fetch" aria-invalid={errors?.['source.package'] ? true : undefined} aria-describedby={errors?.['source.package'] ? 'python-package-error' : undefined} className={cn(inputClass, 'font-mono', errors?.['source.package'] && 'border-status-error/50')} />
-            <FieldError id="python-package-error" error={errors?.['source.package']} />
+            <label htmlFor={`${pid}-python-package`} className={labelClass}>Project name <span className="text-status-error">*</span></label>
+            <input id={`${pid}-python-package`} data-wizard-field={`${fieldPrefix}source.package`} value={source.package ?? ''} onChange={(event) => updateSource({ package: event.target.value })} placeholder="mcp-server-fetch" aria-invalid={errors?.['source.package'] ? true : undefined} aria-describedby={errors?.['source.package'] ? `${pid}-python-package-error` : undefined} className={cn(inputClass, 'font-mono', errors?.['source.package'] && 'border-status-error/50')} />
+            <FieldError id={`${pid}-python-package-error`} error={errors?.['source.package']} />
           </div>
           <div>
-            <label htmlFor="python-version" className={labelClass}>Exact version <span className="text-status-error">*</span></label>
-            <input id="python-version" data-wizard-field={`${fieldPrefix}source.ref`} value={source.ref ?? ''} onChange={(event) => updateSource({ ref: event.target.value })} list="python-package-versions" placeholder={!currentVersionResult || currentVersionResult.loading ? 'Resolving...' : '1.0.0'} aria-invalid={errors?.['source.ref'] || currentVersionResult?.error ? true : undefined} aria-describedby={errors?.['source.ref'] || currentVersionResult?.error ? 'python-version-error' : undefined} className={cn(inputClass, 'font-mono', errors?.['source.ref'] && 'border-status-error/50')} />
-            <datalist id="python-package-versions">{currentVersionResult?.versions.map((version) => <option key={version} value={version} />)}</datalist>
-            <FieldError id="python-version-error" error={errors?.['source.ref'] ?? currentVersionResult?.error} />
+            <label htmlFor={`${pid}-python-version`} className={labelClass}>Exact version <span className="text-status-error">*</span></label>
+            <input id={`${pid}-python-version`} data-wizard-field={`${fieldPrefix}source.ref`} value={source.ref ?? ''} onChange={(event) => updateSource({ ref: event.target.value })} list={`${pid}-python-package-versions`} placeholder={!currentVersionResult || currentVersionResult.loading ? 'Resolving...' : '1.0.0'} aria-invalid={errors?.['source.ref'] || currentVersionResult?.error ? true : undefined} aria-describedby={errors?.['source.ref'] || currentVersionResult?.error ? `${pid}-python-version-error` : undefined} className={cn(inputClass, 'font-mono', errors?.['source.ref'] && 'border-status-error/50')} />
+            <datalist id={`${pid}-python-package-versions`}>{currentVersionResult?.versions.map((version) => <option key={version} value={version} />)}</datalist>
+            <FieldError id={`${pid}-python-version-error`} error={errors?.['source.ref'] ?? currentVersionResult?.error} />
           </div>
         </div>
       ) : (
@@ -494,22 +495,22 @@ function PythonSourceFields({
           {source.type === 'git' ? (
             <>
               <div>
-                <label htmlFor="source-url" className={labelClass}>Repository URL <span className="text-status-error">*</span></label>
-                <input id="source-url" data-wizard-field={`${fieldPrefix}source.url`} type="url" value={source.url ?? ''} onChange={(event) => updateSource({ url: event.target.value })} placeholder="https://github.com/org/repo.git" aria-invalid={errors?.['source.url'] ? true : undefined} aria-describedby={errors?.['source.url'] ? 'source-url-error' : undefined} className={cn(inputClass, errors?.['source.url'] && 'border-status-error/50')} />
-                <FieldError id="source-url-error" error={errors?.['source.url']} />
+                <label htmlFor={`${pid}-source-url`} className={labelClass}>Repository URL <span className="text-status-error">*</span></label>
+                <input id={`${pid}-source-url`} data-wizard-field={`${fieldPrefix}source.url`} type="url" value={source.url ?? ''} onChange={(event) => updateSource({ url: event.target.value })} placeholder="https://github.com/org/repo.git" aria-invalid={errors?.['source.url'] ? true : undefined} aria-describedby={errors?.['source.url'] ? `${pid}-source-url-error` : undefined} className={cn(inputClass, errors?.['source.url'] && 'border-status-error/50')} />
+                <FieldError id={`${pid}-source-url-error`} error={errors?.['source.url']} />
               </div>
               <div>
-                <label htmlFor="source-ref" className={labelClass}>Ref</label>
-                <input id="source-ref" value={source.ref ?? ''} onChange={(event) => updateSource({ ref: event.target.value })} placeholder="main" className={cn(inputClass, 'font-mono')} />
+                <label htmlFor={`${pid}-source-ref`} className={labelClass}>Ref</label>
+                <input id={`${pid}-source-ref`} value={source.ref ?? ''} onChange={(event) => updateSource({ ref: event.target.value })} placeholder="main" className={cn(inputClass, 'font-mono')} />
                 {(!source.ref || !/^[0-9a-f]{40}$/i.test(source.ref)) && <p className="text-3xs text-status-pending mt-1">This ref resembles a mutable branch. Review will show the resolved commit.</p>}
               </div>
               <SourceAuthField value={source.auth?.credentialRef} onChange={(credentialRef) => updateSource({ auth: credentialRef ? { method: 'token', credentialRef } : undefined })} />
             </>
           ) : (
             <div>
-              <label htmlFor="source-path" className={labelClass}>Local root <span className="text-status-error">*</span></label>
-              <input id="source-path" data-wizard-field={`${fieldPrefix}source.path`} value={source.path ?? ''} onChange={(event) => updateSource({ path: event.target.value })} placeholder="./path/to/server" aria-invalid={errors?.['source.path'] ? true : undefined} aria-describedby={errors?.['source.path'] ? 'source-path-error' : undefined} className={cn(inputClass, 'font-mono', errors?.['source.path'] && 'border-status-error/50')} />
-              <FieldError id="source-path-error" error={errors?.['source.path']} />
+              <label htmlFor={`${pid}-source-path`} className={labelClass}>Local root <span className="text-status-error">*</span></label>
+              <input id={`${pid}-source-path`} data-wizard-field={`${fieldPrefix}source.path`} value={source.path ?? ''} onChange={(event) => updateSource({ path: event.target.value })} placeholder="./path/to/server" aria-invalid={errors?.['source.path'] ? true : undefined} aria-describedby={errors?.['source.path'] ? `${pid}-source-path-error` : undefined} className={cn(inputClass, 'font-mono', errors?.['source.path'] && 'border-status-error/50')} />
+              <FieldError id={`${pid}-source-path-error`} error={errors?.['source.path']} />
             </div>
           )}
 
@@ -539,9 +540,9 @@ function PythonSourceFields({
           </div>
           <div className={cn('grid gap-2', generated && 'grid-cols-2')}>
             {generated && <div>
-              <label htmlFor="project-path" className={labelClass}>Project subdirectory</label>
+              <label htmlFor={`${pid}-project-path`} className={labelClass}>Project subdirectory</label>
               <input
-                id="project-path"
+                id={`${pid}-project-path`}
                 value={(source.type === 'git' ? source.path : source.projectPath) ?? ''}
                 onChange={(event) => updateSource(source.type === 'git'
                   ? { path: event.target.value, projectPath: undefined }
@@ -551,9 +552,9 @@ function PythonSourceFields({
               />
             </div>}
             <div>
-              <label htmlFor="source-dockerfile" className={labelClass}>Dockerfile</label>
+              <label htmlFor={`${pid}-source-dockerfile`} className={labelClass}>Dockerfile</label>
               <input
-                id="source-dockerfile"
+                id={`${pid}-source-dockerfile`}
                 value={source.dockerfile ?? ''}
                 onChange={(event) => event.target.value
                   ? selectCustomDockerfile(event.target.value)
@@ -635,13 +636,17 @@ export function MCPServerForm({ data, onChange, errors, fieldPrefix = '', reveal
   const visibility = useMemo(() => getFieldVisibility(data.serverType), [data.serverType]);
   const availableTransports = useMemo(() => getAvailableTransports(data.serverType), [data.serverType]);
   const typeOption = SERVER_TYPES.find((t) => t.type === data.serverType)!;
-  const portVisible = showPortField(data.serverType, data.transport ?? typeOption.transportDefault);
+  const portVisible = showPortField(data.serverType, data.transport || typeOption.transportDefault);
 
   const handleTypeChange = (newType: ServerType) => {
     const opt = SERVER_TYPES.find((t) => t.type === newType)!;
     onChange({
       serverType: newType,
-      transport: opt.transportLocked ? opt.transportDefault : (data.transport ?? opt.transportDefault),
+      transport: opt.transportLocked
+        ? opt.transportDefault
+        : data.transport && getAvailableTransports(newType).includes(data.transport)
+          ? data.transport
+          : opt.transportDefault,
     });
     // Auto-expand config section on type change
     setExpandedSections((prev) => new Set([...prev, 'config']));
@@ -752,12 +757,12 @@ export function MCPServerForm({ data, onChange, errors, fieldPrefix = '', reveal
                     onChange={(e) => onChange({ image: e.target.value })}
                     data-wizard-field={`${fieldPrefix}image`}
                     placeholder="image:tag"
-                    list="image-presets"
+                    list={`${uid}-image-presets`}
                     aria-describedby={describedBy}
                     aria-invalid={invalid}
                     className={cn(inputClass, 'font-mono', errors?.image && 'border-status-error/50')}
                   />
-                  <datalist id="image-presets">
+                  <datalist id={`${uid}-image-presets`}>
                     {IMAGE_PRESETS.map((p) => (
                       <option key={p} value={p} />
                     ))}
@@ -1336,7 +1341,7 @@ export function MCPServerForm({ data, onChange, errors, fieldPrefix = '', reveal
               <div className="flex items-start gap-3">
                 <input
                   type="checkbox"
-                  id="insecureSkipVerify"
+                  id={`${uid}-insecureSkipVerify`}
                   checked={data.openapi?.tls?.insecureSkipVerify ?? false}
                   onChange={(e) =>
                     onChange({
@@ -1350,7 +1355,7 @@ export function MCPServerForm({ data, onChange, errors, fieldPrefix = '', reveal
                   className="mt-0.5 accent-primary"
                 />
                 <div>
-                  <label htmlFor="insecureSkipVerify" className="text-xs text-text-secondary cursor-pointer">
+                  <label htmlFor={`${uid}-insecureSkipVerify`} className="text-xs text-text-secondary cursor-pointer">
                     Skip TLS Verification
                     <span className="ml-2 text-3xs text-status-error font-medium">Dangerous — dev only</span>
                   </label>
@@ -1385,7 +1390,7 @@ export function MCPServerForm({ data, onChange, errors, fieldPrefix = '', reveal
                   ) : (
                     <select
                       id={`${uid}-transport`}
-                      value={data.transport ?? typeOption.transportDefault}
+                      value={data.transport || typeOption.transportDefault}
                       onChange={(e) => onChange({ transport: e.target.value })}
                       className={inputClass}
                     >
@@ -1394,6 +1399,11 @@ export function MCPServerForm({ data, onChange, errors, fieldPrefix = '', reveal
                           {t.label}
                         </option>
                       ))}
+                      {/* A draft or YAML edit can store a transport this type does not
+                          offer; show it rather than letting the select display another value. */}
+                      {data.transport && !availableTransports.includes(data.transport) && (
+                        <option value={data.transport}>{data.transport} (not valid for this type)</option>
+                      )}
                     </select>
                   )}
                 </div>
@@ -1425,7 +1435,7 @@ export function MCPServerForm({ data, onChange, errors, fieldPrefix = '', reveal
           {/* Transport compatibility advisor */}
           <TransportAdvisor
             serverType={data.serverType}
-            transport={data.transport ?? typeOption.transportDefault}
+            transport={data.transport || typeOption.transportDefault}
           />
         </div>
       </Section>
@@ -1529,9 +1539,9 @@ export function MCPServerForm({ data, onChange, errors, fieldPrefix = '', reveal
 
         {(data.serverType === 'container' || data.serverType === 'source') && (
           <div>
-            <label htmlFor="server-volumes" className={labelClass}>Volumes</label>
+            <label htmlFor={`${uid}-server-volumes`} className={labelClass}>Volumes</label>
             <input
-              id="server-volumes"
+              id={`${uid}-server-volumes`}
               value={data.volumes?.join(', ') ?? ''}
               onChange={(event) => onChange({ volumes: splitValues(event.target.value) })}
               placeholder="./data:/data:ro"
@@ -1850,13 +1860,13 @@ function AutoscaleFields({
       <div className="flex items-start gap-3">
         <input
           type="checkbox"
-          id="autoscale-idle-to-zero"
+          id={`${uid}-autoscale-idle-to-zero`}
           checked={data.idleToZero ?? false}
           onChange={(e) => onChange({ idleToZero: e.target.checked ? true : undefined })}
           className="mt-0.5 accent-primary"
         />
         <div>
-          <label htmlFor="autoscale-idle-to-zero" className="text-xs text-text-secondary cursor-pointer">
+          <label htmlFor={`${uid}-autoscale-idle-to-zero`} className="text-xs text-text-secondary cursor-pointer">
             Scale to zero when idle
           </label>
           <p className="text-3xs text-text-muted mt-0.5">
