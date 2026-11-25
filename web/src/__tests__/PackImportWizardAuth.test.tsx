@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
+import { useWizardStore } from '../stores/useWizardStore';
 import { PackImportWizard } from '../components/wizard/steps/PackImportWizard';
 
 vi.mock('../lib/api', async () => {
@@ -285,5 +286,66 @@ describe('PackImportWizard — null list fields from the API', () => {
     await waitFor(() => expect(screen.getByText('skills-only')).toBeInTheDocument());
     expect(screen.getByText(/alpha/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /import pack/i })).toBeInTheDocument();
+  });
+});
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname + location.search}</div>;
+}
+
+describe('PackImportWizard — held hooks', () => {
+  beforeEach(() => {
+    mockPreview.mockReset();
+    mockAdd.mockReset();
+    mockToast.mockReset();
+  });
+
+  async function importWith(held: { name: string; composite_hash: string }[] | undefined) {
+    mockPreview.mockResolvedValueOnce(emptyPreview);
+    mockAdd.mockResolvedValueOnce({
+      doc: { pack: 'team-pack', skills: [], agents: [], wiring: false, held_hooks: held },
+      notes: [],
+    } as never);
+    render(
+      <MemoryRouter initialEntries={['/library']}>
+        <PackImportWizard />
+        <Routes>
+          <Route path="*" element={<LocationProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    enterRepo('https://github.com/acme/team-pack');
+    clickPreview();
+    await waitFor(() => screen.getByRole('button', { name: /import pack/i }));
+    fireEvent.click(screen.getByRole('button', { name: /import pack/i }));
+    await waitFor(() => screen.getByRole('button', { name: /view pack/i }));
+  }
+
+  it('offers no review button when no hook is held', async () => {
+    await importWith(undefined);
+    expect(screen.queryByRole('button', { name: /review held hook/i })).not.toBeInTheDocument();
+  });
+
+  it('closes the wizard and opens the review of the first held hook', async () => {
+    const original = useWizardStore.getState().close;
+    const close = vi.fn();
+    useWizardStore.setState({ close });
+    try {
+    await importWith([
+      { name: 'zeta-guard', composite_hash: 'sha256:z' },
+      { name: 'alpha-guard', composite_hash: 'sha256:a' },
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: 'Review held hooks' }));
+    expect(close).toHaveBeenCalled();
+    expect(screen.getByTestId('location')).toHaveTextContent('/pins?kind=hook&hook=alpha-guard&view=drift');
+    } finally {
+      useWizardStore.setState({ close: original });
+    }
+  });
+
+  it('uses the singular label for one held hook', async () => {
+    await importWith([{ name: 'guard', composite_hash: 'sha256:g' }]);
+    expect(screen.getByRole('button', { name: 'Review held hook' })).toBeInTheDocument();
   });
 });
