@@ -5,6 +5,7 @@ import { cn } from '../../lib/cn';
 import { useCommandRegistry } from '../../hooks/useCommandRegistry';
 import { useUIStore } from '../../stores/useUIStore';
 import { showToast } from '../ui/Toast';
+import { enterModal } from '../../lib/modalPresence';
 import type { PaletteCommand, PaletteSection } from '../../types/palette';
 import { ShortcutKeys } from '../ui/ShortcutKeys';
 
@@ -125,6 +126,12 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
     setWasOpen(isOpen);
     if (!isOpen) setInputValue('');
   }
+
+  // The palette traps Tab itself, so it registers as an open modal here.
+  useEffect(() => {
+    if (!isOpen) return;
+    return enterModal();
+  }, [isOpen]);
 
   // Capture focused element before opening
   useEffect(() => {

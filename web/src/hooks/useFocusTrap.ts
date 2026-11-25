@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { enterModal } from '../lib/modalPresence';
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -32,7 +33,7 @@ interface UseFocusTrapOptions {
 /**
  * Traps keyboard focus within a container while active, and (by default) restores
  * focus to the previously focused element when the trap deactivates. Intended for
- * modal dialogs.
+ * modal dialogs: an active trap also marks a modal as open in lib/modalPresence.
  */
 export function useFocusTrap<T extends HTMLElement = HTMLElement>({
   active,
@@ -41,6 +42,13 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>({
 }: UseFocusTrapOptions): React.RefObject<T | null> {
   const containerRef = useRef<T | null>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+
+  // Keyed on active alone so a change to the focus options cannot count the
+  // same dialog twice.
+  useEffect(() => {
+    if (!active) return;
+    return enterModal();
+  }, [active]);
 
   useEffect(() => {
     if (!active) return;

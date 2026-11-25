@@ -3,27 +3,58 @@ import { useGuardedNavigate } from './useGuardedNavigate';
 import { useStackStore } from '../stores/useStackStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
-import { usePinsStore, countFindingServers, firstDriftedServer, firstFindingsServer, countDriftedSkills, countFindingSkills, firstDriftedSkill, firstFindingsSkill, countDriftedContexts, countFindingContexts, firstDriftedContext, firstFindingsContext, serverPinsChanged } from '../stores/usePinsStore';
+import { usePinsStore, serverPinsChanged } from '../stores/usePinsStore';
 import { useTelemetryStore } from '../stores/useTelemetryStore';
 import { useSpecStore } from '../stores/useSpecStore';
 import { useUIStore } from '../stores/useUIStore';
 import { fetchStatus, fetchTools, fetchToolCatalog, fetchClients, fetchRegistryStatus, fetchRegistrySkills, fetchSkillSources, fetchServerPins, fetchSkillPins, fetchContextPins, fetchStackSpec, fetchStackHealth, getTelemetryInventory, AuthError, isFeatureUnavailable } from '../lib/api';
-import { showToast } from '../components/ui/Toast';
+import { dismissToast, showToast } from '../components/ui/Toast';
 import { POLLING } from '../lib/constants';
-import { skillPinsUrl } from '../lib/skillGovernance';
-import { contextPinsUrl } from '../lib/contextGovernance';
+import { affectedContexts, affectedServers, affectedSkills, driftAlert, findingsAlert, newlyAffected, type AffectedNames, type NewNames, type PinAlert } from '../lib/pinAlerts';
 import { GatewayRequestError } from '../lib/gatewayRequest';
 import type { GatewayStatus } from '../types';
 import { useBroadcastChannel, type BroadcastMessage } from './useBroadcastChannel';
 import { useInterval } from './useInterval';
 import { usePageVisible } from './usePageVisible';
 
-let _prevDriftCount = 0;
-let _prevFindingCount = 0;
-let _prevSkillDriftCount = 0;
-let _prevSkillFindingCount = 0;
-let _prevContextDriftCount = 0;
-let _prevContextFindingCount = 0;
+// Affected names per pin kind from the last successful fetch. null until
+// the first success, which seeds silently so state that predates the page
+// load never toasts. A failed fetch leaves its kind as it was.
+const pinBaseline: Record<keyof NewNames, AffectedNames | null> = {
+  server: null,
+  skill: null,
+  fragment: null,
+};
+
+/** Clears the pin alert baseline. Exists for test isolation. */
+export function resetPinAlertBaseline(): void {
+  pinBaseline.server = null;
+  pinBaseline.skill = null;
+  pinBaseline.fragment = null;
+}
+
+// Commits every kind fetched this cycle and returns the toasts to raise.
+// Runs in one synchronous step after the last pin block, so a cycle cut
+// short by an auth change commits nothing and the next cycle still sees
+// the change.
+function commitPinAlerts(next: Partial<Record<keyof NewNames, AffectedNames>>): {
+  drift: PinAlert | null;
+  findings: PinAlert | null;
+} {
+  const drift: NewNames = { server: [], skill: [], fragment: [] };
+  const findings: NewNames = { server: [], skill: [], fragment: [] };
+  for (const kind of ['server', 'skill', 'fragment'] as const) {
+    const sets = next[kind];
+    if (!sets) continue;
+    const prev = pinBaseline[kind];
+    if (prev) {
+      drift[kind] = newlyAffected(prev.drift, sets.drift);
+      findings[kind] = newlyAffected(prev.findings, sets.findings);
+    }
+    pinBaseline[kind] = sets;
+  }
+  return { drift: driftAlert(drift), findings: findingsAlert(findings) };
+}
 
 // The shell is the only scheduler. Stack and the retry banners call through
 // this slot; unmount clears it so a late Retry is a no-op.
@@ -195,6 +226,8 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
         // Catalog is progressive disclosure; a miss leaves the prior list.
       }
 
+      const nextPins: Partial<Record<keyof NewNames, AffectedNames>> = {};
+
       try {
         const prevPins = usePinsStore.getState().pins;
         const pins = await fetchServerPins();
@@ -204,31 +237,7 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
           useStackStore.getState().refreshNodesAndEdges();
         }
 
-        const driftedCount = Object.values(pins).filter((sp) => sp.status === 'drift').length;
-        if (driftedCount > 0 && _prevDriftCount === 0) {
-          const drifted = firstDriftedServer(pins);
-          const target = drifted
-            ? `/pins?server=${encodeURIComponent(drifted)}&view=drift`
-            : '/pins';
-          showToast('warning', `Pin drift detected on ${driftedCount} server${driftedCount > 1 ? 's' : ''}`, {
-            action: { label: 'View', onClick: () => navigate(target) },
-            duration: 6000,
-          });
-        }
-        _prevDriftCount = driftedCount;
-
-        const findingCount = countFindingServers(pins);
-        if (findingCount > 0 && _prevFindingCount === 0) {
-          const flagged = firstFindingsServer(pins);
-          const target = flagged
-            ? `/pins?server=${encodeURIComponent(flagged)}&view=findings`
-            : '/pins';
-          showToast('warning', `Poisoning-scan findings on ${findingCount} server${findingCount > 1 ? 's' : ''}`, {
-            action: { label: 'View', onClick: () => navigate(target) },
-            duration: 6000,
-          });
-        }
-        _prevFindingCount = findingCount;
+        nextPins.server = affectedServers(pins);
       } catch (err) {
         if (!current()) return;
         if (isFeatureUnavailable(err)) {
@@ -249,27 +258,7 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
         if (!current()) return;
         usePinsStore.getState().setSkillPins(skillPins);
 
-        const skillDriftCount = countDriftedSkills(skillPins);
-        if (skillDriftCount > 0 && _prevSkillDriftCount === 0) {
-          const drifted = firstDriftedSkill(skillPins);
-          const target = skillPinsUrl(drifted, 'drift');
-          showToast('warning', `Pin drift detected on ${skillDriftCount} skill${skillDriftCount > 1 ? 's' : ''}`, {
-            action: { label: 'View', onClick: () => navigate(target) },
-            duration: 6000,
-          });
-        }
-        _prevSkillDriftCount = skillDriftCount;
-
-        const skillFindingCount = countFindingSkills(skillPins);
-        if (skillFindingCount > 0 && _prevSkillFindingCount === 0) {
-          const flagged = firstFindingsSkill(skillPins);
-          const target = skillPinsUrl(flagged, 'findings');
-          showToast('warning', `Advisory findings on ${skillFindingCount} skill${skillFindingCount > 1 ? 's' : ''}`, {
-            action: { label: 'View', onClick: () => navigate(target) },
-            duration: 6000,
-          });
-        }
-        _prevSkillFindingCount = skillFindingCount;
+        nextPins.skill = affectedSkills(skillPins);
       } catch (err) {
         if (!current()) return;
         if (isFeatureUnavailable(err)) {
@@ -290,25 +279,7 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
         if (!current()) return;
         usePinsStore.getState().setContextPins(contextPins);
 
-        const contextDriftCount = countDriftedContexts(contextPins);
-        if (contextDriftCount > 0 && _prevContextDriftCount === 0) {
-          const drifted = firstDriftedContext(contextPins);
-          showToast('warning', `Pin drift detected on ${contextDriftCount} fragment${contextDriftCount > 1 ? 's' : ''}`, {
-            action: { label: 'View', onClick: () => navigate(contextPinsUrl(drifted, 'drift')) },
-            duration: 6000,
-          });
-        }
-        _prevContextDriftCount = contextDriftCount;
-
-        const contextFindingCount = countFindingContexts(contextPins);
-        if (contextFindingCount > 0 && _prevContextFindingCount === 0) {
-          const flagged = firstFindingsContext(contextPins);
-          showToast('warning', `Advisory findings on ${contextFindingCount} fragment${contextFindingCount > 1 ? 's' : ''}`, {
-            action: { label: 'View', onClick: () => navigate(contextPinsUrl(flagged, 'findings')) },
-            duration: 6000,
-          });
-        }
-        _prevContextFindingCount = contextFindingCount;
+        nextPins.fragment = affectedContexts(contextPins);
       } catch (err) {
         if (!current()) return;
         if (isFeatureUnavailable(err)) {
@@ -322,6 +293,25 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
             isConnectionFailure(err) ? 'Gateway connection unavailable' : failureMessage(err),
           );
         }
+      }
+
+      const alerts = commitPinAlerts(nextPins);
+      for (const alert of [alerts.drift, alerts.findings]) {
+        if (!alert) continue;
+        const { target } = alert;
+        // View dismisses the toast first so an unsaved-edits confirm has no
+        // detached button to restore focus to and no stale toast reappears.
+        const toastId = showToast('warning', alert.message, {
+          action: {
+            label: 'View',
+            onClick: () => {
+              dismissToast(toastId);
+              navigate(target);
+            },
+          },
+          duration: 10000,
+          deferWhileModal: true,
+        });
       }
 
       try {

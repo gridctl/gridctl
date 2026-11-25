@@ -3,6 +3,7 @@ import '@testing-library/jest-dom';
 import { useRef, useState } from 'react';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { isModalOpen } from '../lib/modalPresence';
 
 // jsdom doesn't implement layout, so offsetParent is null for everything by
 // default. Patch it to return the parent element so our visibility check works.
@@ -125,5 +126,28 @@ describe('useFocusTrap', () => {
     // jsdom doesn't actually move focus on keydown, but we can at least verify
     // the handler isn't active (focus stays where JS left it).
     expect(document.activeElement).toBe(sibling);
+  });
+});
+
+function PresenceTrap({ active }: { active: boolean }) {
+  const ref = useFocusTrap<HTMLDivElement>({ active });
+  return <div ref={ref} />;
+}
+
+describe('useFocusTrap modal presence', () => {
+  it('marks a modal open while any trap is active', () => {
+    expect(isModalOpen()).toBe(false);
+    const one = render(<PresenceTrap active />);
+    expect(isModalOpen()).toBe(true);
+    const two = render(<PresenceTrap active />);
+    expect(isModalOpen()).toBe(true);
+    one.rerender(<PresenceTrap active={false} />);
+    expect(isModalOpen()).toBe(true);
+    two.unmount();
+    expect(isModalOpen()).toBe(false);
+    one.rerender(<PresenceTrap active />);
+    expect(isModalOpen()).toBe(true);
+    one.unmount();
+    expect(isModalOpen()).toBe(false);
   });
 });

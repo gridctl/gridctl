@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useSyncExternalStore } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, X } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { copyTextToClipboard } from '../../lib/clipboard';
+import { isModalOpen, subscribeModalPresence } from '../../lib/modalPresence';
 
 interface ToastAction {
   label: string;
@@ -17,6 +18,7 @@ interface Toast {
   duration: number;
   persistent: boolean;
   dismissible: boolean;
+  deferWhileModal: boolean;
 }
 
 interface ToastOptions {
@@ -25,8 +27,10 @@ interface ToastOptions {
   persistent?: boolean;
   /** Defaults to true. Set false to hide the dismiss control. */
   dismissible?: boolean;
-  /** Untrimmed server text, shown as the message title on hover. */
+  /** Untrimmed server text, shown as the message title and behind a Details toggle. */
   detail?: string;
+  /** Hold the toast, with its timer paused, while a modal dialog is open. */
+  deferWhileModal?: boolean;
 }
 
 interface TimerRecord {
@@ -54,7 +58,14 @@ function clearTimer(id: string) {
 }
 
 function isPersistent(type: Toast['type'], options?: ToastOptions): boolean {
-  return options?.persistent === true || Boolean(options?.action) || type === 'error';
+  if (options?.persistent !== undefined) return options.persistent;
+  if (type === 'error') return true;
+  if (options?.duration !== undefined) return false;
+  return Boolean(options?.action);
+}
+
+function isHeld(toast: Toast): boolean {
+  return toast.deferWhileModal && isModalOpen();
 }
 
 function removeToast(id: string) {
@@ -73,9 +84,9 @@ function startTimer(id: string, duration: number) {
 
 // A repeat of a toast the user is still hovering or focused must not arm a
 // fresh timeout. Reset the budget and leave the pause in place.
-function resetTimer(id: string, duration: number) {
+function resetTimer(id: string, duration: number, held = false) {
   const record = timers.get(id);
-  if (record && record.startedAt == null) {
+  if (held || (record && record.startedAt == null)) {
     timers.set(id, { remaining: duration, startedAt: null, handle: null });
     return;
   }
@@ -111,6 +122,18 @@ function dropOldest(list: Toast[]) {
   if (removed) clearTimer(removed.id);
 }
 
+// Held toasts keep their remaining budget while a dialog is open and resume
+// when the last one closes. This lives at module level so it applies whether
+// or not a container is mounted.
+subscribeModalPresence(() => {
+  const open = isModalOpen();
+  for (const toast of toasts) {
+    if (!toast.deferWhileModal || toast.persistent) continue;
+    if (open) pauseTimer(toast.id);
+    else resumeTimer(toast.id);
+  }
+});
+
 /** Copy text to the clipboard and toast the outcome. */
 // eslint-disable-next-line react-refresh/only-export-components -- imperative toast API lives with its container by design; HMR falls back to a full reload for this module
 export async function copyWithToast(text: string, label: string): Promise<void> {
@@ -130,7 +153,9 @@ export function showToast(
 ): string {
   const existing = toasts.find((t) => t.type === type && t.message === message);
   if (existing) {
-    if (!existing.persistent) resetTimer(existing.id, existing.duration);
+    const updated = { ...existing, action: options?.action, detail: options?.detail };
+    toasts = toasts.map((t) => (t.id === existing.id ? updated : t));
+    if (!updated.persistent) resetTimer(updated.id, updated.duration, isHeld(updated));
     notify();
     return existing.id;
   }
@@ -139,11 +164,18 @@ export function showToast(
   const persistent = isPersistent(type, options);
   const duration = options?.duration ?? DEFAULT_DURATION;
   const dismissible = options?.dismissible !== false;
+  const deferWhileModal = options?.deferWhileModal === true;
   const next = [...toasts];
   while (next.length >= MAX_VISIBLE) dropOldest(next);
-  next.push({ id, type, message, detail: options?.detail, action: options?.action, duration, persistent, dismissible });
+  const toast: Toast = {
+    id, type, message, detail: options?.detail, action: options?.action, duration, persistent, dismissible, deferWhileModal,
+  };
+  next.push(toast);
   toasts = next;
-  if (!persistent) startTimer(id, duration);
+  if (!persistent) {
+    if (isHeld(toast)) timers.set(id, { remaining: duration, startedAt: null, handle: null });
+    else startTimer(id, duration);
+  }
   notify();
   return id;
 }
@@ -153,8 +185,14 @@ export function dismissToast(id: string) {
   removeToast(id);
 }
 
+function hasDetails(toast: Toast): boolean {
+  return Boolean(toast.detail) && toast.detail !== toast.message;
+}
+
 export function ToastContainer() {
   const [, setTick] = useState(0);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const modalOpen = useSyncExternalStore(subscribeModalPresence, isModalOpen, isModalOpen);
 
   useEffect(() => {
     const listener = () => setTick((t) => t + 1);
@@ -164,6 +202,17 @@ export function ToastContainer() {
     };
   }, []);
 
+  const toggleDetails = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const visible = modalOpen ? toasts.filter((t) => !t.deferWhileModal) : toasts;
+
   return (
     <div
       role="region"
@@ -172,52 +221,78 @@ export function ToastContainer() {
       aria-atomic="false"
       className="fixed bottom-10 right-4 z-toast space-y-2 max-w-sm"
     >
-      {toasts.map((toast) => (
-        <div
-          key={toast.id}
-          role={toast.type === 'error' ? 'alert' : 'status'}
-          aria-atomic="true"
-          onPointerEnter={() => pauseTimer(toast.id)}
-          onPointerLeave={() => resumeTimer(toast.id)}
-          onFocus={() => pauseTimer(toast.id)}
-          onBlur={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-              resumeTimer(toast.id);
-            }
-          }}
-          className={cn(
-            'flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-medium shadow-lg',
-            'glass-panel-elevated animate-slide-in-right max-w-sm',
-            toast.type === 'success' && 'text-status-running',
-            toast.type === 'error' && 'text-status-error',
-            toast.type === 'warning' && 'text-status-pending',
-          )}
-        >
-          {toast.type === 'success' && <CheckCircle size={14} />}
-          {toast.type === 'error' && <XCircle size={14} />}
-          {toast.type === 'warning' && <AlertTriangle size={14} />}
-          <span className="flex-1" title={toast.detail}>{toast.message}</span>
-          {toast.action && (
-            <button
-              type="button"
-              onClick={toast.action.onClick}
-              className="ml-1 underline underline-offset-2 opacity-80 hover:opacity-100 transition-opacity"
-            >
-              {toast.action.label}
-            </button>
-          )}
-          {toast.dismissible && (
-            <button
-              type="button"
-              aria-label="Dismiss"
-              onClick={() => dismissToast(toast.id)}
-              className="ml-1 p-0.5 rounded opacity-70 hover:opacity-100 transition-opacity"
-            >
-              <X size={12} />
-            </button>
-          )}
-        </div>
-      ))}
+      {visible.map((toast) => {
+        const showDetailsToggle = hasDetails(toast);
+        const isExpanded = showDetailsToggle && expanded.has(toast.id);
+        const detailId = `toast-detail-${toast.id}`;
+        return (
+          <div
+            key={toast.id}
+            role={toast.type === 'error' ? 'alert' : 'status'}
+            aria-atomic="true"
+            onPointerEnter={() => pauseTimer(toast.id)}
+            onPointerLeave={() => resumeTimer(toast.id)}
+            onFocus={() => pauseTimer(toast.id)}
+            onBlur={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                resumeTimer(toast.id);
+              }
+            }}
+            className={cn(
+              'px-4 py-2.5 rounded-lg text-xs font-medium shadow-lg',
+              'glass-panel-elevated animate-slide-in-right max-w-sm',
+              toast.type === 'success' && 'text-status-running',
+              toast.type === 'error' && 'text-status-error',
+              toast.type === 'warning' && 'text-status-pending',
+            )}
+          >
+            <div className="flex items-center gap-2">
+              {toast.type === 'success' && <CheckCircle size={14} />}
+              {toast.type === 'error' && <XCircle size={14} />}
+              {toast.type === 'warning' && <AlertTriangle size={14} />}
+              <span className="flex-1" title={toast.detail}>{toast.message}</span>
+              {showDetailsToggle && (
+                <button
+                  type="button"
+                  aria-expanded={isExpanded}
+                  aria-controls={isExpanded ? detailId : undefined}
+                  onClick={() => toggleDetails(toast.id)}
+                  className="ml-1 underline underline-offset-2 opacity-80 hover:opacity-100 transition-opacity"
+                >
+                  Details
+                </button>
+              )}
+              {toast.action && (
+                <button
+                  type="button"
+                  onClick={toast.action.onClick}
+                  className="ml-1 underline underline-offset-2 opacity-80 hover:opacity-100 transition-opacity"
+                >
+                  {toast.action.label}
+                </button>
+              )}
+              {toast.dismissible && (
+                <button
+                  type="button"
+                  aria-label="Dismiss"
+                  onClick={() => dismissToast(toast.id)}
+                  className="ml-1 p-0.5 rounded opacity-70 hover:opacity-100 transition-opacity"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+            {isExpanded && (
+              <p
+                id={detailId}
+                className="mt-1.5 pl-[22px] font-normal text-text-secondary whitespace-pre-wrap break-words max-h-40 overflow-y-auto"
+              >
+                {toast.detail}
+              </p>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
