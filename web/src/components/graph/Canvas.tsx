@@ -184,9 +184,11 @@ export function Canvas({ filter }: CanvasProps = {}) {
 
   // React Flow controls, wrapped so every caller (canvas buttons, shell
   // shortcuts, palette) shares the user-moved bookkeeping and reduced motion.
-  // An explicit fit re-arms automatic fits; a zoom step is a user move.
+  // An explicit whole-graph fit re-arms automatic fits; framing a node subset
+  // (the toolbar's Enter) and a zoom step are user moves, so a later resize
+  // does not re-frame the whole graph over them.
   const fit = useCallback((options?: CanvasViewportOptions) => {
-    userMovedRef.current = false;
+    userMovedRef.current = options?.nodes !== undefined;
     void fitView({ ...options, duration: motionDuration(options?.duration ?? 0) });
   }, [fitView]);
   const zoomInUser = useCallback((options?: CanvasZoomOptions) => {

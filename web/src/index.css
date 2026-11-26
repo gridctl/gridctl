@@ -855,7 +855,11 @@ body::before {
 }
 
 /* A dimmed node returns to full strength while focused so its ring is not
-   drawn at the dimmed opacity. */
+   drawn at the dimmed opacity. A node faded by the Stack filter does the same. */
+.react-flow .react-flow__node.filtered-out:focus-visible {
+  opacity: 1;
+}
+
 .react-flow .react-flow__node.dimmed:focus-visible {
   opacity: 1;
   filter: none;

@@ -484,6 +484,23 @@ describe('Canvas auto-refit on tool fan-out', () => {
       expect(fittedIds()).toContain(toolId(0));
     });
 
+    it('keeps a subset fit in place when the canvas width changes', () => {
+      const { fire } = installCapturingResizeObserver();
+      render(<Canvas />);
+      act(() => fire(1200));
+      fitView.mockClear();
+
+      act(() => useCanvasActionsStore.getState().fitView({ nodes: [{ id: 'mcp-github' }], duration: 300 }));
+      expect(fitView).toHaveBeenCalledTimes(1);
+
+      // Opening the inspector narrows the canvas; the framed matches stay.
+      act(() => {
+        fire(880);
+        vi.runAllTimers();
+      });
+      expect(fitView).toHaveBeenCalledTimes(1);
+    });
+
     it('re-arms automatic fits from the Fit view button', () => {
       const { getByRole } = render(<Canvas />);
       userMove();
