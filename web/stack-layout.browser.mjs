@@ -172,6 +172,11 @@ try {
     count = size;
     const page = await browser.newPage({ viewport: VIEWPORT });
     page.on('pageerror', (error) => failures.push(`${size}: ${error.message}`));
+    // More than 24 servers opens the table view when no view is saved, so the
+    // graph is chosen up front for the canvas checks.
+    await page.addInitScript(() => {
+      localStorage.setItem('gridctl-ui-storage', JSON.stringify({ state: { stackPrefs: { view: 'graph' } }, version: 1 }));
+    });
     await page.goto(`${origin}/stack`);
     await page.waitForFunction((n) => document.querySelectorAll('.react-flow__node[data-id^="mcp-"]').length === n, size);
     // Pins arrive on the inventory poll; wait for the drift rows to reach node data.
