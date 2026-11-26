@@ -6,6 +6,7 @@
 
 import type { Node } from '@xyflow/react';
 import type { MCPServerStatus, ResourceStatus, ClientStatus, NodeStatus, RegistryStatus, AgentSkill } from '../../types';
+import type { ServerPins } from '../api';
 import { NODE_TYPES } from '../constants';
 import { GATEWAY_NODE_ID } from './edges';
 
@@ -110,10 +111,29 @@ export function hasMixedGenerations(servers: MCPServerStatus[]): boolean {
   return generations.size > 1;
 }
 
+/** Pin state the canvas reads from a server's pin entry. */
+export type ServerPinState = Pick<ServerPins, 'tool_count'> & { status: ServerPins['status'] | 'blocked' };
+
 /**
- * Create MCP server nodes
+ * Pin fields for a server node: present only when the server has a pin
+ * entry, so a server without one carries no pinStatus key at all.
  */
-export function createMCPServerNodes(mcpServers: MCPServerStatus[]): Node[] {
+function pinFields(
+  name: string,
+  pins: Record<string, ServerPinState> | null | undefined,
+): { pinStatus?: ServerPinState['status']; pinDriftCount?: number } {
+  const entry = pins?.[name];
+  return entry ? { pinStatus: entry.status, pinDriftCount: entry.tool_count } : {};
+}
+
+/**
+ * Create MCP server nodes. Pin state is annotated here, before layout,
+ * because drift and blocked rows change a full card's height.
+ */
+export function createMCPServerNodes(
+  mcpServers: MCPServerStatus[],
+  pins?: Record<string, ServerPinState> | null,
+): Node[] {
   return mcpServers.map((server) => ({
     id: `mcp-${server.name}`,
     type: NODE_TYPES.MCP_SERVER,
@@ -161,6 +181,7 @@ export function createMCPServerNodes(mcpServers: MCPServerStatus[]): Node[] {
       source: server.source,
       replicas: server.replicas,
       stderrTail: server.stderrTail,
+      ...pinFields(server.name, pins),
     },
     draggable: true,
   }));
@@ -260,12 +281,13 @@ export function createAllNodes(
   registryStatus?: RegistryStatus | null,
   codeMode?: string | null,
   toolDiscovery?: string | null,
+  pins?: Record<string, ServerPinState> | null,
 ): Node[] {
   const linkedClients = clients.filter((c) => c.linked);
   const nodes: Node[] = [
     createGatewayNode(gatewayInfo, mcpServers, resources, sessions, linkedClients.length, codeMode, registryStatus, toolDiscovery),
     ...createClientNodes(clients),
-    ...createMCPServerNodes(mcpServers),
+    ...createMCPServerNodes(mcpServers, pins),
     ...createResourceNodes(resources),
   ];
 

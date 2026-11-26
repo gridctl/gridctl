@@ -204,9 +204,9 @@ export function createToolFanout(
  *
  * All expanded servers fan into ONE shared column to the right of the servers
  * zone. Each server's tools form a vertical band; bands are tiled top-to-bottom
- * in the servers' own vertical order and the whole stack is centered on the
- * servers' midpoint. Because band order matches server order, each server's
- * edge bundle fans to a contiguous, aligned block and the bundles do not cross.
+ * in the servers' grid order (column, then row) and the whole stack is
+ * centered on the servers' midpoint. Because band order matches server order,
+ * each server's edge bundle fans to a contiguous, aligned block.
  */
 export function appendToolFanout(
   nodes: Node[],
@@ -218,10 +218,10 @@ export function appendToolFanout(
     return { nodes, edges };
   }
 
-  const { compact = false } = options;
+  const { compact = false, draggedPositions } = options;
 
-  // Expanded servers that actually have tools, ordered top-to-bottom so their
-  // bands tile in the same order they appear on the canvas.
+  // Expanded servers that actually have tools, ordered by column then row so
+  // their bands tile in the grid's visual order.
   const servers = nodes
     .filter((node) => {
       const data = node.data as { type?: string; tools?: string[] };
@@ -231,16 +231,25 @@ export function appendToolFanout(
         (data.tools?.length ?? 0) > 0
       );
     })
-    .sort((a, b) => a.position.y - b.position.y);
+    .sort((a, b) => a.position.x - b.position.x || a.position.y - b.position.y);
 
   if (servers.length === 0) {
     return { nodes, edges };
   }
 
-  // Single shared column, just right of the rightmost server edge.
+  // Single shared column, right of the rightmost edge among the expanded
+  // servers and every server still in its grid slot. Dragged servers that
+  // are not expanded do not count, so moving one does not move the column.
+  const anchors = nodes.filter((node) => {
+    const data = node.data as { type?: string };
+    return (
+      data.type === 'mcp-server' &&
+      (servers.includes(node) || !draggedPositions?.has(node.id))
+    );
+  });
   const columnX =
     Math.max(
-      ...servers.map(
+      ...anchors.map(
         (s) => s.position.x + getNodeDimensions(s, compact).width
       )
     ) + LAYOUT.TOOL_OFFSET_X;

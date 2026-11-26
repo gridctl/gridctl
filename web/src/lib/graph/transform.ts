@@ -9,6 +9,7 @@ import type { Node, Edge } from '@xyflow/react';
 import type { MCPServerStatus, ResourceStatus, ClientStatus, RegistryStatus, AgentSkill } from '../../types';
 import type { LayoutEngine, LayoutOptions } from './types';
 import { createAllNodes } from './nodes';
+import type { ServerPinState } from './nodes';
 import { createAllEdges } from './edges';
 import { ButterflyLayoutEngine } from './butterfly';
 
@@ -25,6 +26,8 @@ export interface TransformInput {
   codeMode?: string | null;
   toolDiscovery?: string | null;
   skills?: AgentSkill[];
+  /** Pin entries by server name; annotated onto server nodes before layout */
+  pins?: Record<string, ServerPinState> | null;
 }
 
 /**
@@ -64,7 +67,7 @@ export function transformToGraph(
   input: TransformInput,
   options: TransformOptions = {}
 ): TransformOutput {
-  const { gatewayInfo, mcpServers, resources, sessions, clients = [], registryStatus, codeMode, toolDiscovery } = input;
+  const { gatewayInfo, mcpServers, resources, sessions, clients = [], registryStatus, codeMode, toolDiscovery, pins } = input;
   const { layoutEngine = defaultLayoutEngine, preservedPositions, compact } = options;
 
   // Create nodes
@@ -77,6 +80,7 @@ export function transformToGraph(
     registryStatus,
     codeMode,
     toolDiscovery,
+    pins,
   );
 
   // Create edges
@@ -102,6 +106,7 @@ export function transformToGraph(
  * @param mcpServers - MCP servers
  * @param resources - Resources
  * @param existingPositions - Optional map to preserve user-dragged positions
+ * @param pins - Optional pin entries by server name
  */
 export function transformToNodesAndEdges(
   gatewayInfo: { name: string; version: string },
@@ -114,9 +119,10 @@ export function transformToNodesAndEdges(
   codeMode?: string | null,
   toolDiscovery?: string | null,
   compact?: boolean,
+  pins?: Record<string, ServerPinState> | null,
 ): TransformOutput {
   return transformToGraph(
-    { gatewayInfo, mcpServers, resources, sessions, clients, registryStatus, codeMode, toolDiscovery },
+    { gatewayInfo, mcpServers, resources, sessions, clients, registryStatus, codeMode, toolDiscovery, pins },
     { preservedPositions: existingPositions, compact }
   );
 }

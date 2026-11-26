@@ -264,6 +264,8 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
           isCompact ? 'max-h-0 opacity-0 pointer-events-none' : 'max-h-96 opacity-100'
         )}
       >
+        {/* Layout sizes these rows with estimateFullCardHeight in
+            lib/graph/utils.ts; change the two together. */}
         <div className="p-3 space-y-2.5">
           {/* Endpoint Row (for HTTP MCP servers) */}
           {isServer && hasValidEndpoint && (

@@ -21,6 +21,14 @@ export const LAYOUT = {
   RANK_SPACING: 120,   // Horizontal spacing between tiers (gateway -> servers -> etc)
   MARGIN_X: 40,        // Left/right margin
   MARGIN_Y: 40,        // Top/bottom margin
+  // Server zone grid
+  SERVER_ROW_GAP: 40,            // Vertical gap between server and resource cards (both modes)
+  SERVER_COLUMN_GAP: 64,         // Horizontal gap between server columns
+  SERVER_MAX_COLUMNS: 6,         // Upper bound on server columns
+  NODE_HEIGHT_FULL_NOMINAL: 220, // Full-card height used to choose columns and center the zone
+  LAYOUT_REFERENCE_WIDTH: 1600,  // Reference box the column choice scores the graph against
+  LAYOUT_REFERENCE_HEIGHT: 1000,
+  LAYOUT_MAX_SCORE: 1.5,         // Matches the canvas fit maxZoom
 
   // Legacy radial layout (kept for reference/fallback)
   CENTER_X: 150,

@@ -17,6 +17,7 @@ import type {
 import { transformToNodesAndEdges } from '../lib/transform';
 import { showToast } from '../components/ui/Toast';
 import { appendToolFanout } from '../lib/graph/toolFanout';
+import { orderServersByAttention } from '../lib/graph/serverOrder';
 import { reuseGraphIdentities, structurallyEqual } from '../lib/graph/identity';
 import { useRegistryStore } from './useRegistryStore';
 import { useUIStore } from './useUIStore';
@@ -135,6 +136,32 @@ interface StackState {
   setEdges: (edges: Edge[]) => void;
   // A position change with dragging === false and a position records the drag.
   recordDraggedPositions: (changes: NodeChange[]) => void;
+}
+
+// layoutStackGraph is the one backbone layout both refreshNodesAndEdges and
+// resetLayout run, so the two cannot diverge: servers in attention order and
+// pin state on server nodes before the layout sizes the cards.
+function layoutStackGraph(
+  state: StackState,
+  gatewayInfo: ServerInfo,
+  draggedPositions: Map<string, { x: number; y: number }> | undefined,
+  compact: boolean,
+): { nodes: Node[]; edges: Edge[] } {
+  const { mcpServers, resources, clients, sessions, codeMode, toolDiscovery } = state;
+  const pins = usePinsStore.getState().pins;
+  return transformToNodesAndEdges(
+    gatewayInfo,
+    orderServersByAttention(mcpServers, pins),
+    resources,
+    draggedPositions,
+    sessions,
+    clients,
+    useRegistryStore.getState().status,
+    codeMode,
+    toolDiscovery,
+    compact,
+    pins,
+  );
 }
 
 export const useStackStore = create<StackState>()(
@@ -311,40 +338,18 @@ export const useStackStore = create<StackState>()(
     },
 
     refreshNodesAndEdges: () => {
-      const { gatewayInfo, mcpServers, resources, clients, sessions, codeMode, toolDiscovery, draggedPositions } = get();
+      const { gatewayInfo, draggedPositions } = get();
       if (!gatewayInfo) return;
 
-      const registryStatus = useRegistryStore.getState().status;
       const isCompact = useUIStore.getState().compactCards;
 
       // Only preserve positions for nodes the user has explicitly dragged
-      const { nodes, edges } = transformToNodesAndEdges(
+      const { nodes, edges } = layoutStackGraph(
+        get(),
         gatewayInfo,
-        mcpServers,
-        resources,
         draggedPositions.size > 0 ? draggedPositions : undefined,
-        sessions,
-        clients,
-        registryStatus,
-        codeMode,
-        toolDiscovery,
         isCompact,
       );
-
-      // Cross-reference pins store to annotate MCP server nodes with pin state
-      const pins = usePinsStore.getState().pins;
-      if (pins) {
-        for (const node of nodes) {
-          const d = node.data as Record<string, unknown>;
-          if (d.type === 'mcp-server' && typeof d.name === 'string') {
-            const sp = pins[d.name];
-            if (sp) {
-              d.pinStatus = sp.status;
-              d.pinDriftCount = sp.tool_count;
-            }
-          }
-        }
-      }
 
       // Append tool fan-out for any expanded servers AFTER backbone layout so
       // expanding never reflows the three-column backbone (tool nodes are laid
@@ -354,8 +359,8 @@ export const useStackStore = create<StackState>()(
         draggedPositions: draggedPositions.size > 0 ? draggedPositions : undefined,
       });
 
-      // Reuse after pin annotation and fan-out so a reused node cannot keep a
-      // stale pinStatus. Skip the write when both arrays are unchanged.
+      // Reuse after fan-out so a reused node cannot keep a stale pinStatus.
+      // Skip the write when both arrays are unchanged.
       const previousNodes = get().nodes;
       const previousEdges = get().edges;
       const reused = reuseGraphIdentities(
@@ -394,25 +399,13 @@ export const useStackStore = create<StackState>()(
     },
 
     resetLayout: () => {
-      const { gatewayInfo, mcpServers, resources, clients, sessions, codeMode, toolDiscovery } = get();
+      const { gatewayInfo } = get();
       if (!gatewayInfo) return;
 
-      const registryStatus = useRegistryStore.getState().status;
       const isCompact = useUIStore.getState().compactCards;
 
       // Clear dragged positions and recalculate from scratch
-      const { nodes, edges } = transformToNodesAndEdges(
-        gatewayInfo,
-        mcpServers,
-        resources,
-        undefined,
-        sessions,
-        clients,
-        registryStatus,
-        codeMode,
-        toolDiscovery,
-        isCompact,
-      );
+      const { nodes, edges } = layoutStackGraph(get(), gatewayInfo, undefined, isCompact);
       // Re-derive tool fan-out from scratch too (positions are local to the
       // freshly-laid-out servers; no dragged positions survive a reset).
       const fanned = appendToolFanout(nodes, edges, get().expandedServers, {

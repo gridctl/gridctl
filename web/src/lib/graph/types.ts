@@ -75,6 +75,8 @@ export interface ZoneConfig {
   baseX: number;
   /** Vertical spacing between nodes in this zone */
   nodeSpacing: number;
+  /** Compact-mode spacing; defaults to half of nodeSpacing */
+  compactNodeSpacing?: number;
 }
 
 /**
