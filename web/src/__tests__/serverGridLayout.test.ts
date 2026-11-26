@@ -287,7 +287,10 @@ describe('estimateFullCardHeight', () => {
     // tool, prompt, and MCP resource counts overflow, so a count label breaks
     expect(card(server('a', { toolCount: 12, promptCount: 3, mcpResourceCount: 4 }))).toBe(rest + 35);
     expect(card(server('a', {
-      toolCount: 128, promptCount: 12, mcpResourceCount: 34, capabilities: { prompts: true, resources: true },
+      toolCount: 128, promptCount: 12, mcpResourceCount: 34,
+      capabilities: {
+        prompts: true, resources: true, resourcesSubscribe: false, resourcesListChanged: false, toolsListChanged: false,
+      },
       outputFormat: 'toon', toolWhitelist: ['read'],
     }))).toBe(rest + 35);
     // a hyphenated transport chip breaks itself, the taller of the two
