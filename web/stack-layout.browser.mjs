@@ -37,6 +37,16 @@ function server(i) {
   if (UNHEALTHY.has(i)) return { ...base, healthy: false, healthError: 'connection refused' };
   if (NEEDS_AUTH.has(i)) return { ...base, external: true, healthy: false, authStatus: 'needs_auth' };
   if (DISABLED.has(i)) return { ...base, enabled: false, healthy: false };
+  // Fuller transport rows: the chip breaks at its hyphen, the count labels
+  // break, and a format chip with a whitelist badge that stays on one line.
+  if (i === 2) return { ...base, transport: 'streamable-http', toolCount: 12, promptCount: 3, mcpResourceCount: 4 };
+  if (i === 4) {
+    return {
+      ...base, toolCount: 128, promptCount: 12, mcpResourceCount: 34, capabilities: { prompts: true, resources: true },
+      outputFormat: 'toon', toolWhitelist: ['read'],
+    };
+  }
+  if (i === 6) return { ...base, outputFormat: 'csv', toolWhitelist: ['read'] };
   // Odd servers are stdio containers, so both endpoint and container rows render.
   if (i % 2 === 1) return { ...base, transport: 'stdio', endpoint: undefined, containerId: `c0ffee${String(i).padStart(6, '0')}` };
   return base;
@@ -209,17 +219,19 @@ try {
     // the previous layout's compact geometry. Informational, not asserted.
     await setMode(page, true);
     const single = async (columns) => {
-      await page.evaluate(async (max) => {
+      const previous = await page.evaluate(async (max) => {
         const { LAYOUT } = await import('/src/lib/constants.ts');
         const { useStackStore } = await import('/src/stores/useStackStore.ts');
+        const before = LAYOUT.SERVER_MAX_COLUMNS;
         LAYOUT.SERVER_MAX_COLUMNS = max;
         useStackStore.getState().resetLayout();
+        return before;
       }, columns);
       await stableNodes(page);
-      return (await page.evaluate(measure)).zoom;
+      return { zoom: (await page.evaluate(measure)).zoom, previous };
     };
-    const reference = await single(1);
-    const restored = await single(6);
+    const { zoom: reference, previous: maxColumns } = await single(1);
+    const { zoom: restored } = await single(maxColumns);
     summary.push(`${size} servers, compact, one column: fit zoom ${reference.toFixed(3)} (grid is ${(restored / reference).toFixed(2)}x)`);
     await page.close();
   }
