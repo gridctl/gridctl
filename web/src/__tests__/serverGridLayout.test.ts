@@ -280,6 +280,24 @@ describe('estimateFullCardHeight', () => {
     expect(card(server('a', { enabled: false, healthy: false }))).toBe(75 + 43 + 27 + 32 + 20);
   });
 
+  it('sizes the transport row by whether its labels fit on one line', () => {
+    const rest = 75 + 43 + 16 + 29 + 30;
+    // a format chip and whitelist badge still fit beside the tool count
+    expect(card(server('a', { outputFormat: 'csv', toolWhitelist: ['read'] }))).toBe(rest + 27);
+    // tool, prompt, and MCP resource counts overflow, so a count label breaks
+    expect(card(server('a', { toolCount: 12, promptCount: 3, mcpResourceCount: 4 }))).toBe(rest + 35);
+    expect(card(server('a', {
+      toolCount: 128, promptCount: 12, mcpResourceCount: 34, capabilities: { prompts: true, resources: true },
+      outputFormat: 'toon', toolWhitelist: ['read'],
+    }))).toBe(rest + 35);
+    // a hyphenated transport chip breaks itself, the taller of the two
+    const streamable = { transport: 'streamable-http' as MCPServerStatus['transport'] };
+    expect(card(server('a', { ...streamable, toolCount: 2 }))).toBe(rest + 27);
+    expect(card(server('a', { ...streamable, toolCount: 12, promptCount: 3 }))).toBe(rest + 41);
+    // the json format renders no chip
+    expect(card(server('a', { outputFormat: 'json', toolCount: 12, promptCount: 3 }))).toBe(rest + 27);
+  });
+
   it('sums the rows a resource card renders', () => {
     expect(estimateFullCardHeight(createResourceNodes([resource])[0])).toBe(75 + 48 + 24 + 29 + 20);
   });
