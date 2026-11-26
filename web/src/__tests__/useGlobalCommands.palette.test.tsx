@@ -9,6 +9,7 @@ import { useGlobalCommands } from '../hooks/useGlobalCommands';
 import { COMPACT_MODE_WORKSPACES, useUIStore } from '../stores/useUIStore';
 import { useStackStore } from '../stores/useStackStore';
 import { useAuthStore } from '../stores/useAuthStore';
+import { useAccessLensStore } from '../stores/useAccessLensStore';
 import { useTracesStore } from '../stores/useTracesStore';
 import { useVaultStore } from '../stores/useVaultStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
@@ -229,6 +230,16 @@ describe('palette Stack view commands', () => {
     expect(useUIStore.getState().stackPrefs.view).toBe('table');
     act(() => find('canvas:view-graph').onSelect());
     expect(useUIStore.getState().stackPrefs.view).toBe('graph');
+
+    // Access Lens keeps the graph: the table command explains and saves nothing.
+    useAccessLensStore.setState({ enabled: true });
+    try {
+      act(() => find('canvas:view-table').onSelect());
+      expect(useUIStore.getState().stackPrefs.view).toBe('graph');
+      expect(showToast).toHaveBeenCalledWith('warning', 'Close Access Lens to use the table view');
+    } finally {
+      useAccessLensStore.setState({ enabled: false });
+    }
   });
 });
 

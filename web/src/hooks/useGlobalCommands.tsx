@@ -38,6 +38,7 @@ import { useVaultStore } from '../stores/useVaultStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
 import { useWizardStore } from '../stores/useWizardStore';
 import { useAuthStore } from '../stores/useAuthStore';
+import { useAccessLensStore } from '../stores/useAccessLensStore';
 import { useCanvasActionsStore } from '../stores/useCanvasActionsStore';
 import { useShellActionsStore } from '../stores/useShellActionsStore';
 import { requestInspectorLeave } from '../stores/useInspectorToolsGuardStore';
@@ -290,7 +291,15 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         workspaces: ['stack'],
         icon: <Table size={14} />,
         keywords: ['table', 'list', 'rows', 'view', 'stack', 'servers'],
-        onSelect: () => useUIStore.getState().setStackPrefs({ view: 'table' }),
+        onSelect: () => {
+          // Access Lens keeps the graph; say so instead of saving a view that
+          // would appear later with no feedback.
+          if (useAccessLensStore.getState().enabled) {
+            showToast('warning', 'Close Access Lens to use the table view');
+            return;
+          }
+          useUIStore.getState().setStackPrefs({ view: 'table' });
+        },
       },
       {
         id: 'canvas:view-graph',
