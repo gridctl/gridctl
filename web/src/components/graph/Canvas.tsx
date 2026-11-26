@@ -202,12 +202,27 @@ export function Canvas() {
     return () => clearCanvasActions();
   }, [fit, zoomInUser, zoomOutUser, registerCanvasActions, clearCanvasActions]);
 
+  // The canvas size as laid out now. A frame callback runs before
+  // ResizeObserver notifications, so React Flow's stored size is still the
+  // pre-inspector width when a selection opens the sidebar in the same
+  // commit; reading the wrapper forces layout and is current. The store
+  // covers an unlaid-out wrapper (jsdom).
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const canvasSize = useCallback(() => {
+    const el = wrapperRef.current;
+    if (el && el.clientWidth > 0 && el.clientHeight > 0) {
+      return { width: el.clientWidth, height: el.clientHeight };
+    }
+    const { width, height } = flowStore.getState();
+    return { width, height };
+  }, [flowStore]);
+
   // Pans by the minimum amount at the current zoom so `rect` is on screen.
   // Returns false only when it cannot fit at this zoom, leaving the fallback
   // to the caller; an unmeasured canvas moves nothing. Reads the viewport and
   // the canvas size imperatively so the canvas never re-renders on pan.
   const panToReveal = useCallback((rect: FlowRect): boolean => {
-    const { width, height } = flowStore.getState();
+    const { width, height } = canvasSize();
     if (!(width > 0 && height > 0)) return true;
     const viewport = getViewport();
     if (isRectVisible(rect, viewport, { width, height })) return true;
@@ -215,7 +230,7 @@ export function Canvas() {
     if (!next) return false;
     void setViewport(next, { duration: motionDuration(300) });
     return true;
-  }, [flowStore, getViewport, setViewport]);
+  }, [canvasSize, getViewport, setViewport]);
 
   // The canvas is read-only: the graph mirrors the running stack, so a
   // removal from React Flow would only hide an element until the next poll.
@@ -307,7 +322,6 @@ export function Canvas() {
   // observation reports the mount-time size and must not re-frame a canvas
   // nobody resized. A user-moved viewport is kept; the flag is read when the
   // debounce fires, since the user may move during the wait.
-  const wrapperRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = wrapperRef.current;
     if (!el) return;
@@ -335,8 +349,9 @@ export function Canvas() {
 
   // Bring a selected node into view at the current zoom. Selection often
   // comes from outside the canvas (palette, toasts, links) for a node the
-  // user has panned away from. Deferred one frame so React Flow has recorded
-  // an inspector-driven width change. Before any user move, a selection that
+  // user has panned away from. Deferred one frame so the inspector column has
+  // laid out; panToReveal measures the wrapper, not React Flow's stored size,
+  // which lags that frame. Before any user move, a selection that
   // also re-keys the fit (a client outside Access Lens) is framed by the
   // fit-key effect alone: two viewport calls in one frame interrupt each
   // other. Previous-value refs, not effect order, decide what changed.
@@ -384,7 +399,7 @@ export function Canvas() {
       // React Flow's lookup carries measurements; the store node covers a
       // node it has not picked up yet.
       const lookup = (id: string) => getNode(id) ?? storeNodes.find((n) => n.id === id);
-      const { width, height } = flowStore.getState();
+      const { width, height } = canvasSize();
       if (!(width > 0 && height > 0)) return;
       const viewport = getViewport();
       const toolRects = toolIds.map(lookup).filter((n): n is Node => n !== undefined).map(nodeRect);
@@ -402,7 +417,7 @@ export function Canvas() {
       });
     });
     return () => cancelAnimationFrame(raf);
-  }, [expandedServers, getNode, getViewport, flowStore, fitView, panToReveal]);
+  }, [expandedServers, getNode, getViewport, canvasSize, fitView, panToReveal]);
 
   // Dynamic edge options based on toggle
   const defaultEdgeOptions = useMemo(() => ({

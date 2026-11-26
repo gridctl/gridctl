@@ -662,6 +662,39 @@ describe('Canvas auto-refit on tool fan-out', () => {
       expect(next.y).toBe(0);
     });
 
+    it('measures the laid-out canvas, not the stale stored width, when the inspector opens', () => {
+      // React Flow's store still reports the pre-inspector 1200 px while the
+      // wrapper has already narrowed to 880 px in the selecting commit.
+      const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(
+        function (this: HTMLElement) {
+          return this.classList.contains('canvas-wrapper') ? 880 : 0;
+        },
+      );
+      const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(
+        function (this: HTMLElement) {
+          return this.classList.contains('canvas-wrapper') ? 800 : 0;
+        },
+      );
+      try {
+        placer = (id) => (id === 'mcp-github' ? { x: 900, y: 300, width: 200, height: 60 } : undefined);
+        render(<Canvas />);
+        userMove();
+        fitView.mockClear();
+
+        act(() => {
+          useStackStore.getState().selectNode('mcp-github');
+          useUIStore.setState({ sidebarOpen: true });
+        });
+        expect(fitView).not.toHaveBeenCalled();
+        expect(setViewport).toHaveBeenCalledTimes(1);
+        const [next] = setViewport.mock.calls[0] as [Vp];
+        expect(next).toEqual({ x: 880 - 24 - 1100, y: 0, zoom: 1 });
+      } finally {
+        width.mockRestore();
+        height.mockRestore();
+      }
+    });
+
     it('leaves a fully visible selected node alone', () => {
       placer = (id) => (id === 'mcp-github' ? { x: 300, y: 300, width: 200, height: 60 } : undefined);
       render(<Canvas />);
