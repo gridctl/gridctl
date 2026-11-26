@@ -10,9 +10,19 @@ interface StatusDotProps {
   label?: string;
 }
 
+type DotShape =
+  | 'circle'
+  | 'circle-hollow'
+  | 'circle-half'
+  | 'square'
+  | 'square-hollow'
+  | 'diamond'
+  | 'diamond-hollow'
+  | 'triangle';
+
 /** One shape per status so the dot reads without color. */
 // eslint-disable-next-line react-refresh/only-export-components -- the legend and tests read the same map the dot draws from
-export const STATUS_SHAPES: Record<NodeStatus, string> = {
+export const STATUS_SHAPES: Record<NodeStatus, DotShape> = {
   running: 'circle',
   idle: 'circle-hollow',
   initializing: 'circle-half',
@@ -37,8 +47,10 @@ const STATUS_COLORS: Record<NodeStatus, string> = {
 // Hollow variants use a 1.5 stroke in the 8-unit box so they stay visible at 8 px.
 const hollow = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinejoin: 'round' as const };
 
-function Shape({ shape }: { shape: string }) {
+function Shape({ shape }: { shape: DotShape }) {
   switch (shape) {
+    case 'circle':
+      return <circle cx="4" cy="4" r="4" fill="currentColor" />;
     case 'circle-hollow':
       return <circle cx="4" cy="4" r="3.25" {...hollow} />;
     case 'circle-half':
@@ -58,8 +70,6 @@ function Shape({ shape }: { shape: string }) {
       return <polygon points="4,1.1 6.9,4 4,6.9 1.1,4" {...hollow} />;
     case 'triangle':
       return <polygon points="4,0.5 8,7.5 0,7.5" fill="currentColor" />;
-    default:
-      return <circle cx="4" cy="4" r="4" fill="currentColor" />;
   }
 }
 
