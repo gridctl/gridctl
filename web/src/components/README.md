@@ -30,7 +30,7 @@ Creation wizard entry points use "Create new". The header's primary button (its 
 ├── <Header>           web/src/components/layout/Header.tsx
 │   └── <WorkspaceSwitcher>   <nav aria-label="Workspaces"> of NavLinks
 ├── <Outlet />         renders the active workspace body
-│   ├── <StackWorkspace>      /stack  (hosts the ?spec=1 slide-over)
+│   ├── <StackWorkspace>      /stack  (toolbar over a graph or table body; hosts the ?spec=1 slide-over)
 │   ├── <LibraryWorkspace>    /library  (also /library/:skillName)
 │   ├── <VaultWorkspace>      /vault
 │   ├── <ToolsWorkspace>      /tools
@@ -72,6 +72,19 @@ way. A mouse click clears it. Before the inspector closes (its close button
 or Escape in AppShell while `sidebarOpen` is set), `restoreNodeFocus` in `lib/inspectorFocus.ts`
 returns focus to the node, but only when focus is inside the inspector or
 on `<body>`.
+
+`StackWorkspace` renders `stack/StackToolbar.tsx` above a body that holds
+either the graph (`Canvas` and `AccessLens`) or `stack/StackTable.tsx`; the
+other view is unmounted, not hidden. The workspace owns the transient filter
+(name query and status facets) and passes it to both. `lib/stackRows.ts`
+builds the rows from `useStackStore` nodes, so a row id is the node id and a
+row click opens the same inspector as a node click. On the graph the filter
+adds `filtered-out` to non-matching nodes and their edges and never removes
+any. The view choice is `stackPrefs.view` on `useUIStore` (persisted, `null`
+until the user picks one); with no choice, more than
+`STACK_TABLE_AUTO_THRESHOLD` MCP servers at the first status opens the table.
+Access Lens always uses the graph. `/` focuses the filter outside fields and
+dialogs.
 
 AppShell owns the only in-shell `<main>`. A workspace root that used to
 render `<main>` is a `<section aria-labelledby>` with one `<h1>`, rendered
@@ -391,6 +404,7 @@ web/src/components/
 ├── inspector/        InspectorHeader, InspectorSection, InspectorValueRow, InspectorTabList (wraps ui/Tabs)
 ├── canvas/           CanvasBase                                              ← shared React Flow scaffolding
 ├── graph/            Stack Canvas + custom node types
+├── stack/            Stack toolbar, table view, and Access Lens
 ├── registry/         Library workspace (LibraryGrid, SkillEditor, …)
 ├── palette/          CommandPalette (workspace-scoped via useCommandRegistry)
 └── ui/               Badge, Toast, IconButton, Field, EmptyState, Tabs, …

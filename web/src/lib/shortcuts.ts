@@ -55,6 +55,7 @@ export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
   { keys: [MOD_KEY, '0'], label: 'Fit view', scope: SHORTCUT_SCOPE.stack },
   { keys: [MOD_KEY, '+'], label: 'Zoom in', scope: SHORTCUT_SCOPE.stack },
   { keys: [MOD_KEY, '−'], label: 'Zoom out', scope: SHORTCUT_SCOPE.stack },
+  { keys: ['/'], label: 'Filter', scope: SHORTCUT_SCOPE.stack },
   { keys: ['['], label: 'Toggle left rail', scope: SHORTCUT_SCOPE.panels },
   { keys: [']'], label: 'Toggle right rail', scope: SHORTCUT_SCOPE.panels },
   { keys: ['j'], label: 'Move down', scope: SHORTCUT_SCOPE.lists },

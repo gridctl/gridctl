@@ -9,6 +9,7 @@ import { useGlobalCommands } from '../hooks/useGlobalCommands';
 import { COMPACT_MODE_WORKSPACES, useUIStore } from '../stores/useUIStore';
 import { useStackStore } from '../stores/useStackStore';
 import { useAuthStore } from '../stores/useAuthStore';
+import { useAccessLensStore } from '../stores/useAccessLensStore';
 import { useTracesStore } from '../stores/useTracesStore';
 import { useVaultStore } from '../stores/useVaultStore';
 import { useRegistryStore } from '../stores/useRegistryStore';
@@ -204,6 +205,40 @@ describe('palette navigation commands', () => {
       for (const alias of c.aliases!) {
         expect(text.some((t) => t.includes(alias.toLowerCase())), `${c.id}: ${alias}`).toBe(true);
       }
+    }
+  });
+});
+
+describe('palette Stack view commands', () => {
+  beforeEach(resetStores);
+  afterEach(resetStores);
+
+  it('offers table and graph views in Stack only and writes the preference', async () => {
+    useUIStore.setState({ stackPrefs: { view: null } });
+    await renderAt();
+    const inStack = ids(reg().getSortedCommands(undefined, undefined, 'stack'));
+    expect(inStack).toContain('canvas:view-table');
+    expect(inStack).toContain('canvas:view-graph');
+    const inTools = ids(reg().getSortedCommands(undefined, undefined, 'tools'));
+    expect(inTools).not.toContain('canvas:view-table');
+    expect(inTools).not.toContain('canvas:view-graph');
+
+    const find = (id: string) => reg().commands.find((c) => c.id === id)!;
+    expect(find('canvas:view-table').label).toBe('Show Stack as table');
+    expect(find('canvas:view-graph').label).toBe('Show Stack as graph');
+    act(() => find('canvas:view-table').onSelect());
+    expect(useUIStore.getState().stackPrefs.view).toBe('table');
+    act(() => find('canvas:view-graph').onSelect());
+    expect(useUIStore.getState().stackPrefs.view).toBe('graph');
+
+    // Access Lens keeps the graph: the table command explains and saves nothing.
+    useAccessLensStore.setState({ enabled: true });
+    try {
+      act(() => find('canvas:view-table').onSelect());
+      expect(useUIStore.getState().stackPrefs.view).toBe('graph');
+      expect(showToast).toHaveBeenCalledWith('warning', 'Close Access Lens to use the table view');
+    } finally {
+      useAccessLensStore.setState({ enabled: false });
     }
   });
 });

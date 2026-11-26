@@ -3,6 +3,9 @@ import { create } from 'zustand';
 export interface CanvasViewportOptions {
   padding?: number;
   duration?: number;
+  /** Frame only these nodes instead of the whole graph. */
+  nodes?: Array<{ id: string }>;
+  maxZoom?: number;
 }
 
 export interface CanvasZoomOptions {

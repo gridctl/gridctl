@@ -214,6 +214,11 @@ interface UIState extends WorkspaceSlice, CompactModeSlice {
   // Library workspace view preferences (select mode).
   libraryPrefs: LibraryPrefs;
   setLibraryPrefs: (prefs: Partial<LibraryPrefs>) => void;
+
+  // Stack workspace view preference (graph or table). Persisted; null until
+  // the user picks a view, so the workspace may choose one automatically.
+  stackPrefs: StackPrefs;
+  setStackPrefs: (prefs: Partial<StackPrefs>) => void;
 }
 
 interface TracesPrefs {
@@ -349,6 +354,22 @@ function normalizeLibraryPrefs(value: unknown): LibraryPrefs {
   };
 }
 
+export interface StackPrefs {
+  /** The view the user last chose; null means no choice has been made. */
+  view: 'graph' | 'table' | null;
+}
+
+const STACK_PREFS_DEFAULTS: StackPrefs = {
+  view: null,
+};
+
+export function normalizeStackPrefs(value: unknown): StackPrefs {
+  const v = (value ?? {}) as Partial<StackPrefs>;
+  return {
+    view: v.view === 'graph' || v.view === 'table' ? v.view : null,
+  };
+}
+
 export const useUIStore = create<UIState>()(
   persist(
     (set, get, store) => ({
@@ -455,6 +476,10 @@ export const useUIStore = create<UIState>()(
       setLibraryPrefs: (prefs) =>
         set((s) => ({ libraryPrefs: { ...s.libraryPrefs, ...prefs } })),
 
+      stackPrefs: { ...STACK_PREFS_DEFAULTS },
+      setStackPrefs: (prefs) =>
+        set((s) => ({ stackPrefs: normalizeStackPrefs({ ...s.stackPrefs, ...prefs }) })),
+
       // Detached window actions
       setLogsDetached: (logsDetached) => set({ logsDetached }),
       setSidebarDetached: (sidebarDetached) => set({ sidebarDetached }),
@@ -487,6 +512,7 @@ export const useUIStore = create<UIState>()(
         pinsPrefs: state.pinsPrefs,
         toolsPrefs: state.toolsPrefs,
         libraryPrefs: state.libraryPrefs,
+        stackPrefs: state.stackPrefs,
       }),
       merge: (persisted, current) => {
         const p = persisted as Partial<UIState> | undefined;
@@ -504,6 +530,7 @@ export const useUIStore = create<UIState>()(
           pinsPrefs: normalizePinsPrefs((p as { pinsPrefs?: unknown })?.pinsPrefs),
           toolsPrefs: normalizeToolsPrefs((p as { toolsPrefs?: unknown })?.toolsPrefs),
           libraryPrefs: normalizeLibraryPrefs((p as { libraryPrefs?: unknown })?.libraryPrefs),
+          stackPrefs: normalizeStackPrefs((p as { stackPrefs?: unknown })?.stackPrefs),
         };
       },
     }

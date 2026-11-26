@@ -40,6 +40,14 @@ describe('SHORTCUT_BINDINGS', () => {
     );
   });
 
+  it('lists the / filter once under the Stack scope', () => {
+    const rows = SHORTCUT_BINDINGS.filter(
+      (binding) => binding.scope === SHORTCUT_SCOPE.stack && binding.keys.join('+') === '/',
+    );
+    expect(rows).toEqual([{ keys: ['/'], label: 'Filter', scope: 'Stack' }]);
+    expect(SHORTCUT_SCOPE_ORDER.filter((scope) => scope === SHORTCUT_SCOPE.stack)).toHaveLength(1);
+  });
+
   it('stores Mod and Shift tokens instead of Mac symbols', () => {
     for (const binding of SHORTCUT_BINDINGS) {
       for (const key of binding.keys) {
