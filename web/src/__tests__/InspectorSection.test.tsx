@@ -106,6 +106,67 @@ describe('InspectorSection', () => {
     expect(panel?.className ?? '').not.toMatch(/max-h|opacity|overflow-hidden/);
   });
 
+  it('opens when autoOpen changes to true', () => {
+    const { rerender } = render(
+      <InspectorSection title="Authorization" autoOpen={false}>
+        <div>panel body</div>
+      </InspectorSection>,
+    );
+    const toggle = screen.getByRole('button', { name: /authorization/i });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    rerender(
+      <InspectorSection title="Authorization" autoOpen>
+        <div>panel body</div>
+      </InspectorSection>,
+    );
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(panelFor(toggle)).not.toHaveAttribute('hidden');
+    expect(panelFor(toggle)).toContainElement(screen.getByText('panel body'));
+  });
+
+  it('keeps a user collapse while autoOpen stays true', () => {
+    const { rerender } = render(
+      <InspectorSection title="Authorization" autoOpen={false}>
+        <div>panel body</div>
+      </InspectorSection>,
+    );
+    rerender(
+      <InspectorSection title="Authorization" autoOpen>
+        <div>panel body</div>
+      </InspectorSection>,
+    );
+    const toggle = screen.getByRole('button', { name: /authorization/i });
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    rerender(
+      <InspectorSection title="Authorization" autoOpen>
+        <div>panel body, rerendered</div>
+      </InspectorSection>,
+    );
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(panelFor(toggle)).toHaveAttribute('hidden');
+  });
+
+  it('leaves an open section open when autoOpen changes to false', () => {
+    const { rerender } = render(
+      <InspectorSection title="Authorization" defaultOpen autoOpen>
+        <div>panel body</div>
+      </InspectorSection>,
+    );
+    const toggle = screen.getByRole('button', { name: /authorization/i });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    rerender(
+      <InspectorSection title="Authorization" defaultOpen autoOpen={false}>
+        <div>panel body</div>
+      </InspectorSection>,
+    );
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(panelFor(toggle)).not.toHaveAttribute('hidden');
+  });
+
   it('renders an icon and a count badge', () => {
     render(
       <InspectorSection title="Tools" icon={Activity} count={3}>

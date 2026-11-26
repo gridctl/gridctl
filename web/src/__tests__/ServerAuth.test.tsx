@@ -485,6 +485,24 @@ describe('setGatewayStatus needs-auth transition toast', () => {
     useStackStore.getState().setGatewayStatus(status('needs_auth') as never);
     expect(toastSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('Authorize selects the server and opens the inspector', async () => {
+    const { showToast } = await import('../components/ui/Toast');
+    const toastSpy = vi.mocked(showToast);
+    const status = (authStatus: 'authorized' | 'needs_auth') => ({
+      gateway: { name: 'g', version: '1' },
+      'mcp-servers': [makeServerStatus({ name: 'notion', authStatus })],
+    });
+    useStackStore.setState({ mcpServers: [], selectedNodeId: null });
+    useUIStore.setState({ sidebarOpen: false });
+    useStackStore.getState().setGatewayStatus(status('authorized') as never);
+    useStackStore.getState().setGatewayStatus(status('needs_auth') as never);
+
+    const call = toastSpy.mock.calls.find((c) => c[1] === 'notion requires authorization');
+    call?.[2]?.action?.onClick();
+    expect(useStackStore.getState().selectedNodeId).toBe('mcp-notion');
+    expect(useUIStore.getState().sidebarOpen).toBe(true);
+  });
 });
 
 describe('GatewaySidebar pending authorization row', () => {

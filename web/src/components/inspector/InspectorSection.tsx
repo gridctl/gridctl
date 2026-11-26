@@ -6,6 +6,9 @@ interface InspectorSectionProps {
   icon?: ComponentType<{ size?: number; className?: string }>;
   count?: number;
   defaultOpen?: boolean;
+  // Opens the section when it changes to true. It never closes the section,
+  // and a section the user collapsed stays collapsed while it remains true.
+  autoOpen?: boolean;
   children: ReactNode;
 }
 
@@ -23,10 +26,19 @@ export function InspectorSection({
   icon: Icon,
   count,
   defaultOpen = false,
+  autoOpen,
   children,
 }: InspectorSectionProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [hasOpened, setHasOpened] = useState(defaultOpen);
+  const [prevAutoOpen, setPrevAutoOpen] = useState(autoOpen);
+  if (autoOpen !== prevAutoOpen) {
+    setPrevAutoOpen(autoOpen);
+    if (autoOpen) {
+      setIsOpen(true);
+      setHasOpened(true);
+    }
+  }
   const panelId = useId();
 
   const toggle = () => {

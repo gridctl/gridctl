@@ -1,35 +1,22 @@
 import { KeyRound } from 'lucide-react';
 import { cn } from '../../lib/cn';
-import { useStackStore } from '../../stores/useStackStore';
-import { useUIStore } from '../../stores/useUIStore';
-import { requestInspectorLeave } from '../../stores/useInspectorToolsGuardStore';
+import { openServerInspector, useStackStore } from '../../stores/useStackStore';
 
 /**
  * AuthPendingBadge is the status-bar chip for servers waiting on downstream
- * OAuth authorization. Hidden when nothing is pending; clicking selects the
- * first pending server so its sidebar (with the Authorize button) opens.
- * Follows the PinDriftBadge pattern.
+ * OAuth authorization. Hidden when nothing is pending; clicking opens the
+ * Stack inspector (with the Authorize button) on the first pending server,
+ * from any workspace. Follows the PinDriftBadge pattern.
  */
 export function AuthPendingBadge() {
   const mcpServers = useStackStore((s) => s.mcpServers);
-  const selectNode = useStackStore((s) => s.selectNode);
-  const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
 
   const pending = mcpServers.filter((s) => s.authStatus === 'needs_auth');
   if (pending.length === 0) return null;
 
   const label = `Auth: ${pending.length} pending`;
 
-  const handleClick = () => {
-    const target = pending[0].name;
-    requestInspectorLeave(
-      () => {
-        selectNode(`mcp-${target}`);
-        setSidebarOpen(true);
-      },
-      { targetServer: target },
-    );
-  };
+  const handleClick = () => openServerInspector(pending[0].name);
 
   return (
     <button

@@ -15,12 +15,13 @@ import { useUIStore } from '../../stores/useUIStore';
 import { usePolling } from '../../hooks/usePolling';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useCanvasActionsStore } from '../../stores/useCanvasActionsStore';
+import { useShellNavStore } from '../../stores/useShellNavStore';
 import { useGlobalCommands } from '../../hooks/useGlobalCommands';
 import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { documentTitleForWorkspace, isWorkspace, type Workspace } from '../../types/workspace';
 import { writePref } from '../../lib/preferences';
 import { restoreNodeFocus } from '../../lib/inspectorFocus';
-import { navigateToWorkspace } from '../../lib/workspaceNav';
+import { inWorkspace, navigateToWorkspace } from '../../lib/workspaceNav';
 
 const HEADER_HEIGHT = 56;
 const STATUSBAR_HEIGHT = 32;
@@ -76,6 +77,18 @@ export function AppShell() {
   useEffect(() => {
     document.title = documentTitleForWorkspace(workspaceFromPath(pathname));
   }, [pathname]);
+
+  // Store actions that open the Stack inspector navigate through here. Leaving
+  // an unsaved editor asks first through the shared navigation guard.
+  useEffect(() => {
+    useShellNavStore.getState().register({
+      goToStack: () => {
+        if (inWorkspace(pathname, 'stack')) return;
+        navigate('/stack');
+      },
+    });
+    return () => useShellNavStore.getState().clear();
+  }, [navigate, pathname]);
 
   // Keyboard shortcuts. ⌘1-9 switch workspaces; ⌘J opens Logs (the old
   // bottom-panel toggle's muscle memory lands on the panel's main content).

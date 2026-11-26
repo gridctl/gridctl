@@ -24,6 +24,7 @@ import { cn } from '../../lib/cn';
 import { Badge } from '../ui/Badge';
 import { ControlBar } from '../ui/ControlBar';
 import { PopoutButton } from '../ui/PopoutButton';
+import { EmptyState } from '../ui/EmptyState';
 import { InspectorHeader, InspectorSection } from '../inspector';
 import { GatewaySidebar } from '../gateway/GatewaySidebar';
 import { ServerAuthSection } from '../sidebar/ServerAuthSection';
@@ -57,6 +58,7 @@ export function Sidebar() {
   const sidebarDetached = useUIStore((s) => s.sidebarDetached);
   const selectNode = useStackStore((s) => s.selectNode);
   const selectedNodeId = useStackStore((s) => s.selectedNodeId);
+  const missingSelection = useStackStore((s) => s.missingSelection);
   const focusRequest = useUIStore((s) => s.inspectorFocusRequest);
   const requestInspectorFocus = useUIStore((s) => s.requestInspectorFocus);
   const autoscaleHistory = useStackStore((s) => s.autoscaleHistory);
@@ -89,9 +91,25 @@ export function Sidebar() {
     });
   };
 
-  // Don't render content if no valid selection
-  if (!selectedData) {
+  if (!selectedNodeId) {
     return null;
+  }
+
+  // The selected node left the graph: removed, renamed, or restarting. Keep
+  // the rail closable until it returns or the store drops the selection.
+  if (!selectedData) {
+    const missingName =
+      missingSelection?.id === selectedNodeId ? missingSelection.name : undefined;
+    return (
+      <div className="h-full w-full flex flex-col overflow-hidden">
+        <InspectorHeader title="Inspector" accent="muted" onClose={handleClose} />
+        <EmptyState
+          inline
+          title={missingName ? `${missingName} is not in the stack` : 'This node is not in the stack'}
+          description="It was removed or renamed, or it is restarting. Its details return here if it comes back."
+        />
+      </div>
+    );
   }
 
   // Gateway and skill groups get the registry sidebar
@@ -406,7 +424,13 @@ export function Sidebar() {
           const authStatus = liveServer?.authStatus ?? serverData?.authStatus;
           if (!authStatus) return null;
           return (
-            <InspectorSection title="Authorization" icon={KeyRound} defaultOpen={authStatus === 'needs_auth'}>
+            <InspectorSection
+              key={data.name}
+              title="Authorization"
+              icon={KeyRound}
+              defaultOpen={authStatus === 'needs_auth'}
+              autoOpen={authStatus === 'needs_auth'}
+            >
               <ServerAuthSection
                 serverName={data.name}
                 authStatus={authStatus}
