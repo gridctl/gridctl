@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import '@testing-library/jest-dom';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import type { SharedStatus } from '../hooks/useSharedStatus';
-import type { GatewayStatus } from '../types';
+import type { GatewayStatus, MCPServerStatus } from '../types';
 
 vi.mock('../hooks/useBroadcastChannel', () => ({
   useDetachedWindowSync: vi.fn(),
@@ -150,6 +150,62 @@ describe('DetachedSidebarPage', () => {
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(document.title).toBe('Gridctl - Details: cache');
     expect(setServerTools).not.toHaveBeenCalled();
+  });
+
+  it('shows health under State and the evidence sections collapsed between Status and Tools', async () => {
+    const db = {
+      ...STATUS['mcp-servers'][0],
+      endpoint: 'http://db.internal:9000/mcp',
+      healthy: false,
+      lastCheck: new Date().toISOString(),
+      healthError: 'db refused the connection',
+      stderrTail: ['fatal: db exited'],
+      replicas: [{ replicaId: 0, state: 'unhealthy', healthy: false, inFlight: 0, execution: { mode: 'hardened', eligible: true } }],
+    } as unknown as MCPServerStatus;
+    setShared({ status: { ...STATUS, 'mcp-servers': [db] } as unknown as GatewayStatus });
+    renderAt('/sidebar?node=db');
+    const statusToggle = screen.getByRole('button', { name: /^Status/ });
+    const panel = document.getElementById(statusToggle.getAttribute('aria-controls')!)!;
+    const inOrder = [
+      within(panel).getByText('State'),
+      within(panel).getByText('Health'),
+      within(panel).getByText('Last Check'),
+      within(panel).getByText('db refused the connection'),
+      within(panel).getByText('fatal: db exited'),
+      within(panel).getByText('Transport'),
+      within(panel).getByText('Endpoint'),
+    ];
+    for (let i = 1; i < inOrder.length; i++) {
+      expect(inOrder[i - 1].compareDocumentPosition(inOrder[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(within(panel).getByText('Endpoint')).toHaveClass('log-text');
+    expect(within(panel).getByRole('button', { name: 'Copy endpoint' })).toBeInTheDocument();
+    expect(within(panel).queryByText(/Security evidence|Execution evidence|Refresh report/)).not.toBeInTheDocument();
+
+    const security = screen.getByRole('button', { name: /^Security evidence/ });
+    const execution = screen.getByRole('button', { name: /^Execution evidence/ });
+    const tools = screen.getByRole('button', { name: /^Tools/ });
+    expect(statusToggle.compareDocumentPosition(security) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(security.compareDocumentPosition(execution) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(execution.compareDocumentPosition(tools) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(security).toHaveAttribute('aria-expanded', 'false');
+    expect(execution).toHaveAttribute('aria-expanded', 'false');
+    expect(within(execution).getByText('1 of 1 replicas eligible')).toBeInTheDocument();
+    await waitFor(() => expect(within(security).getByText('No checks for this server')).toBeInTheDocument());
+    expect(fetchSecurityReport).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives a resource a copyable image and an Execution evidence section', () => {
+    setShared({
+      status: { ...STATUS, resources: [{ name: 'cache', image: 'redis:7.2-alpine', status: 'running' }] } as unknown as GatewayStatus,
+    });
+    renderAt('/sidebar?node=cache');
+    expect(screen.getByText('Image')).toHaveClass('log-text');
+    expect(screen.getByRole('button', { name: 'Copy image' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Security evidence/ })).not.toBeInTheDocument();
+    const execution = screen.getByRole('button', { name: /^Execution evidence/ });
+    expect(execution).toHaveAttribute('aria-expanded', 'false');
+    expect(within(execution).getByText('Not covered for resources')).toBeInTheDocument();
   });
 
   it('renders the notifications region', () => {

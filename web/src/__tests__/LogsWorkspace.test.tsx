@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { LogsWorkspace } from '../components/workspaces/LogsWorkspace';
+import { ToastContainer } from '../components/ui/Toast';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
 import { useStackStore } from '../stores/useStackStore';
 import { useUIStore, COMPACT_MODE_DEFAULTS } from '../stores/useUIStore';
@@ -327,5 +328,27 @@ describe('LogsWorkspace', () => {
     renderAt('/logs');
     expect(await screen.findByText('Logs unavailable')).toBeInTheDocument();
     expect(screen.queryByRole('grid', { name: 'Log entries' })).not.toBeInTheDocument();
+  });
+
+  it('reports a refused copy of the filtered view in a toast', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } });
+    Object.defineProperty(document, 'execCommand', { value: () => false, configurable: true, writable: true });
+    try {
+      render(<ToastContainer />);
+      renderAt('/logs');
+      await screen.findByText('gateway listening');
+      fireEvent.click(screen.getByRole('button', { name: /Copy filtered view/i }));
+      expect(await screen.findByText('Copy failed')).toBeInTheDocument();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+      Object.defineProperty(document, 'execCommand', { value: undefined, configurable: true, writable: true });
+      Object.assign(navigator, { clipboard: undefined });
+      const live = screen.queryByRole('region', { name: 'Notifications' });
+      if (live) within(live).queryAllByRole('button', { name: 'Dismiss' }).forEach((b) => fireEvent.click(b));
+    }
   });
 });

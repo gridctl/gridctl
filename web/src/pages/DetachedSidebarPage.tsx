@@ -29,14 +29,14 @@ import type {
   MCPServerStatus,
   ResourceStatus,
 } from '../types';
-import { InspectorSection } from '../components/inspector';
+import { InspectorSection, InspectorValueRow } from '../components/inspector';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { EmptyState, FailedState } from '../components/ui/EmptyState';
 import { DetachedWindowFrame } from '../components/detached/DetachedWindowFrame';
 import { SelectMenu } from '../components/detached/SelectMenu';
 import { SourceProvenance } from '../components/sidebar/SourceProvenance';
-import { ExecutionDetails } from '../components/sidebar/ExecutionDetails';
-import { SecurityEvidence } from '../components/sidebar/SecurityEvidence';
+import { ExecutionEvidenceSection, SecurityEvidenceSection } from '../components/sidebar/EvidenceSections';
+import { ServerHealth } from '../components/sidebar/ServerHealth';
 import { CatalogSummary } from '../components/sidebar/CatalogSummary';
 import { useAuthStore } from '../stores/useAuthStore';
 import { requestInspectorLeave } from '../stores/useInspectorToolsGuardStore';
@@ -317,7 +317,8 @@ function NodeDetails({
             <Badge status={status as 'running' | 'stopped' | 'error'}>{status}</Badge>
           </div>
 
-          <ExecutionDetails server={serverData ?? undefined} resource={!isServer} />
+          {isServer && serverData && <ServerHealth data={serverData} labelClassName="log-text" />}
+
           {isServer && serverData?.transport && (() => {
             const TransportIcon = getTransportIcon(serverData.transport);
             return (
@@ -337,15 +338,12 @@ function NodeDetails({
           })()}
 
           {isServer && serverData?.endpoint && (
-            <div className="flex justify-between items-center gap-4">
-              <span className="log-text text-text-muted">Endpoint</span>
-              <span
-                className="text-xs text-text-secondary font-mono truncate max-w-[200px] bg-background/50 px-2 py-1 rounded-md"
-                title={serverData.endpoint}
-              >
-                {serverData.endpoint}
-              </span>
-            </div>
+            <InspectorValueRow
+              label="Endpoint"
+              value={serverData.endpoint}
+              copyLabel={serverData.endpoint !== 'unknown' ? 'Copy endpoint' : undefined}
+              labelClassName="log-text"
+            />
           )}
 
           {isServer && (
@@ -357,18 +355,9 @@ function NodeDetails({
             />
           )}
           {isServer && serverData && <CatalogSummary data={serverData} />}
-          {isServer && serverData?.name && <SecurityEvidence scope={{ server: serverData.name }} />}
 
           {resourceData?.image && (
-            <div className="flex justify-between items-center gap-4">
-              <span className="log-text text-text-muted">Image</span>
-              <span
-                className="text-xs text-text-secondary font-mono truncate max-w-[200px] bg-background/50 px-2 py-1 rounded-md"
-                title={resourceData.image}
-              >
-                {resourceData.image}
-              </span>
-            </div>
+            <InspectorValueRow label="Image" value={resourceData.image} copyLabel="Copy image" labelClassName="log-text" />
           )}
 
           {resourceData?.network && (
@@ -379,6 +368,9 @@ function NodeDetails({
           )}
         </div>
       </InspectorSection>
+
+      {isServer && <SecurityEvidenceSection key={`security-${node.name}`} server={node.name} />}
+      <ExecutionEvidenceSection key={`execution-${node.name}`} server={serverData ?? undefined} resource={!isServer} />
 
       {/* Tools Section (MCP servers only) */}
       {isServer && (

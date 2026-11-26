@@ -4,8 +4,7 @@ export function ExecutionDetails({ server, resource = false }: { server?: MCPSer
   const replicas = server?.replicas ?? [];
   const protectedReplicas = replicas.filter((replica) => replica.execution?.mode === 'hardened');
   const eligible = protectedReplicas.filter((replica) => replica.execution?.eligible).length;
-  return <details className="rounded-lg border border-border p-3 space-y-3">
-    <summary className="cursor-pointer text-sm font-medium">Execution evidence</summary>
+  return <div className="space-y-3">
     {server?.execution && <p className="break-all text-sm">Desired mode: {server.execution.mode}; revision: {server.execution.revision}; aggregate: {server.execution.outcome}. Required eligibility: {server.execution.eligible ? 'observed for all active replicas' : 'not established for all replicas'}.</p>}
     {resource ? <p className="text-sm">Resource container execution hardening is not covered.</p>
       : server?.ssh || server?.external || server?.openapi ? <p className="text-sm">Externally managed execution. Remote confinement and descendant cleanup are unverified.</p>
@@ -29,5 +28,5 @@ export function ExecutionDetails({ server, resource = false }: { server?: MCPSer
       </>}
     </section>)}
     <p className="text-xs">Post-start observations leave a window before verification. Network none does not constrain image pulls, build downloads, or information returned through MCP.</p>
-  </details>;
+  </div>;
 }

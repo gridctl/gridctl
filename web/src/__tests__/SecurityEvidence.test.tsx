@@ -140,6 +140,26 @@ describe('SecurityEvidence', () => {
     expect(button).toHaveFocus();
   });
 
+  it('leaves the title to the enclosing section and states the report limits', async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <SecurityEvidence scope={{ server: 'fetch' }} />
+      </MemoryRouter>,
+    );
+    await screen.findByText(/fail: pin.schema.continuity/);
+    const root = screen.getByRole('region', { name: 'Security evidence' });
+    expect(root).toHaveClass('max-w-full', 'overflow-x-hidden');
+    expect(root.className).not.toMatch(/\bborder\b|rounded-lg/);
+    expect(container.querySelector('h3')).toBeNull();
+    expect(screen.queryByText('Security evidence', { exact: true })).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'This is a passive report. Refresh re-reads it and does not re-observe downstream evidence. A report with no failures does not mean the server is secure.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Exit zero is not secure/)).not.toBeInTheDocument();
+  });
+
   it('surfaces source errors without an approval action', async () => {
     fetchSecurityReport.mockRejectedValue(new Error('nope'));
     render(

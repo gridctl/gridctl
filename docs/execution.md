@@ -115,7 +115,7 @@ SSH keeps its connection and argument semantics. Local SSH-client exit does not 
 
 ## Inspect and edit
 
-Existing server details show Execution evidence separately from MCP health. Per-replica reports include revision, instance, timestamps, evidence source, and control outcomes. Mixed replicas are not uniformly eligible. Idle-to-zero has no current active evidence. `gridctl status --json` retains reports; `gridctl status --replicas` shows execution outcomes beside MCP state.
+The Stack inspector shows MCP health in its Status section and Execution evidence in a separate collapsed section whose header summarizes how many replicas are eligible. Per-replica reports include revision, instance, timestamps, evidence source, and control outcomes. Mixed replicas are not uniformly eligible. Idle-to-zero has no current active evidence. `gridctl status --json` retains reports; `gridctl status --replicas` shows execution outcomes beside MCP state.
 
 The wizard's Execution section selects compatibility, hardened containers, or local hygiene. Container forms expose UID/GID and networking; local forms expose inherited names and lookup. Use YAML mode for container budgets, mounts, and exceptions. The entire execution mapping survives unrelated form edits, including explicit empty lists and false values. Switching from YAML mode back to Form is refused, naming the affected keys, when the form would drop, change, or restore anything edited in YAML; Review still works from YAML mode. Review and save use authoritative proposed YAML, and a draft saved in YAML mode keeps its YAML text. A saved draft and syntax validation are not runtime enforcement.
 

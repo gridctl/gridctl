@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useLogStream } from '../../hooks/useLogStream';
-import { copyTextToClipboard } from '../../lib/clipboard';
+import { copyWithToast } from '../ui/Toast';
 import { useUIStore } from '../../stores/useUIStore';
 import {
   DEFAULT_LOG_WINDOW,
@@ -301,10 +301,9 @@ export function useLogsView(): LogsViewState {
     timeRange !== 'all' ||
     enabledLevels.size !== ALL_LEVELS.size;
 
-  const copyFiltered = useCallback(
-    () => copyTextToClipboard(filteredLogs.map((log) => log.raw).join('\n')),
-    [filteredLogs],
-  );
+  const copyFiltered = useCallback(() => {
+    void copyWithToast(filteredLogs.map((log) => log.raw).join('\n'), 'Filtered view');
+  }, [filteredLogs]);
 
   const togglePause = useCallback(() => setIsPaused((p) => !p), []);
 

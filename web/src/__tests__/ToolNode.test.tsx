@@ -124,8 +124,31 @@ describe('ToolNode', () => {
     Object.assign(navigator, { clipboard: { writeText } });
     renderNode();
     fireEvent.click(trigger());
-    fireEvent.click(await screen.findByRole('button', { name: /copy name/i }));
+    const copy = await screen.findByRole('button', { name: /copy name/i });
+    await act(async () => {
+      fireEvent.click(copy);
+    });
     expect(writeText).toHaveBeenCalledWith('github__search-repos');
+    expect(copy).toHaveTextContent('Copied');
+    expect(screen.getByText('github__search-repos')).toBeInTheDocument();
+    expect(trigger()).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('shows Copy failed without closing when the copy is refused', async () => {
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } });
+    Object.defineProperty(document, 'execCommand', { value: () => false, configurable: true, writable: true });
+    try {
+      renderNode();
+      fireEvent.click(trigger());
+      const copy = await screen.findByRole('button', { name: /copy name/i });
+      await act(async () => {
+        fireEvent.click(copy);
+      });
+      expect(copy).toHaveTextContent('Copy failed');
+      expect(screen.getByText('github__search-repos')).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(document, 'execCommand', { value: undefined, configurable: true, writable: true });
+    }
   });
 
   it('deep-links to the Tools workspace and closes', async () => {

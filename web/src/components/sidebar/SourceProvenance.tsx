@@ -1,3 +1,4 @@
+import { InspectorValueRow } from '../inspector/InspectorValueRow';
 import type { MCPServerSourceStatus } from '../../types';
 
 interface SourceProvenanceProps {
@@ -24,24 +25,14 @@ export function SourceProvenance({
 
   return (
     <>
-      {kind && <StatusRow label="Kind" value={kind} labelClassName={labelClassName} />}
-      {declared && <StatusRow label="Source" value={declared} labelClassName={labelClassName} />}
-      {resolved && <StatusRow label="Resolved" value={resolved} labelClassName={labelClassName} />}
-      {image && <StatusRow label="Image" value={image} labelClassName={labelClassName} />}
+      {kind && <InspectorValueRow label="Kind" value={kind} labelClassName={labelClassName} />}
+      {declared && (
+        <InspectorValueRow label="Source" value={declared} copyLabel="Copy source" labelClassName={labelClassName} />
+      )}
+      {resolved && (
+        <InspectorValueRow label="Resolved" value={resolved} copyLabel="Copy resolved source" labelClassName={labelClassName} />
+      )}
+      {image && <InspectorValueRow label="Image" value={image} copyLabel="Copy image" labelClassName={labelClassName} />}
     </>
-  );
-}
-
-function StatusRow({ label, value, labelClassName }: { label: string; value: string; labelClassName: string }) {
-  return (
-    <div className="flex justify-between items-start gap-4">
-      <span className={`${labelClassName} text-text-muted`}>{label}</span>
-      <span
-        tabIndex={0}
-        className="text-xs text-text-secondary font-mono break-all max-w-[200px] bg-background/50 px-2 py-1 rounded-md"
-      >
-        {value}
-      </span>
-    </div>
   );
 }

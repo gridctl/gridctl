@@ -167,6 +167,45 @@ describe('InspectorSection', () => {
     expect(panelFor(toggle)).not.toHaveAttribute('hidden');
   });
 
+  it('shows the summary inside the header while collapsed and while open', () => {
+    render(
+      <InspectorSection title="Security evidence" summary="1 failing, 2 passing">
+        <div>panel body</div>
+      </InspectorSection>,
+    );
+    const toggle = screen.getByRole('button', { name: /^Security evidence/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const summary = screen.getByText('1 failing, 2 passing');
+    expect(toggle).toContainElement(summary);
+    expect(summary).toHaveClass('text-2xs', 'text-text-muted', 'break-words');
+    expect(toggle).toHaveAccessibleName('Security evidence 1 failing, 2 passing');
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(toggle).toContainElement(screen.getByText('1 failing, 2 passing'));
+  });
+
+  it('renders no summary line without a summary', () => {
+    render(
+      <InspectorSection title="Status">
+        <div>panel body</div>
+      </InspectorSection>,
+    );
+    expect(screen.getByRole('button', { name: 'Status' })).toHaveAccessibleName('Status');
+  });
+
+  it('does not cap the height of tall open content', () => {
+    const { container } = render(
+      <InspectorSection title="Evidence" defaultOpen>
+        <div style={{ height: 2400 }}>tall body</div>
+      </InspectorSection>,
+    );
+    for (const el of Array.from(container.querySelectorAll('*'))) {
+      expect(el.getAttribute('class') ?? '').not.toMatch(/max-h-|overflow-hidden/);
+    }
+    expect(screen.getByText('tall body')).toBeVisible();
+  });
+
   it('renders an icon and a count badge', () => {
     render(
       <InspectorSection title="Tools" icon={Activity} count={3}>

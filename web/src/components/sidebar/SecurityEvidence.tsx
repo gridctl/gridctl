@@ -1,61 +1,34 @@
-import { useCallback, useEffect, useId, useState } from 'react';
 import { Link } from 'react-router';
-import { fetchSecurityReport } from '../../lib/api';
 import { useGuardedLinkClick } from '../../hooks/useGuardedNavigate';
-import type { SecurityCheck, SecurityReport } from '../../types';
+import { useSecurityReport, type SecurityReportResult } from '../../hooks/useSecurityReport';
+import { scopeSecurityChecks, type SecurityScope } from '../../lib/evidenceSummary';
+import type { SecurityCheck } from '../../types';
 
 const ALLOWED_ACTION_PREFIX = '/pins';
 
-export function SecurityEvidence({ scope }: { scope: 'gateway' | { server: string } }) {
-  const [report, setReport] = useState<SecurityReport | null>(null);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const statusId = useId();
+// Renders the passive security report inside an enclosing section, which
+// supplies the title. Pass `state` to share one fetch with a section summary;
+// without it the component reads the report itself.
+export function SecurityEvidence({ scope, state }: { scope: SecurityScope; state?: SecurityReportResult }) {
+  if (state) return <SecurityEvidenceBody scope={scope} state={state} />;
+  return <SelfFetchingSecurityEvidence scope={scope} />;
+}
 
-  const applyResult = useCallback((next: SecurityReport | null, message: string) => {
-    setReport(next);
-    setError(message);
-    setLoading(false);
-  }, []);
+function SelfFetchingSecurityEvidence({ scope }: { scope: SecurityScope }) {
+  const state = useSecurityReport();
+  return <SecurityEvidenceBody scope={scope} state={state} />;
+}
 
-  useEffect(() => {
-    let cancelled = false;
-    fetchSecurityReport()
-      .then((next) => {
-        if (!cancelled) applyResult(next, '');
-      })
-      .catch(() => {
-        if (!cancelled) applyResult(null, 'Security evidence report is unavailable.');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [applyResult]);
-
-  const refresh = () => {
-    setLoading(true);
-    setError('');
-    fetchSecurityReport()
-      .then((next) => applyResult(next, ''))
-      .catch(() => applyResult(null, 'Security evidence report is unavailable.'));
-  };
-
-  const checks = (report?.checks ?? []).filter((check) => {
-    if (scope === 'gateway') {
-      return check.subject.kind === 'gateway' || check.subject.kind === 'skill';
-    }
-    return (
-      (check.subject.kind === 'server' && check.subject.name === scope.server)
-      || (check.subject.kind === 'replica' && check.subject.name.startsWith(`${scope.server}:`))
-    );
-  });
+function SecurityEvidenceBody({ scope, state }: { scope: SecurityScope; state: SecurityReportResult }) {
+  const { report, error, loading, refresh } = state;
+  const checks = scopeSecurityChecks(report?.checks ?? [], scope);
 
   return (
-    <section className="rounded-lg border border-border p-3 space-y-3 max-w-full overflow-x-hidden" aria-labelledby={statusId}>
-      <div className="flex items-center justify-between gap-2 min-w-0">
-        <h3 id={statusId} className="text-sm font-medium break-words min-w-0">
-          Security evidence
-        </h3>
+    <section className="space-y-3 max-w-full overflow-x-hidden" aria-label="Security evidence">
+      <div className="flex items-start justify-between gap-2 min-w-0">
+        <p className="text-xs text-text-muted break-words min-w-0">
+          This is a passive report. Refresh re-reads it and does not re-observe downstream evidence. A report with no failures does not mean the server is secure.
+        </p>
         <button
           type="button"
           onClick={refresh}
@@ -64,9 +37,6 @@ export function SecurityEvidence({ scope }: { scope: 'gateway' | { server: strin
           Refresh report
         </button>
       </div>
-      <p className="text-xs text-text-muted break-words">
-        Refresh re-reads this passive report. It does not re-observe downstream evidence. Exit zero is not secure.
-      </p>
       {loading && <p className="text-sm" role="status">Loading security evidence.</p>}
       {error && <p className="text-sm" role="alert">{error}</p>}
       {report && (
