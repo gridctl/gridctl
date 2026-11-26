@@ -248,18 +248,18 @@ describe('useCommandRegistry', () => {
       // Pre-seed localStorage before the hook mounts
       localStorage.setItem(
         prefKey('palette-frecency'),
-        JSON.stringify({ 'navigate:traces': { count: 5, lastUsed: Date.now() - 1000 } }),
+        JSON.stringify({ 'navigate:workspace-traces': { count: 5, lastUsed: Date.now() - 1000 } }),
       );
 
       const { result } = renderHook(() => useCommandRegistry(), { wrapper });
-      const cmd = makeCommand('navigate:traces', 'Open Traces');
+      const cmd = makeCommand('navigate:workspace-traces', 'Go to Traces');
 
       act(() => result.current.registerCommands('test', [cmd]));
 
       // Command with pre-existing frecency data should show in recent list
       const recent = result.current.getRecentCommands();
       expect(recent).toHaveLength(1);
-      expect(recent[0].id).toBe('navigate:traces');
+      expect(recent[0].id).toBe('navigate:workspace-traces');
     });
 
     it('handles corrupted localStorage gracefully', () => {

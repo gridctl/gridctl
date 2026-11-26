@@ -10,25 +10,13 @@ import type { ReactNode } from 'react';
 import type { PaletteCommand, PaletteSection } from '../types/palette';
 import type { Workspace } from '../types/workspace';
 import { readPref, writePref } from '../lib/preferences';
+import { parseFrecency, type FrecencyEntry, type FrecencyMap } from '../lib/paletteFrecency';
+import { normalizePaletteQuery, scorePaletteCommand } from '../lib/paletteScore';
 
 const FRECENCY_NAME = 'palette-frecency';
 
-interface FrecencyEntry {
-  count: number;
-  lastUsed: number;
-}
-
-type FrecencyMap = Map<string, FrecencyEntry>;
-
 function loadFrecency(): FrecencyMap {
-  try {
-    const raw = readPref(FRECENCY_NAME);
-    if (!raw) return new Map();
-    const parsed = JSON.parse(raw) as Record<string, FrecencyEntry>;
-    return new Map(Object.entries(parsed));
-  } catch {
-    return new Map();
-  }
+  return parseFrecency(readPref(FRECENCY_NAME));
 }
 
 function saveFrecency(map: FrecencyMap): void {
@@ -113,26 +101,25 @@ export function CommandRegistryProvider({ children }: { children: ReactNode }) {
         filtered = filtered.filter((c) => c.section === scopeSection);
       }
 
-      if (query?.trim()) {
-        const q = query.toLowerCase();
-        filtered = filtered.filter((c) => {
-          const haystack = [c.label, ...(c.keywords ?? [])].join(' ').toLowerCase();
-          // Fuzzy: every character of q appears in order in haystack
-          let pos = 0;
-          for (const ch of q) {
-            const found = haystack.indexOf(ch, pos);
-            if (found === -1) return false;
-            pos = found + 1;
-          }
-          return true;
-        });
+      const scores = new Map<string, number>();
+      for (const c of filtered) {
+        scores.set(c.id, computeFrecencyScore(frecencyRef.current.get(c.id)));
       }
+      const byFrecency = (a: PaletteCommand, b: PaletteCommand) =>
+        (scores.get(b.id) ?? 0) - (scores.get(a.id) ?? 0);
 
-      return [...filtered].sort(
-        (a, b) =>
-          computeFrecencyScore(frecencyRef.current.get(b.id)) -
-          computeFrecencyScore(frecencyRef.current.get(a.id))
-      );
+      const q = query ? normalizePaletteQuery(query) : '';
+      if (!q) return [...filtered].sort(byFrecency);
+
+      // Match quality first; frecency only orders commands within a tier.
+      // Array.prototype.sort is stable, so ties keep registration order.
+      const ranked: { command: PaletteCommand; tier: number }[] = [];
+      for (const command of filtered) {
+        const tier = scorePaletteCommand(command, q);
+        if (tier !== null) ranked.push({ command, tier });
+      }
+      ranked.sort((a, b) => a.tier - b.tier || byFrecency(a.command, b.command));
+      return ranked.map((r) => r.command);
     },
     [commands]
   );

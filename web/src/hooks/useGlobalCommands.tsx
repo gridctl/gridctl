@@ -1,14 +1,9 @@
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router';
-import { useGuardedNavigate } from './useGuardedNavigate';
-import { useNavigationGuardStore } from '../stores/useNavigationGuardStore';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 import {
   Activity,
   Key,
   Library,
-  Terminal,
-  BarChart2,
-  Layers,
   Maximize2,
   RefreshCw,
   ZoomIn,
@@ -19,7 +14,6 @@ import {
   Server,
   FileCode,
   Plus,
-  Pin,
   Sun,
   Moon,
   Monitor,
@@ -29,11 +23,13 @@ import {
   SlidersHorizontal,
   Keyboard,
   Database,
+  FileCog,
+  Rows3,
 } from 'lucide-react';
 import type { ThemeMode } from '../themes/types';
 import { MOD_KEY, SHIFT_KEY } from '../lib/platform';
 import { useCommandRegistry } from './useCommandRegistry';
-import { useUIStore } from '../stores/useUIStore';
+import { COMPACT_MODE_WORKSPACES, useUIStore } from '../stores/useUIStore';
 import { useStackStore } from '../stores/useStackStore';
 import { useTracesStore } from '../stores/useTracesStore';
 import { useVaultStore } from '../stores/useVaultStore';
@@ -41,7 +37,11 @@ import { useRegistryStore } from '../stores/useRegistryStore';
 import { useWizardStore } from '../stores/useWizardStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useCanvasActionsStore } from '../stores/useCanvasActionsStore';
+import { useShellActionsStore } from '../stores/useShellActionsStore';
 import { requestInspectorLeave } from '../stores/useInspectorToolsGuardStore';
+import { showToast } from '../components/ui/Toast';
+import { navigateToWorkspace } from '../lib/workspaceNav';
+import { buildWorkspaceNavCommands, buildWorkspaceViewCommands } from '../lib/paletteWorkspaceCommands';
 import type { PaletteCommand } from '../types/palette';
 
 interface GlobalCommandsOptions {
@@ -50,8 +50,21 @@ interface GlobalCommandsOptions {
 
 export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   const { registerCommands, unregisterCommands } = useCommandRegistry();
-  const navigate = useGuardedNavigate();
   const rawNavigate = useNavigate();
+
+  // Commands read the location when selected, not when registered, so URL
+  // changes do not re-register them.
+  const location = useLocation();
+  const locationRef = useRef({ pathname: location.pathname, search: location.search });
+  useLayoutEffect(() => {
+    locationRef.current = { pathname: location.pathname, search: location.search };
+  });
+
+  const go = useCallback(
+    (target: string, then?: () => void) =>
+      navigateToWorkspace((to) => void rawNavigate(to), locationRef.current.pathname, target, then),
+    [rawNavigate],
+  );
 
   const toggleHeatMap = useUIStore((s) => s.toggleHeatMap);
   const toggleCompactCards = useUIStore((s) => s.toggleCompactCards);
@@ -72,89 +85,18 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   const skills = useRegistryStore((s) => s.skills);
   const credential = useAuthStore((s) => s.credential);
 
-  // Static navigation commands
+  // Navigation: one Go to command per workspace, then the Spec Editor and
+  // Reset. Registered first so they lead Navigate To before any usage.
   useEffect(() => {
     const commands: PaletteCommand[] = [
-      // Cross-workspace navigation — visible in every workspace.
-      {
-        id: 'navigate:workspace-stack',
-        label: 'Go to Stack',
-        section: 'global',
-        icon: <Layers size={14} />,
-        shortcut: [MOD_KEY, '1'],
-        keywords: ['stack', 'topology', 'workspace', 'operator', 'graph', 'go'],
-        onSelect: () => navigate('/stack'),
-      },
-      {
-        id: 'navigate:workspace-library',
-        label: 'Go to Library',
-        section: 'global',
-        icon: <Library size={14} />,
-        shortcut: [MOD_KEY, '2'],
-        keywords: ['library', 'workspace', 'registry', 'catalog', 'skills', 'go'],
-        onSelect: () => navigate('/library'),
-      },
-      {
-        id: 'navigate:traces',
-        label: 'Open Traces',
-        section: 'global',
-        icon: <Activity size={14} />,
-        shortcut: [MOD_KEY, '8'],
-        keywords: ['traces', 'activity', 'spans', 'calls', 'workspace', 'open'],
-        onSelect: () => navigate('/traces'),
-      },
-      {
-        id: 'navigate:logs',
-        label: 'Open Logs',
-        section: 'global',
-        icon: <Terminal size={14} />,
-        shortcut: [MOD_KEY, '7'],
-        keywords: ['logs', 'output', 'console', 'stream', 'workspace', 'open'],
-        onSelect: () => navigate('/logs'),
-      },
-      {
-        id: 'navigate:metrics',
-        label: 'Open Metrics',
-        section: 'global',
-        icon: <BarChart2 size={14} />,
-        shortcut: [MOD_KEY, '5'],
-        keywords: ['metrics', 'stats', 'tokens', 'usage', 'charts', 'dashboard', 'open'],
-        onSelect: () => navigate('/metrics'),
-      },
-      {
-        id: 'navigate:workspace-pins',
-        label: 'Go to Pins',
-        section: 'global',
-        icon: <Pin size={14} />,
-        shortcut: [MOD_KEY, '6'],
-        keywords: ['pins', 'workspace', 'drift', 'schema', 'tofu', 'approve', 'go'],
-        onSelect: () => navigate('/pins'),
-      },
+      ...buildWorkspaceNavCommands((target) => go(target)),
       {
         id: 'navigate:spec',
         label: 'Open Spec Editor',
         section: 'global',
         icon: <FileCode size={14} />,
         keywords: ['spec', 'yaml', 'editor', 'config', 'open'],
-        onSelect: () => navigate('/stack?spec=1'),
-      },
-      {
-        id: 'navigate:vault',
-        label: 'Open Variables',
-        section: 'global',
-        icon: <Key size={14} />,
-        shortcut: [MOD_KEY, '3'],
-        keywords: ['variables', 'vault', 'secrets', 'keys', 'env', 'workspace', 'open'],
-        onSelect: () => navigate('/vault'),
-      },
-      {
-        id: 'navigate:connections',
-        label: 'Go to Connections',
-        section: 'global',
-        icon: <Plug size={14} />,
-        shortcut: [MOD_KEY, '9'],
-        keywords: ['connections', 'clients', 'link', 'hub', 'workspace', 'go'],
-        onSelect: () => navigate('/connections'),
+        onSelect: () => go('/stack?spec=1'),
       },
       {
         id: 'system:reset-gridctl',
@@ -164,18 +106,70 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         keywords: ['reset', 'purge', 'remove', 'uninstall', 'danger', 'factory', 'clean'],
         // The dialog lives in Connections; navigating first keeps one
         // mount point instead of a second dialog instance in the shell. It
-        // opens only once the guarded navigation proceeds.
-        onSelect: () => {
-          useNavigationGuardStore.getState().guard('/connections', () => {
-            void rawNavigate('/connections');
-            useUIStore.getState().setResetDialogOpen(true);
-          });
-        },
+        // opens only once the guarded navigation proceeds, or right away
+        // when Connections is already open.
+        onSelect: () => go('/connections', () => useUIStore.getState().setResetDialogOpen(true)),
       },
     ];
     registerCommands('navigation', commands);
     return () => unregisterCommands('navigation');
-  }, [registerCommands, unregisterCommands, navigate, rawNavigate]);
+  }, [registerCommands, unregisterCommands, go]);
+
+  // Workspace views reached through URL params. Registered before the
+  // dynamic entries so they lead Current Context before any usage.
+  useEffect(() => {
+    registerCommands(
+      'workspace-views',
+      buildWorkspaceViewCommands({
+        getLocation: () => locationRef.current,
+        navigate: (to, options) => void rawNavigate(to, options),
+      }),
+    );
+    return () => unregisterCommands('workspace-views');
+  }, [registerCommands, unregisterCommands, rawNavigate]);
+
+  // Shell actions available in every workspace (compact mode only where a
+  // workspace reads it).
+  useEffect(() => {
+    const commands: PaletteCommand[] = [
+      {
+        id: 'system:refresh',
+        label: 'Refresh',
+        section: 'global',
+        icon: <RefreshCw size={14} />,
+        shortcut: [MOD_KEY, SHIFT_KEY, 'R'],
+        keywords: ['refresh', 'reload', 'update', 'sync', 'data', 'canvas'],
+        onSelect: () => onRefresh?.(),
+      },
+      {
+        id: 'system:reload-config',
+        label: 'Reload Config',
+        section: 'global',
+        icon: <FileCog size={14} />,
+        keywords: ['reload', 'config', 'stack', 'yaml', 'apply', 'spec'],
+        onSelect: () => {
+          const reload = useShellActionsStore.getState().reloadConfig;
+          if (reload) reload();
+          else showToast('warning', 'Reload Config is not available right now');
+        },
+      },
+      {
+        id: 'view:toggle-compact-mode',
+        label: 'Toggle compact mode',
+        section: 'global',
+        workspaces: [...COMPACT_MODE_WORKSPACES],
+        icon: <Rows3 size={14} />,
+        shortcut: [MOD_KEY, '\\'],
+        keywords: ['compact', 'density', 'dense', 'rows', 'toggle'],
+        onSelect: () => {
+          const ui = useUIStore.getState();
+          ui.toggleCompactMode(ui.activeWorkspace);
+        },
+      },
+    ];
+    registerCommands('shell-actions', commands);
+    return () => unregisterCommands('shell-actions');
+  }, [registerCommands, unregisterCommands, onRefresh]);
 
   // Appearance commands mirror the header ThemePicker. Open Preferences is the same dialog.
   useEffect(() => {
@@ -261,16 +255,6 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         onSelect: () => useCanvasActionsStore.getState().zoomOut({ duration: 200 }),
       },
       {
-        id: 'canvas:refresh',
-        label: 'Refresh canvas',
-        section: 'canvas',
-        workspaces: ['stack'],
-        icon: <RefreshCw size={14} />,
-        shortcut: [MOD_KEY, SHIFT_KEY, 'R'],
-        keywords: ['refresh', 'reload', 'update', 'sync', 'data'],
-        onSelect: () => onRefresh?.(),
-      },
-      {
         id: 'canvas:toggle-heatmap',
         label: 'Toggle heatmap overlay',
         section: 'canvas',
@@ -314,8 +298,6 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
     toggleHeatMap,
     toggleCompactCards,
     toggleSpecMode,
-    navigate,
-    onRefresh,
   ]);
 
   useEffect(() => {
@@ -356,6 +338,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
       section: 'canvas' as const,
       workspaces: ['stack' as const],
       icon: <Server size={14} />,
+      aliases: [server.name],
       keywords: [server.name, 'node', 'server', 'mcp', 'inspect'],
       onSelect: () => inspect(`mcp-${server.name}`, server.name),
     }));
@@ -367,6 +350,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         section: 'canvas' as const,
         workspaces: ['stack' as const],
         icon: <Plug size={14} />,
+        aliases: [client.name],
         keywords: [client.name, client.slug, 'node', 'client', 'inspect'],
         onSelect: () => inspect(`client-${client.slug}`),
       }));
@@ -376,6 +360,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
       section: 'canvas' as const,
       workspaces: ['stack' as const],
       icon: <Database size={14} />,
+      aliases: [resource.name],
       keywords: [resource.name, 'node', 'resource', 'inspect'],
       onSelect: () => inspect(`resource-${resource.name}`),
     }));
@@ -394,27 +379,33 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
 
   // Dynamic trace commands
   useEffect(() => {
-    const commands: PaletteCommand[] = (traces ?? []).slice(0, 20).map((trace) => ({
+    const commands: PaletteCommand[] = (traces ?? []).map((trace) => ({
       id: `trace:${trace.traceId}`,
       label: `Search traces: ${trace.operation} — ${trace.server}`,
       section: 'traces' as const,
       icon: <Activity size={14} />,
       keywords: [trace.traceId, trace.server, trace.operation, 'trace'],
-      onSelect: () => navigate(`/traces?trace=${encodeURIComponent(trace.traceId)}`),
+      // TracesWorkspace reads ?trace= only on mount, so inside Traces the
+      // store must be told directly or the URL and selection disagree.
+      onSelect: () =>
+        go(`/traces?trace=${encodeURIComponent(trace.traceId)}`, () =>
+          useTracesStore.getState().selectTrace(trace.traceId),
+        ),
     }));
     registerCommands('dynamic-traces', commands);
     return () => unregisterCommands('dynamic-traces');
-  }, [traces, registerCommands, unregisterCommands, navigate]);
+  }, [traces, registerCommands, unregisterCommands, go]);
 
   // Dynamic variable store commands — both secrets and plaintext entries
   // surface here. The label distinguishes the two so the user knows what
   // kind of value will appear when the panel opens.
   useEffect(() => {
-    const commands: PaletteCommand[] = (secrets ?? []).slice(0, 30).map((variable) => ({
+    const commands: PaletteCommand[] = (secrets ?? []).map((variable) => ({
       id: `vault:${variable.key}`,
       label: `Open variable: ${variable.key}${variable.is_secret ? '' : ' (plaintext)'}`,
       section: 'vault' as const,
       icon: <Key size={14} />,
+      aliases: [variable.key],
       keywords: [
         variable.key,
         'variable',
@@ -423,26 +414,25 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         'env',
         variable.set ?? '',
       ],
-      onSelect: () => navigate(`/vault?q=${encodeURIComponent(variable.key)}`),
+      onSelect: () => go(`/vault?q=${encodeURIComponent(variable.key)}`),
     }));
     registerCommands('dynamic-vault', commands);
     return () => unregisterCommands('dynamic-vault');
-  }, [secrets, registerCommands, unregisterCommands, navigate]);
+  }, [secrets, registerCommands, unregisterCommands, go]);
 
   // Dynamic registry skill commands — open the Library workspace at the
   // skill's deep-link so the SkillEditor mounts.
   useEffect(() => {
-    const commands: PaletteCommand[] = (skills ?? []).slice(0, 20).map((skill) => ({
+    const commands: PaletteCommand[] = (skills ?? []).map((skill) => ({
       id: `skill:${skill.name}`,
       label: `View skill: ${skill.name}`,
       section: 'registry' as const,
       icon: <Library size={14} />,
+      aliases: [skill.name],
       keywords: [skill.name, 'skill', 'library', 'registry', skill.description],
-      onSelect: () => {
-        navigate(`/library/${encodeURIComponent(skill.name)}`);
-      },
+      onSelect: () => go(`/library/${encodeURIComponent(skill.name)}`),
     }));
     registerCommands('dynamic-skills', commands);
     return () => unregisterCommands('dynamic-skills');
-  }, [skills, registerCommands, unregisterCommands, navigate]);
+  }, [skills, registerCommands, unregisterCommands, go]);
 }

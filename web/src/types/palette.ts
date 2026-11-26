@@ -9,6 +9,8 @@ export type PaletteSection =
   | 'logs'
   | 'metrics'
   | 'pins'
+  | 'tools'
+  | 'connections'
   | 'global';
 
 export interface PaletteCommand {
@@ -22,6 +24,9 @@ export interface PaletteCommand {
   icon?: ReactNode;     // Lucide icon element
   shortcut?: string[];  // key tokens, e.g., [MOD_KEY, '0'] for Zoom to fit
   keywords?: string[];  // additional fuzzy match terms
+  // Strings that name the command outright; a query equal to one ranks the
+  // command in the top tier. Each must also appear in the label or keywords.
+  aliases?: string[];
   onSelect: () => void; // action to execute
   unavailable?: boolean; // show unavailable indicator; toast on select instead of executing
 }

@@ -14,7 +14,7 @@ vi.mock('../hooks/useGlobalCommands', () => ({ useGlobalCommands: () => {} }));
 
 function LocationProbe() {
   const location = useLocation();
-  return <div data-testid="location">{location.pathname}</div>;
+  return <div data-testid="location">{location.pathname + location.search}</div>;
 }
 
 function renderShell(path: string) {
@@ -93,5 +93,20 @@ describe('AppShell navigation shortcuts', () => {
     fireEvent.keyDown(window, { key: '4', metaKey: true });
     expect(screen.getByText('Discard unsaved changes')).toBeInTheDocument();
     expect(screen.getByTestId('location')).toHaveTextContent('/stack');
+  });
+
+  it('keeps the URL when the current workspace shortcut runs inside a dirty Tools', () => {
+    renderShell('/tools?server=b');
+    useNavigationGuardStore.getState().register({
+      id: 'tools',
+      label: 'Tools for b',
+      blocks: (to) => leavesWorkspace(to, 'tools'),
+    });
+    fireEvent.keyDown(window, { key: '4', metaKey: true });
+    expect(screen.getByTestId('location')).toHaveTextContent('/tools?server=b');
+    expect(useNavigationGuardStore.getState().pending).toBeNull();
+    fireEvent.keyDown(window, { key: '1', metaKey: true });
+    expect(screen.getByTestId('location')).toHaveTextContent('/tools?server=b');
+    expect(useNavigationGuardStore.getState().pending?.labels).toEqual(['Tools for b']);
   });
 });
