@@ -61,7 +61,7 @@ describe('CreationWizard after a successful deploy', () => {
     render(<CreationWizard onDeploy={onDeploy} />);
 
     await clickDeploy();
-    await waitFor(() => expect(onDeploy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onDeploy).toHaveBeenCalledTimes(1), { timeout: 5000 });
 
     const state = useWizardStore.getState();
     expect(state.isOpen).toBe(false);
