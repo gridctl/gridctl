@@ -121,9 +121,9 @@ export function anySignalEnabled(cfg: ResolvedTelemetry, serverName: string): bo
 
 /**
  * Tri-state for the sidebar control. inherit means the per-server override
- * is absent; on/off mean explicit true/false. The state machine in the UI
- * cycles inherit → on → off → inherit, mapping each transition to the
- * PATCH body shape described in the API helpers.
+ * is absent; on/off mean explicit true/false. The UI offers each state as a
+ * direct choice and maps it to the PATCH body shape described in the API
+ * helpers.
  */
 export type TriState = 'inherit' | 'on' | 'off';
 
@@ -138,20 +138,8 @@ export function readTriState(
   return 'inherit';
 }
 
-/** Cycle to the next tri-state: inherit → on → off → inherit. */
-export function nextTriState(state: TriState): TriState {
-  switch (state) {
-    case 'inherit':
-      return 'on';
-    case 'on':
-      return 'off';
-    case 'off':
-      return 'inherit';
-  }
-}
-
 /**
- * Map a tri-state transition to the PATCH body value for a single signal:
+ * Map a tri-state to the PATCH body value for a single signal:
  * on → true, off → false, inherit → null (clears the override).
  */
 export function triStateToPatch(state: TriState): boolean | null {
