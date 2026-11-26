@@ -112,6 +112,15 @@
   --z-index-modal: 50;
   --z-index-popover: 60;
   --z-index-toast: 70;
+
+  /* Autoscale scale-up ring. Animates opacity on an overlay so the card's
+     ring and bevel box-shadows stay intact. */
+  --animate-pulse-glow: pulse-glow 2s ease-in-out infinite;
+
+  @keyframes pulse-glow {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 1; }
+  }
 }
 
 /* Outfit variable, Latin. @fontsource-variable/outfit 5.3.0. */
@@ -624,15 +633,6 @@ body::before {
   to {
     opacity: 1;
     transform: translateX(0);
-  }
-}
-
-@keyframes glow-pulse {
-  0%, 100% {
-    box-shadow: 0 0 12px var(--color-primary-glow);
-  }
-  50% {
-    box-shadow: 0 0 24px var(--color-primary-glow), 0 0 48px var(--color-primary-glow);
   }
 }
 

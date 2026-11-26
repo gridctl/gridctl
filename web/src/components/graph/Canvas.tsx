@@ -36,6 +36,7 @@ import { motionDuration } from '../../lib/motion';
 import { CanvasBase } from '../canvas/CanvasBase';
 import { SpecModeOverlay } from '../spec/SpecModeOverlay';
 import { OverlaysMenu } from './OverlaysMenu';
+import { CanvasLegend } from './CanvasLegend';
 import { SubGrid } from './SubGrid';
 import { requestInspectorLeave } from '../../stores/useInspectorToolsGuardStore';
 
@@ -705,6 +706,7 @@ export function Canvas() {
             )}
           </button>
           <OverlaysMenu />
+          <CanvasLegend />
         </Panel>
       </CanvasBase>
       {showSpecMode && (

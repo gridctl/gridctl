@@ -19,7 +19,7 @@ export interface HighlightState {
   highlightedNodeIds: Set<string>;
   /** Edge IDs that should be highlighted */
   highlightedEdgeIds: Set<string>;
-  /** Whether any selection is active */
+  /** Whether a client focus is dimming the rest of the graph */
   hasSelection: boolean;
 }
 
@@ -174,11 +174,11 @@ function narrowToClientScope(
  * Compute path highlighting based on the selected node.
  *
  * When a client is selected: highlight the transitive client -> gateway ->
- * reachable-servers path. For other node types: highlight only the selected
- * node. In every case, the fanned-out tools of a highlighted server are
- * highlighted too, so expanding a reachable server in focus mode keeps its
- * tools at full opacity. A selection whose node is missing from the graph
- * highlights nothing. Pure function so it can be unit-tested without React.
+ * reachable-servers path, and the fanned-out tools of each highlighted server,
+ * so expanding a reachable server in focus mode keeps its tools at full
+ * opacity. Any other selection, or one whose node is missing from the graph,
+ * returns the empty state and dims nothing. Pure function so it can be
+ * unit-tested without React.
  *
  * @param nodes - All nodes in the graph
  * @param edges - All edges in the graph
@@ -209,16 +209,13 @@ export function computeHighlightState(
   }
 
   const nodeData = selectedNode.data as Record<string, unknown>;
-  const isClient = nodeData?.type === 'client';
+  // Only a client focus dims the graph. Servers, resources, and the gateway
+  // rely on the selection ring so their neighbors stay comparable.
+  if (nodeData?.type !== 'client') {
+    return emptyHighlight();
+  }
 
-  // Client nodes: highlight the transitive client -> gateway -> servers path.
-  // Other node types: just highlight the selected node.
-  const { highlightedNodeIds, highlightedEdgeIds } = isClient
-    ? traceReachablePath(selectedNodeId, edges)
-    : {
-        highlightedNodeIds: new Set([selectedNodeId]),
-        highlightedEdgeIds: new Set<string>(),
-      };
+  const { highlightedNodeIds, highlightedEdgeIds } = traceReachablePath(selectedNodeId, edges);
 
   // When the selected client has a configured, narrowed scope, restrict the
   // highlight to what it can actually reach. An absent or `unscoped` scope
@@ -226,7 +223,7 @@ export function computeHighlightState(
   // scopeOverride (the Access Lens draft) takes precedence over the saved scope.
   const scope = (scopeOverride ?? nodeData?.effectiveScope) as ClientScopeResult | undefined;
   let inScopeTools: Set<string> | undefined;
-  if (isClient && scope && scope.configured && !scope.unscoped) {
+  if (scope && scope.configured && !scope.unscoped) {
     narrowToClientScope(highlightedNodeIds, highlightedEdgeIds, nodes, edges, scope);
     inScopeTools = new Set(scope.tools);
   }
@@ -246,7 +243,7 @@ export function computeHighlightState(
  * Compute path highlighting based on selected node
  *
  * When a client is selected: highlight client -> gateway -> reachable-servers
- * path. For other node types: just highlight the selected node.
+ * path. Other selections dim nothing.
  *
  * @param nodes - All nodes in the graph
  * @param edges - All edges in the graph

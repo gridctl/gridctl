@@ -126,13 +126,27 @@ describe('computeHighlightState', () => {
     expect(state.highlightedNodeIds.has('mcp-y')).toBe(false);
   });
 
-  it('highlights only the selected node for non-client node types', () => {
-    const { nodes, edges } = makeGraph();
-    const state = computeHighlightState(nodes, edges, 'mcp-x');
+  it.each(['mcp-x', 'resource-r', 'gateway'])(
+    'dims nothing when the non-client node %s is selected',
+    (id) => {
+      const { nodes, edges } = makeGraph();
+      const state = computeHighlightState(nodes, edges, id);
 
-    expect(state.hasSelection).toBe(true);
-    expect([...state.highlightedNodeIds]).toEqual(['mcp-x']);
-    expect(state.highlightedEdgeIds.size).toBe(0);
+      expect(state.hasSelection).toBe(false);
+      expect(state.highlightedNodeIds.size).toBe(0);
+      expect(state.highlightedEdgeIds.size).toBe(0);
+      expect(isNodeDimmed('mcp-y', state)).toBe(false);
+      expect(isEdgeDimmed('edge-gateway-mcp-y', state)).toBe(false);
+    },
+  );
+
+  it('dims nothing when a selected id is missing from a populated graph', () => {
+    const { nodes, edges } = makeGraph();
+    const state = computeHighlightState(nodes, edges, 'mcp-ghost');
+
+    expect(state.hasSelection).toBe(false);
+    expect(state.highlightedNodeIds.size).toBe(0);
+    expect(isNodeDimmed('mcp-x', state)).toBe(false);
   });
 
   it('highlights nothing when the selected node is missing', () => {
