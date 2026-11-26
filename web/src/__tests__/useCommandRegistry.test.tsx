@@ -149,6 +149,23 @@ describe('useCommandRegistry', () => {
       const results = result.current.getSortedCommands();
       expect(results[0].id).toBe('b');
     });
+
+    it('orders one match tier by frecency, then registration order', () => {
+      const { result } = renderHook(() => useCommandRegistry(), { wrapper });
+      act(() =>
+        result.current.registerCommands('test', [
+          makeCommand('one', 'Alpha one'),
+          makeCommand('two', 'Alpha two'),
+          makeCommand('three', 'Alpha three'),
+        ]),
+      );
+
+      const ids = () => result.current.getSortedCommands('alpha').map((c) => c.id);
+      expect(ids()).toEqual(['one', 'two', 'three']);
+
+      act(() => result.current.recordUsage('three'));
+      expect(ids()).toEqual(['three', 'one', 'two']);
+    });
   });
 
   // ── recordUsage ───────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@testing-library/jest-dom';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router';
 import { ReactFlowProvider } from '@xyflow/react';
 import type { ReactElement } from 'react';
@@ -15,6 +15,7 @@ import { useRegistryStore } from '../stores/useRegistryStore';
 import { useShellActionsStore } from '../stores/useShellActionsStore';
 import { leavesWorkspace, useNavigationGuardStore } from '../stores/useNavigationGuardStore';
 import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
+import { CommandPalette } from '../components/palette/CommandPalette';
 import { WORKSPACE_PALETTE_SECTION } from '../lib/paletteWorkspaceCommands';
 import { MOD_KEY } from '../lib/platform';
 import { WORKSPACE_CONFIG, WORKSPACES } from '../types/workspace';
@@ -44,7 +45,7 @@ function LocationProbe() {
   return <div data-testid="location">{location.pathname + location.search}</div>;
 }
 
-async function renderAt(path = '/stack') {
+async function renderAt(path = '/stack', { palette = false } = {}) {
   render(
     <MemoryRouter initialEntries={[path]}>
       <ReactFlowProvider>
@@ -52,6 +53,7 @@ async function renderAt(path = '/stack') {
           <Harness onReady={(r) => { registry = r; }} />
           <LocationProbe />
           <NavigationGuardDialog />
+          {palette && <CommandPalette isOpen onClose={() => {}} />}
         </CommandRegistryProvider>
       </ReactFlowProvider>
     </MemoryRouter>,
@@ -223,6 +225,34 @@ describe('palette dynamic entries', () => {
     expect(reg().getSortedCommands('skill-25')[0].id).toBe('skill:skill-25');
     expect(reg().getSortedCommands('VAR_35')[0].id).toBe('vault:VAR_35');
     expect(reg().getSortedCommands('trace25')[0].id).toBe('trace:trace25');
+  });
+
+  it.each([
+    ['v:', 'No variables loaded yet. Open the Variables workspace to load them.'],
+    ['t:', 'No traces loaded yet. Open the Traces workspace to load the buffer.'],
+  ])('explains a %s search before its store has loaded', async (prefix, text) => {
+    await renderAt('/stack', { palette: true });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: `${prefix}abc` } });
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
+  it('keeps the view commands listed under the not loaded note', async () => {
+    await renderAt('/stack', { palette: true });
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 't:' } });
+    expect(screen.getByText(/No traces loaded yet/)).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Traces: Show Runs/ })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['v:', () => useVaultStore.setState({ variables: makeVariables(1) }), 'vault:VAR_01', /No variables loaded yet/],
+    ['t:', () => useTracesStore.setState({ traces: makeTraces(1) }), 'trace:trace01', /No traces loaded yet/],
+  ])('keeps the generic %s text once its store has entries', async (prefix, load, id, unloaded) => {
+    load();
+    await renderAt('/stack', { palette: true });
+    await waitFor(() => expect(reg().commands.some((c) => c.id === id)).toBe(true));
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: `${prefix}zzz` } });
+    expect(screen.getByText(/No results for/)).toBeInTheDocument();
+    expect(screen.queryByText(unloaded)).not.toBeInTheDocument();
   });
 
   it('selects the trace when Traces is already open', async () => {

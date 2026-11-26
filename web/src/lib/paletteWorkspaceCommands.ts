@@ -141,142 +141,149 @@ function metricsScope(scope: 'overview' | 'clients' | 'servers' | 'tools') {
 // what the workspace's own control writes. Inside the workspace only the
 // named params change; from elsewhere the target is built from empty params
 // and goes through the leave guard.
+const VIEW_COMMAND_SPECS: ViewCommandSpec[] = [
+  {
+    id: 'tools:open-audit',
+    label: 'Tools: Open Usage Audit',
+    section: 'tools',
+    workspace: 'tools',
+    icon: ClipboardList,
+    keywords: ['audit', 'usage', 'unused', 'tools', 'whitelist'],
+    apply: set('audit', '1'),
+  },
+  {
+    id: 'tools:show-destructive',
+    label: 'Tools: Show Destructive Tools Only',
+    section: 'tools',
+    workspace: 'tools',
+    icon: ShieldAlert,
+    keywords: ['destructive', 'risk', 'dangerous', 'filter', 'tools'],
+    // Inside Tools this is the risk toggle (applyRisk), which also saves the
+    // preference. From elsewhere only the param is written, so a canceled
+    // discard prompt changes nothing.
+    apply: (params, inside) => {
+      if (inside) useUIStore.getState().setToolsPrefs({ destructiveOnly: true });
+      params.set('risk', 'destructive');
+      return params;
+    },
+  },
+  {
+    id: 'tools:show-all-risk',
+    label: 'Tools: Show All Tools',
+    section: 'tools',
+    workspace: 'tools',
+    icon: Wrench,
+    keywords: ['all', 'risk', 'destructive', 'filter', 'clear', 'tools'],
+    // risk=all from elsewhere: a saved destructiveOnly preference would
+    // otherwise win on a bare /tools.
+    apply: (params, inside) => {
+      if (inside) {
+        useUIStore.getState().setToolsPrefs({ destructiveOnly: false });
+        params.delete('risk');
+      } else {
+        params.set('risk', 'all');
+      }
+      return params;
+    },
+  },
+  {
+    id: 'metrics:show-overview',
+    label: 'Metrics: Show Overview',
+    section: 'metrics',
+    workspace: 'metrics',
+    icon: BarChart3,
+    keywords: ['overview', 'scope', 'metrics', 'summary'],
+    apply: metricsScope('overview'),
+  },
+  {
+    id: 'metrics:show-clients',
+    label: 'Metrics: Show Clients',
+    section: 'metrics',
+    workspace: 'metrics',
+    icon: Users,
+    keywords: ['clients', 'scope', 'metrics', 'usage'],
+    apply: metricsScope('clients'),
+  },
+  {
+    id: 'metrics:show-servers',
+    label: 'Metrics: Show Servers',
+    section: 'metrics',
+    workspace: 'metrics',
+    icon: Server,
+    keywords: ['servers', 'scope', 'metrics', 'usage'],
+    apply: metricsScope('servers'),
+  },
+  {
+    id: 'metrics:show-tools',
+    label: 'Metrics: Show Tools',
+    section: 'metrics',
+    workspace: 'metrics',
+    icon: Wrench,
+    keywords: ['tools', 'scope', 'metrics', 'usage'],
+    apply: metricsScope('tools'),
+  },
+  {
+    id: 'traces:show-traces',
+    label: 'Traces: Show Traces',
+    section: 'traces',
+    workspace: 'traces',
+    icon: Activity,
+    keywords: ['traces', 'spans', 'view'],
+    apply: remove('view'),
+  },
+  {
+    id: 'traces:show-runs',
+    label: 'Traces: Show Runs',
+    section: 'traces',
+    workspace: 'traces',
+    icon: ListChecks,
+    keywords: ['runs', 'records', 'dispatch', 'history', 'view'],
+    apply: set('view', 'runs'),
+  },
+  {
+    id: 'connections:show-attention',
+    label: 'Connections: Show Clients Needing Attention',
+    section: 'connections',
+    workspace: 'connections',
+    icon: TriangleAlert,
+    keywords: ['attention', 'clients', 'problems', 'filter', 'connections'],
+    apply: set('attention', '1'),
+  },
+  {
+    id: 'connections:show-all',
+    label: 'Connections: Show All Clients',
+    section: 'connections',
+    workspace: 'connections',
+    icon: Plug,
+    keywords: ['all', 'clients', 'filter', 'clear', 'connections'],
+    apply: remove('attention'),
+  },
+  {
+    id: 'vault:show-unreferenced',
+    label: 'Variables: Show Not Referenced',
+    section: 'vault',
+    workspace: 'vault',
+    icon: Lock,
+    keywords: ['unreferenced', 'unused', 'reference', 'filter', 'variables', 'vault'],
+    apply: set('ref', 'none'),
+  },
+  {
+    id: 'vault:show-all',
+    label: 'Variables: Show All',
+    section: 'vault',
+    workspace: 'vault',
+    icon: Lock,
+    keywords: ['all', 'reference', 'filter', 'clear', 'variables', 'vault'],
+    apply: remove('ref'),
+  },
+];
+
+// IDs of the static view commands, so the palette can tell them apart from
+// entries that come from a loaded store in the same section.
+export const WORKSPACE_VIEW_COMMAND_IDS: ReadonlySet<string> = new Set(
+  VIEW_COMMAND_SPECS.map((spec) => spec.id),
+);
+
 export function buildWorkspaceViewCommands(ctx: ViewCommandContext): PaletteCommand[] {
-  const specs: ViewCommandSpec[] = [
-    {
-      id: 'tools:open-audit',
-      label: 'Tools: Open Usage Audit',
-      section: 'tools',
-      workspace: 'tools',
-      icon: ClipboardList,
-      keywords: ['audit', 'usage', 'unused', 'tools', 'whitelist'],
-      apply: set('audit', '1'),
-    },
-    {
-      id: 'tools:show-destructive',
-      label: 'Tools: Show Destructive Tools Only',
-      section: 'tools',
-      workspace: 'tools',
-      icon: ShieldAlert,
-      keywords: ['destructive', 'risk', 'dangerous', 'filter', 'tools'],
-      // Inside Tools this is the risk toggle (applyRisk), which also saves the
-      // preference. From elsewhere only the param is written, so a canceled
-      // discard prompt changes nothing.
-      apply: (params, inside) => {
-        if (inside) useUIStore.getState().setToolsPrefs({ destructiveOnly: true });
-        params.set('risk', 'destructive');
-        return params;
-      },
-    },
-    {
-      id: 'tools:show-all-risk',
-      label: 'Tools: Show All Tools',
-      section: 'tools',
-      workspace: 'tools',
-      icon: Wrench,
-      keywords: ['all', 'risk', 'destructive', 'filter', 'clear', 'tools'],
-      // risk=all from elsewhere: a saved destructiveOnly preference would
-      // otherwise win on a bare /tools.
-      apply: (params, inside) => {
-        if (inside) {
-          useUIStore.getState().setToolsPrefs({ destructiveOnly: false });
-          params.delete('risk');
-        } else {
-          params.set('risk', 'all');
-        }
-        return params;
-      },
-    },
-    {
-      id: 'metrics:show-overview',
-      label: 'Metrics: Show Overview',
-      section: 'metrics',
-      workspace: 'metrics',
-      icon: BarChart3,
-      keywords: ['overview', 'scope', 'metrics', 'summary'],
-      apply: metricsScope('overview'),
-    },
-    {
-      id: 'metrics:show-clients',
-      label: 'Metrics: Show Clients',
-      section: 'metrics',
-      workspace: 'metrics',
-      icon: Users,
-      keywords: ['clients', 'scope', 'metrics', 'usage'],
-      apply: metricsScope('clients'),
-    },
-    {
-      id: 'metrics:show-servers',
-      label: 'Metrics: Show Servers',
-      section: 'metrics',
-      workspace: 'metrics',
-      icon: Server,
-      keywords: ['servers', 'scope', 'metrics', 'usage'],
-      apply: metricsScope('servers'),
-    },
-    {
-      id: 'metrics:show-tools',
-      label: 'Metrics: Show Tools',
-      section: 'metrics',
-      workspace: 'metrics',
-      icon: Wrench,
-      keywords: ['tools', 'scope', 'metrics', 'usage'],
-      apply: metricsScope('tools'),
-    },
-    {
-      id: 'traces:show-traces',
-      label: 'Traces: Show Traces',
-      section: 'traces',
-      workspace: 'traces',
-      icon: Activity,
-      keywords: ['traces', 'spans', 'view'],
-      apply: remove('view'),
-    },
-    {
-      id: 'traces:show-runs',
-      label: 'Traces: Show Runs',
-      section: 'traces',
-      workspace: 'traces',
-      icon: ListChecks,
-      keywords: ['runs', 'records', 'dispatch', 'history', 'view'],
-      apply: set('view', 'runs'),
-    },
-    {
-      id: 'connections:show-attention',
-      label: 'Connections: Show Clients Needing Attention',
-      section: 'connections',
-      workspace: 'connections',
-      icon: TriangleAlert,
-      keywords: ['attention', 'clients', 'problems', 'filter', 'connections'],
-      apply: set('attention', '1'),
-    },
-    {
-      id: 'connections:show-all',
-      label: 'Connections: Show All Clients',
-      section: 'connections',
-      workspace: 'connections',
-      icon: Plug,
-      keywords: ['all', 'clients', 'filter', 'clear', 'connections'],
-      apply: remove('attention'),
-    },
-    {
-      id: 'vault:show-unreferenced',
-      label: 'Variables: Show Not Referenced',
-      section: 'vault',
-      workspace: 'vault',
-      icon: Lock,
-      keywords: ['unreferenced', 'unused', 'reference', 'filter', 'variables', 'vault'],
-      apply: set('ref', 'none'),
-    },
-    {
-      id: 'vault:show-all',
-      label: 'Variables: Show All',
-      section: 'vault',
-      workspace: 'vault',
-      icon: Lock,
-      keywords: ['all', 'reference', 'filter', 'clear', 'variables', 'vault'],
-      apply: remove('ref'),
-    },
-  ];
-  return specs.map((spec) => viewCommand(spec, ctx));
+  return VIEW_COMMAND_SPECS.map((spec) => viewCommand(spec, ctx));
 }

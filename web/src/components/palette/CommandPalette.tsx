@@ -6,7 +6,10 @@ import { useCommandRegistry } from '../../hooks/useCommandRegistry';
 import { useUIStore } from '../../stores/useUIStore';
 import { showToast } from '../ui/Toast';
 import { enterModal } from '../../lib/modalPresence';
-import { WORKSPACE_PALETTE_SECTION } from '../../lib/paletteWorkspaceCommands';
+import {
+  WORKSPACE_PALETTE_SECTION,
+  WORKSPACE_VIEW_COMMAND_IDS,
+} from '../../lib/paletteWorkspaceCommands';
 import type { PaletteCommand, PaletteSection } from '../../types/palette';
 import { ShortcutKeys } from '../ui/ShortcutKeys';
 
@@ -230,8 +233,13 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
     ? getSortedCommands(query.trim() || undefined, scope ?? undefined, activeWorkspace)
     : [];
   const visibleResults = searchResults.slice(0, RESULT_WINDOW);
+  // The section also holds static view commands, so "loaded" means at least
+  // one entry that came from the store. The note shows even when a view
+  // command matches the query.
   const unloadedMessage =
-    scope && searchResults.length === 0 && getSortedCommands(undefined, scope).length === 0
+    scope &&
+    UNLOADED_SCOPE_MESSAGE[scope] &&
+    !getSortedCommands(undefined, scope).some((c) => !WORKSPACE_VIEW_COMMAND_IDS.has(c.id))
       ? UNLOADED_SCOPE_MESSAGE[scope]
       : undefined;
 
@@ -400,6 +408,9 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                     <ScopeHints className="text-xs text-text-muted leading-relaxed" />
                   </div>
                 </Command.Empty>
+                {unloadedMessage && visibleResults.length > 0 && (
+                  <div className="px-4 py-2 text-xs text-text-muted">{unloadedMessage}</div>
+                )}
                 {visibleResults.map((cmd) => (
                   <PaletteItem key={cmd.id} command={cmd} onSelect={handleSelect} showBadge />
                 ))}
