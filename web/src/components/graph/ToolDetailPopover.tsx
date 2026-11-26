@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { useOnViewportChange, useReactFlow } from '@xyflow/react';
-import { Wrench, X, ArrowUpRight, Copy } from 'lucide-react';
+import { Wrench, X, ArrowUpRight } from 'lucide-react';
+import { CopyButton } from '../ui/CopyButton';
 import { cn } from '../../lib/cn';
 import { horizontalOverflow } from '../../lib/graph/popoverPlacement';
 import { TOOL_NAME_DELIMITER } from '../../lib/constants';
@@ -105,11 +106,6 @@ const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }
     };
   }, [serverName, toolName]);
 
-  const handleCopy = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    void navigator.clipboard?.writeText(prefixedName);
-  };
-
   const handleOpenInTools = (e: React.MouseEvent) => {
     e.stopPropagation();
     onClose();
@@ -180,14 +176,9 @@ const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }
         <span className="text-border" aria-hidden="true">
           ·
         </span>
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="inline-flex items-center gap-1 text-3xs text-text-muted hover:text-text-secondary transition-colors"
-        >
-          <Copy size={11} aria-hidden="true" />
+        <CopyButton value={prefixedName} label="Copy name">
           Copy name
-        </button>
+        </CopyButton>
       </div>
     </div>
   );
