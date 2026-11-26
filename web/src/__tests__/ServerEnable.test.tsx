@@ -79,9 +79,23 @@ describe('CustomNode disabled server', () => {
 
   it('shows a disabled header dot in compact mode', () => {
     useUIStore.setState({ compactCards: true });
-    render(<CustomNode data={makeServerData({ enabled: false, status: 'disabled' })} />);
-    expect(screen.getByRole('img', { name: 'disabled' })).toBeInTheDocument();
+    const { container } = render(<CustomNode data={makeServerData({ enabled: false, status: 'disabled' })} />);
+    const dot = container.querySelector('[data-shape]');
+    expect(dot).toHaveAttribute('title', 'disabled');
+    expect(dot?.closest('[aria-hidden="true"]')).not.toBeNull();
     expect(screen.queryByRole('img', { name: 'initializing' })).not.toBeInTheDocument();
+  });
+
+  it('marks a disabled server with the compact disabled glyph', () => {
+    useUIStore.setState({ compactCards: true });
+    const { container } = render(
+      <CustomNode data={makeServerData({ enabled: false, status: 'initializing', authStatus: 'needs_auth' })} />,
+    );
+    const glyph = screen.getByRole('img', { name: 'Disabled' });
+    expect(glyph).toHaveAttribute('data-glyph', 'disabled');
+    expect(glyph.closest('[aria-hidden="true"]')).toBeNull();
+    expect(container.querySelectorAll('[data-glyph]')).toHaveLength(1);
+    expect(screen.queryByRole('img', { name: 'Needs authorization' })).not.toBeInTheDocument();
   });
 
   it('still shows the healthy line for an enabled server', () => {

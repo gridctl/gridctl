@@ -1,8 +1,16 @@
-import { memo } from 'react';
+import { createElement, memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse, FileJson, FileOutput, Filter, Lock, ChevronRight, ChevronDown, Power } from 'lucide-react';
+import { Terminal, Box, Hash, Globe, Wifi, Server, Cpu, KeyRound, HeartPulse, FileJson, FileOutput, Filter, Lock, ChevronRight, ChevronDown, Power, ArrowUp, ArrowDown } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { PinDriftLink } from './PinDriftLink';
+import { COMPACT_GLYPH_COLORS, COMPACT_GLYPH_ICONS } from './compactGlyphs';
+import {
+  GLYPH_META,
+  compactPinGlyph,
+  compactStateGlyph,
+  mcpHealthSummary,
+  type CompactGlyphKind,
+} from '../../lib/graph/serverState';
 import { Badge } from '../ui/Badge';
 import { StatusDot } from '../ui/StatusDot';
 import { NODE_STATUS_LABELS } from '../../lib/nodeStatus';
@@ -17,34 +25,20 @@ import type { MCPServerNodeData, ResourceNodeData } from '../../types';
 
 export type CustomNodeData = MCPServerNodeData | ResourceNodeData;
 
-function retryInSeconds(iso: string | undefined, now: number): string | undefined {
-  if (!iso) return undefined;
-  const at = Date.parse(iso);
-  if (Number.isNaN(at)) return undefined;
-  const seconds = Math.max(0, Math.round((at - now) / 1000));
-  return `${seconds}s`;
-}
-
-function mcpHealthSummary(data: MCPServerNodeData, now = Date.now()): string {
-  const replicas = data.replicas ?? [];
-  const exited = replicas.find((replica) => replica.exit);
-  const restarting = replicas.find((replica) => replica.state === 'restarting');
-  const parts: string[] = [];
-  if (exited?.exit) {
-    parts.push(exited.exit.oomKilled
-      ? `exited ${exited.exit.code}, OOM killed`
-      : `exited ${exited.exit.code}`);
-  }
-  if (restarting) {
-    const attempt = restarting.restartAttempts ?? 0;
-    const retry = retryInSeconds(restarting.nextRetryAt, now);
-    parts.push(retry
-      ? `restarting (attempt ${attempt}, retry in ${retry})`
-      : `restarting (attempt ${attempt})`);
-  } else {
-    parts.push(data.healthError || 'Health check failed');
-  }
-  return parts.join('; ');
+function CompactGlyph({ kind, title }: { kind: CompactGlyphKind; title?: string }) {
+  const Icon = COMPACT_GLYPH_ICONS[kind];
+  const { label } = GLYPH_META[kind];
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={title ?? label}
+      data-glyph={kind}
+      className={cn('flex-shrink-0 inline-flex', COMPACT_GLYPH_COLORS[kind])}
+    >
+      <Icon size={12} aria-hidden="true" />
+    </span>
+  );
 }
 
 interface CustomNodeProps {
@@ -85,12 +79,26 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
 
   // Get transport info for MCP servers
   const transport = isServer ? (data as MCPServerNodeData).transport : null;
-  const TransportIcon = getTransportIcon(transport);
+  const transportIcon = createElement(getTransportIcon(transport), { size: 11 });
   const toolCount = isServer ? (data as MCPServerNodeData).toolCount : null;
   const replicaCount = isServer ? (data as MCPServerNodeData).replicaCount ?? 1 : 1;
   const autoscale = isServer ? (data as MCPServerNodeData).autoscale : undefined;
   // Autoscale badge takes precedence over the static ×N badge.
   const hasReplicas = isServer && !autoscale && replicaCount > 1;
+  const scaleDirection = autoscale?.lastDecision === 'up' || autoscale?.lastDecision === 'down'
+    ? autoscale.lastDecision
+    : null;
+  const scaleSuffix = scaleDirection === 'up' ? ' · scaling up' : scaleDirection === 'down' ? ' · scaling down' : '';
+
+  const isDisabled = isServer && (data as MCPServerNodeData).enabled === false;
+  const stateGlyph = compactStateGlyph(data);
+  const pinGlyph = compactPinGlyph(data);
+  const stateGlyphTitle = isServer && (stateGlyph === 'error' || stateGlyph === 'restarting')
+    ? mcpHealthSummary(data as MCPServerNodeData)
+    : undefined;
+  const statusDot = isDisabled
+    ? <StatusDot status="disabled" pulse={false} />
+    : <StatusDot status={data.status} pulse={!isCompact} />;
 
   // Get endpoint/containerId for MCP servers
   const endpoint = isServer ? (data as MCPServerNodeData).endpoint : null;
@@ -113,10 +121,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
           : 'bg-gradient-to-br from-surface/95 to-secondary/[0.02] border-border',
         selected && isServer && 'border-tertiary shadow-[0_0_15px_--alpha(var(--color-tertiary)/30%)] ring-2 ring-tertiary/30',
         selected && !isServer && 'border-secondary shadow-glow-secondary ring-2 ring-secondary/30',
-        // Autoscale decision ring: inset so it does not fight selection highlighting.
-        autoscale?.lastDecision === 'up' && 'ring-2 ring-inset ring-primary/40 animate-pulse-glow',
-        autoscale?.lastDecision === 'down' && 'ring-2 ring-inset ring-secondary/40',
-        isServer && (data as MCPServerNodeData).enabled === false && 'opacity-60',
+        isDisabled && 'opacity-60',
         !selected && 'hover:shadow-node-hover',
         !selected && isServer && !lensActiveForNode && 'hover:border-tertiary-light/60',
         !selected && !isServer && 'hover:border-secondary/70',
@@ -135,6 +140,18 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
         } : {}),
       }}
     >
+      {/* Autoscale decision ring: an inset overlay so its pulse animates
+          opacity only and the card's own ring and bevel shadows stay put. */}
+      {scaleDirection && (
+        <span
+          aria-hidden="true"
+          data-scale-ring={scaleDirection}
+          className={cn(
+            'absolute inset-0 rounded-xl pointer-events-none ring-2 ring-inset',
+            scaleDirection === 'up' ? 'ring-primary/40 animate-pulse-glow' : 'ring-secondary/40',
+          )}
+        />
+      )}
 
       {/* Header with gradient accent */}
       <div className={cn(
@@ -166,9 +183,12 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
               )}
             />
           </div>
-          <span className="font-semibold text-sm text-text-primary truncate tracking-tight">
+          <span className="font-semibold text-sm text-text-primary truncate tracking-tight" title={data.name}>
             {data.name}
           </span>
+          {isCompact && stateGlyph && <CompactGlyph kind={stateGlyph} title={stateGlyphTitle} />}
+          {isCompact && pinGlyph === 'drift' && <PinDriftLink serverName={data.name} compact />}
+          {isCompact && pinGlyph === 'blocked' && <CompactGlyph kind="blocked" />}
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -176,11 +196,13 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
               static ×N badge so operators see reactive scale at a glance. */}
           {isServer && autoscale && (
             <span
-              className="text-3xs text-tertiary-light/80 font-mono tracking-tight"
-              title={`Autoscale · current ${autoscale.current} / target ${autoscale.target}`}
-              aria-label={`Autoscale current ${autoscale.current} of target ${autoscale.target}`}
+              className="inline-flex items-center gap-0.5 text-3xs text-tertiary-light/80 font-mono tracking-tight"
+              title={`Autoscale · current ${autoscale.current} / target ${autoscale.target}${scaleSuffix}`}
+              aria-label={`Autoscale current ${autoscale.current} of target ${autoscale.target}${scaleSuffix}`}
             >
-              ×{autoscale.current}/{autoscale.target}
+              {scaleDirection === 'up' && <ArrowUp size={10} aria-hidden="true" />}
+              {scaleDirection === 'down' && <ArrowDown size={10} aria-hidden="true" />}
+              <span>×{autoscale.current}/{autoscale.target}</span>
             </span>
           )}
           {/* Inline replica count when > 1. Shown in both compact and full modes
@@ -196,7 +218,11 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
           )}
           {/* Inline tool count in compact mode */}
           {isCompact && isServer && toolCount !== null && toolCount !== undefined && (
-            <span className="text-3xs text-text-muted font-mono">
+            <span
+              className="text-3xs text-text-muted font-mono"
+              title={`${toolCount} tools`}
+              aria-label={`${toolCount} tools`}
+            >
               {toolCount}t
             </span>
           )}
@@ -222,7 +248,11 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
               {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             </button>
           )}
-          <StatusDot status={data.status} pulse={!isCompact} />
+          {/* The compact state glyph announces the state, so the dot is hidden
+              from assistive tech whenever one renders. */}
+          {isCompact && stateGlyph ? (
+            <span aria-hidden="true" className="inline-flex">{statusDot}</span>
+          ) : statusDot}
         </div>
       </div>
 
@@ -285,7 +315,7 @@ const CustomNode = memo(({ data, selected }: CustomNodeProps) => {
                   'flex items-center gap-1.5 px-2 py-1 rounded-md',
                   getTransportColorClasses(transport)
                 )}>
-                  <TransportIcon size={11} />
+                  {transportIcon}
                   <span className="uppercase text-3xs tracking-wider font-medium">
                     {transport}
                   </span>
