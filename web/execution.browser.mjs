@@ -17,7 +17,7 @@ const server = await createServer({
         import React from 'react';
         import { createRoot } from 'react-dom/client';
         import { ExecutionFields } from '/src/components/wizard/steps/ExecutionFields.tsx';
-        import { ExecutionDetails } from '/src/components/sidebar/ExecutionDetails.tsx';
+        import { ExecutionEvidenceSection } from '/src/components/sidebar/EvidenceSections.tsx';
         import { buildYAML, parseYAMLToForm } from '/src/lib/yaml-builder.ts';
         import '/src/index.css';
         function App() {
@@ -33,7 +33,7 @@ const server = await createServer({
             React.createElement('pre',{'aria-label':'Authoritative proposed YAML'},yaml),
             React.createElement('button',{onClick:()=>setIdle(true)},'Idle to zero'),
             React.createElement('button',{onClick:()=>setMissingControls(true)},'Evidence unavailable'),
-            React.createElement(ExecutionDetails,{server:{name:'fixture',execution:{mode:'hardened',revision:'fixture-revision',outcome:'pending',eligible:false},replicas:idle?[]:[replica]}})
+            React.createElement(ExecutionEvidenceSection,{server:{name:'fixture',execution:{mode:'hardened',revision:'fixture-revision',outcome:'pending',eligible:false},replicas:idle?[]:[replica]}})
           );
         }
         createRoot(document.getElementById('root')).render(React.createElement(App));
@@ -60,10 +60,12 @@ try {
   assert.match(yaml, /read_only: false/);
   assert.match(yaml, /drop_capabilities: \[\]/);
   assert.match(yaml, /mounts: \[\]/);
-  const evidence = page.getByText('Execution evidence', { exact: true });
+  const evidence = page.getByRole('button', { name: /^Execution evidence/ });
+  assert.equal(await evidence.getAttribute('aria-expanded'), 'false');
+  assert.match(await evidence.textContent(), /0 of 1 replicas eligible/);
   await evidence.focus();
   await page.keyboard.press('Enter');
-  assert.equal(await evidence.evaluate(node => node.parentElement.open), true);
+  assert.equal(await evidence.getAttribute('aria-expanded'), 'true');
   assert.equal(await page.getByText(/MCP healthy; execution mismatch/).isVisible(), true);
   assert.equal(await page.getByRole('table', { name: 'Requested controls and evidence' }).isVisible(), true);
   await page.getByRole('button', { name: 'Evidence unavailable' }).click();
