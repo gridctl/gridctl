@@ -33,6 +33,7 @@ import { getNodeDimensions } from '../../lib/graph/utils';
 import { isRectVisible, revealViewport, unionRect, type FlowRect } from '../../lib/graph/viewport';
 import { LAYOUT, NODE_TYPES } from '../../lib/constants';
 import { motionDuration } from '../../lib/motion';
+import { buildStackRows, isFilterActive, matchesFilter, type StackFilter } from '../../lib/stackRows';
 import { CanvasBase } from '../canvas/CanvasBase';
 import { SpecModeOverlay } from '../spec/SpecModeOverlay';
 import { OverlaysMenu } from './OverlaysMenu';
@@ -89,7 +90,12 @@ type ActivatableNode = {
   data?: { type?: string; name?: string };
 };
 
-export function Canvas() {
+interface CanvasProps {
+  /** Stack toolbar filter. Non-matching nodes and their edges fade; none are removed. */
+  filter?: StackFilter;
+}
+
+export function Canvas({ filter }: CanvasProps = {}) {
   const nodes = useStackStore((s) => s.nodes);
   const edges = useStackStore((s) => s.edges);
   const setNodes = useStackStore((s) => s.setNodes);
@@ -429,17 +435,46 @@ export function Canvas() {
     },
   }), [edgeStyle, colors.border]);
 
+  // Node ids the toolbar filter fades: non-matching servers, resources, and
+  // clients, plus the tool fan-out of a faded server. Null while inactive so
+  // the styling below returns today's arrays untouched.
+  const filteredOut = useMemo(() => {
+    if (!filter || !isFilterActive(filter)) return null;
+    const out = new Set<string>();
+    for (const row of buildStackRows(nodes ?? [])) {
+      if (!matchesFilter(row, filter)) out.add(row.id);
+    }
+    for (const node of nodes ?? []) {
+      const data = node.data as { type?: string; serverNodeId?: string } | undefined;
+      if (
+        (data?.type === 'tool' || data?.type === 'tool-overflow') &&
+        data.serverNodeId !== undefined &&
+        out.has(data.serverNodeId)
+      ) {
+        out.add(node.id);
+      }
+    }
+    return out;
+  }, [nodes, filter]);
+
   // Apply highlighting classes to nodes based on the selected agent's path.
   const styledNodes = useMemo(() => {
-    if (!highlightState.hasSelection) return nodes ?? [];
-    return (nodes ?? []).map((node) => ({
-      ...node,
-      className: cn(
-        node.className,
-        highlightState.highlightedNodeIds.has(node.id) ? 'highlighted' : 'dimmed'
-      ),
-    }));
-  }, [nodes, highlightState]);
+    const list = nodes ?? [];
+    if (!highlightState.hasSelection && !filteredOut) return list;
+    return list.map((node) => {
+      const faded = filteredOut?.has(node.id) ?? false;
+      if (!highlightState.hasSelection && !faded) return node;
+      return {
+        ...node,
+        className: cn(
+          node.className,
+          highlightState.hasSelection &&
+            (highlightState.highlightedNodeIds.has(node.id) ? 'highlighted' : 'dimmed'),
+          faded && 'filtered-out',
+        ),
+      };
+    });
+  }, [nodes, highlightState, filteredOut]);
 
   // Apply highlighting classes to edges.
   // Uses edges (Agent → Server) are always hidden - we show the path through Gateway instead.
@@ -454,7 +489,7 @@ export function Canvas() {
       highlightState.highlightedEdgeIds,
       activeServers,
     );
-    return list.map((edge) => {
+    const styled = list.map((edge) => {
       const edgeData = edge.data as { isUsesEdge?: boolean } | undefined;
       if (edgeData?.isUsesEdge) {
         return { ...edge, className: 'hidden' };
@@ -477,7 +512,13 @@ export function Canvas() {
         ),
       };
     });
-  }, [edges, highlightState, lensActive, activeServers, colors]);
+    if (!filteredOut) return styled;
+    return styled.map((edge) =>
+      filteredOut.has(edge.source) || filteredOut.has(edge.target)
+        ? { ...edge, className: cn(edge.className, 'filtered-out') }
+        : edge,
+    );
+  }, [edges, highlightState, lensActive, activeServers, colors, filteredOut]);
 
   // Handle node selection. Tool fan-out nodes own their own click handling:
   // each renders an anchored detail popover internally, so a canvas-level click

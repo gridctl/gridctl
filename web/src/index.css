@@ -830,6 +830,15 @@ body::before {
   stroke: var(--color-border) !important;
 }
 
+/* Stack toolbar filter: non-matching nodes and their edges fade */
+.react-flow__node.filtered-out {
+  opacity: 0.25;
+}
+
+.react-flow__edge.filtered-out .react-flow__edge-path {
+  opacity: 0.15;
+}
+
 /* Keyboard focus ring on the node wrapper. React Flow's own stylesheet sets
    outline:none on .react-flow__node.selectable:focus-visible outside any
    layer, which beats the layered app focus style, so this rule stays
