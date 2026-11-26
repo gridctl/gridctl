@@ -1,5 +1,5 @@
 import { formatRelativeTime } from '../../lib/time';
-import type { MCPServerNodeData, ReplicaStatus } from '../../types';
+import type { MCPServerNodeData, MCPServerStatus, ReplicaStatus } from '../../types';
 
 function formatRetryIn(iso: string | undefined): string {
   if (!iso) return '—';
@@ -82,7 +82,11 @@ function replicaNeedsDetail(replica: ReplicaStatus): boolean {
   return replica.state !== 'healthy' || (replica.restartAttempts ?? 0) > 0 || replica.exit != null;
 }
 
-export function ServerCrashDetails({ data }: { data?: MCPServerNodeData }) {
+// Reads only replicas and stderr, so both the canvas node data and the raw
+// status entry satisfy it.
+type CrashDetailsSource = Pick<MCPServerNodeData | MCPServerStatus, 'replicas' | 'stderrTail'>;
+
+export function ServerCrashDetails({ data }: { data?: CrashDetailsSource }) {
   const replicas = (data?.replicas ?? []).filter(replicaNeedsDetail);
   const stderr = data?.stderrTail ?? [];
   if (replicas.length === 0 && stderr.length === 0) return null;

@@ -8,7 +8,6 @@ import {
   Cpu,
   KeyRound,
   FileJson,
-  HeartPulse,
   Gauge,
   FileOutput,
   Activity,
@@ -25,7 +24,7 @@ import { Badge } from '../ui/Badge';
 import { ControlBar } from '../ui/ControlBar';
 import { PopoutButton } from '../ui/PopoutButton';
 import { EmptyState } from '../ui/EmptyState';
-import { InspectorHeader, InspectorSection } from '../inspector';
+import { InspectorHeader, InspectorSection, InspectorValueRow } from '../inspector';
 import { GatewaySidebar } from '../gateway/GatewaySidebar';
 import { ServerAuthSection } from '../sidebar/ServerAuthSection';
 import { TokenUsageSection } from '../sidebar/TokenUsageSection';
@@ -34,9 +33,8 @@ import { ServerEnableControl } from '../sidebar/ServerEnableControl';
 import { AutoscalePanel } from '../status/AutoscalePanel';
 import { SidebarTelemetrySection } from '../telemetry/SidebarTelemetrySection';
 import { SourceProvenance } from '../sidebar/SourceProvenance';
-import { ExecutionDetails } from '../sidebar/ExecutionDetails';
-import { ServerCrashDetails } from '../sidebar/ServerCrashDetails';
-import { SecurityEvidence } from '../sidebar/SecurityEvidence';
+import { ExecutionEvidenceSection, SecurityEvidenceSection } from '../sidebar/EvidenceSections';
+import { ServerHealth } from '../sidebar/ServerHealth';
 import { CatalogSummary } from '../sidebar/CatalogSummary';
 import { getTransportIcon, getTransportColorClasses } from '../../lib/transport';
 import { getClientIcon } from '../../lib/clientIcons';
@@ -47,7 +45,6 @@ import { useUIStore } from '../../stores/useUIStore';
 import { useAccessLensStore } from '../../stores/useAccessLensStore';
 import { requestInspectorLeave } from '../../stores/useInspectorToolsGuardStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
-import { formatRelativeTime } from '../../lib/time';
 import { NODE_STATUS_LABELS } from '../../lib/nodeStatus';
 import { restoreNodeFocus } from '../../lib/inspectorFocus';
 import type { MCPServerNodeData, ResourceNodeData, ClientNodeData } from '../../types';
@@ -175,7 +172,7 @@ export function Sidebar() {
   return (
     <div
       className={cn(
-        'h-full w-full',
+        'relative h-full w-full',
         'flex flex-col overflow-hidden'
       )}
     >
@@ -241,6 +238,8 @@ export function Sidebar() {
               <Badge status={data.status}>{NODE_STATUS_LABELS[data.status]}</Badge>
             </div>
 
+            {isServer && serverData && <ServerHealth data={serverData} />}
+
             {isServer &&
               (data as MCPServerNodeData).transport &&
               (() => {
@@ -274,7 +273,6 @@ export function Sidebar() {
             {isServer && (
               <SourceProvenance kind={serverData?.kind} image={serverData?.image} source={serverData?.source} />
             )}
-            {isServer && <SecurityEvidence scope={{ server: data.name }} />}
 
             {/* Generation renders only on mixed fleets: when every server
                 speaks the same generation the label carries no signal
@@ -298,79 +296,26 @@ export function Sidebar() {
               </div>
             )}
 
-            {isServer && (data as MCPServerNodeData).endpoint && (
-              <div className="flex justify-between items-center gap-4">
-                <span className="text-sm text-text-muted">Endpoint</span>
-                <span
-                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
-                  title={(data as MCPServerNodeData).endpoint}
-                >
-                  {(data as MCPServerNodeData).endpoint}
-                </span>
-              </div>
+            {/* "unknown" is the gateway's placeholder, as on the canvas node. */}
+            {isServer && serverData?.endpoint && (
+              <InspectorValueRow
+                label="Endpoint"
+                value={serverData.endpoint}
+                copyLabel={serverData.endpoint !== 'unknown' ? 'Copy endpoint' : undefined}
+              />
+            )}
+
+            {isServer && serverData?.containerId && serverData.containerId !== 'unknown' && (
+              <InspectorValueRow label="Container" value={serverData.containerId} copyLabel="Copy container ID" />
             )}
 
             {isServer && isSSH && serverData?.sshHost && (
-              <div className="flex justify-between items-center gap-4">
-                <span className="text-sm text-text-muted">SSH Host</span>
-                <span
-                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
-                  title={serverData.sshHost}
-                >
-                  {serverData.sshHost}
-                </span>
-              </div>
+              <InspectorValueRow label="SSH Host" value={serverData.sshHost} />
             )}
 
             {isServer && isOpenAPI && serverData?.openapiSpec && (
-              <div className="flex justify-between items-center gap-4">
-                <span className="text-sm text-text-muted">Spec</span>
-                <span
-                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
-                  title={serverData.openapiSpec}
-                >
-                  {serverData.openapiSpec}
-                </span>
-              </div>
+              <InspectorValueRow label="Spec" value={serverData.openapiSpec} />
             )}
-
-            {/* Health Check Info (MCP servers only) */}
-            {isServer && serverData?.healthy !== undefined && serverData?.healthy !== null && (
-              <>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-text-muted">Health</span>
-                  <span className={cn(
-                    'text-xs px-2 py-0.5 rounded-md font-medium flex items-center gap-1',
-                    serverData.healthy
-                      ? 'bg-status-running/10 text-status-running'
-                      : 'bg-status-error/10 text-status-error'
-                  )}>
-                    <HeartPulse size={10} />
-                    {serverData.healthy ? 'Healthy' : 'Unhealthy'}
-                  </span>
-                </div>
-
-                {serverData.lastCheck && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-text-muted">Last Check</span>
-                    <span className="text-xs text-text-secondary font-mono">
-                      {formatRelativeTime(new Date(serverData.lastCheck))}
-                    </span>
-                  </div>
-                )}
-
-                {!serverData.healthy && serverData.healthError && (
-                  <div className="mt-1 p-2 rounded-md bg-status-error/5 border border-status-error/15">
-                    <span className="text-xs text-status-error font-mono break-words">
-                      {serverData.healthError}
-                    </span>
-                  </div>
-                )}
-                <ServerCrashDetails data={serverData} />
-              </>
-            )}
-
-            {!isClient && <ExecutionDetails server={mcpServers.find((server) => server.name === data.name)} resource={!isServer} />}
 
             {/* Client fields */}
             {isClient && clientData?.transport && (
@@ -383,28 +328,12 @@ export function Sidebar() {
             )}
 
             {isClient && clientData?.configPath && (
-              <div className="flex justify-between items-center gap-4">
-                <span className="text-sm text-text-muted">Config</span>
-                <span
-                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
-                  title={clientData.configPath}
-                >
-                  {clientData.configPath}
-                </span>
-              </div>
+              <InspectorValueRow label="Config" value={clientData.configPath} copyLabel="Copy config path" />
             )}
 
             {/* Resource fields */}
             {!isServer && !isClient && (data as ResourceNodeData).image && (
-              <div className="flex justify-between items-center gap-4">
-                <span className="text-sm text-text-muted">Image</span>
-                <span
-                  className="text-xs text-text-secondary font-mono truncate max-w-[180px] bg-background/50 px-2 py-1 rounded-md"
-                  title={(data as ResourceNodeData).image}
-                >
-                  {(data as ResourceNodeData).image}
-                </span>
-              </div>
+              <InspectorValueRow label="Image" value={(data as ResourceNodeData).image} copyLabel="Copy image" />
             )}
 
             {!isServer && !isClient && (data as ResourceNodeData).network && (
@@ -585,6 +514,16 @@ export function Sidebar() {
               overrides={(data as MCPServerNodeData).overrides}
             />
           </InspectorSection>
+        )}
+
+        {isServer && <SecurityEvidenceSection key={`security-${data.name}`} server={data.name} />}
+
+        {!isClient && (
+          <ExecutionEvidenceSection
+            key={`execution-${data.name}`}
+            server={mcpServers.find((server) => server.name === data.name)}
+            resource={!isServer}
+          />
         )}
 
         {isServer && !serverDisabled && (

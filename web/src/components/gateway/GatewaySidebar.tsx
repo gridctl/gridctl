@@ -32,7 +32,7 @@ const GatewaySidebar = memo(({ onClose, headingRef }: GatewaySidebarProps) => {
   const pendingAuthServers = mcpServers.filter((s) => s.authStatus === 'needs_auth');
 
   return (
-    <div className="h-full w-full flex flex-col overflow-hidden">
+    <div className="relative h-full w-full flex flex-col overflow-hidden">
       {/* Accent line */}
       <div className="absolute top-0 left-0 bottom-0 w-px bg-gradient-to-b from-primary/40 via-primary/20 to-transparent" />
 
