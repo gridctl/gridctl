@@ -58,6 +58,18 @@ function mockNavOnly(cmd: PaletteCommand) {
   return (query?: string, scope?: string) => (!query && !scope ? [cmd] : []);
 }
 
+// Each prefix sits in a <code> followed by the word it scopes to.
+function expectScopeHints(container: HTMLElement) {
+  const text = container.textContent ?? '';
+  expect(text).toMatch(/t:\s*traces/);
+  expect(text).toMatch(/v:\s*variables/);
+  expect(text).toMatch(/l:\s*library/);
+  expect(text).toMatch(/>\s*actions/);
+  expect(text).not.toContain('r:');
+  const codes = Array.from(container.querySelectorAll('code')).map((c) => c.textContent);
+  expect(codes).toEqual(expect.arrayContaining(['t:', 'v:', 'l:', '>']));
+}
+
 // --- Tests ---
 
 describe('CommandPalette', () => {
@@ -322,8 +334,7 @@ describe('CommandPalette', () => {
 
       fireEvent.change(screen.getByRole('combobox'), { target: { value: 'xyznotfound' } });
 
-      const hints = screen.getByText(/for actions/);
-      expect(hints).toBeInTheDocument();
+      expectScopeHints(screen.getByText(/No results for/).parentElement!);
     });
 
     it('announces result count via aria-live region', () => {
@@ -348,6 +359,131 @@ describe('CommandPalette', () => {
       const liveRegion = document.querySelector('[aria-live="polite"]');
       expect(liveRegion?.textContent).toBe('No results');
     });
+  });
+});
+
+describe('CommandPalette scope and hints', () => {
+  const onClose = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetRecentCommands.mockReturnValue([]);
+    mockGetSortedCommands.mockReturnValue([]);
+  });
+
+  function input() {
+    return screen.getByRole('combobox') as HTMLInputElement;
+  }
+
+  it.each(['l:', 'r:'])('shows the Library chip and scopes to registry for %s', (prefix) => {
+    render(<CommandPalette isOpen onClose={onClose} />);
+    fireEvent.change(input(), { target: { value: `${prefix}abc` } });
+    expect(screen.getByRole('button', { name: 'Clear scope filter' }).parentElement).toHaveTextContent('Library');
+    expect(mockGetSortedCommands).toHaveBeenCalledWith('abc', 'registry', 'stack');
+  });
+
+  it('shows the hints with their words in the default empty state, the no-results state, and the footer', () => {
+    const { container } = render(<CommandPalette isOpen onClose={onClose} />);
+    expectScopeHints(screen.getByText('Start typing to search commands').parentElement!);
+    const footer = screen.getByText('select').parentElement!.parentElement!;
+    expectScopeHints(footer);
+    fireEvent.change(input(), { target: { value: 'xyz' } });
+    expectScopeHints(screen.getByText(/No results for/).parentElement!);
+    expect(container.ownerDocument.body.textContent).not.toContain('r:');
+  });
+
+  it('cycles Tab between the input and the chip and clears on Enter without selecting', () => {
+    const onSelect = vi.fn();
+    const cmd = makeCommand({ id: 'trace:1', label: 'Search traces: x', section: 'traces', onSelect });
+    mockGetSortedCommands.mockImplementation((_q?: string, scope?: string) => (scope === 'traces' ? [cmd] : []));
+    render(<CommandPalette isOpen onClose={onClose} />);
+    input().focus();
+    fireEvent.change(input(), { target: { value: 't:' } });
+    const clear = screen.getByRole('button', { name: 'Clear scope filter' });
+    expect(clear).toHaveAttribute('type', 'button');
+
+    fireEvent.keyDown(input(), { key: 'Tab' });
+    expect(document.activeElement).toBe(clear);
+    fireEvent.keyDown(clear, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(input());
+    fireEvent.keyDown(input(), { key: 'Tab' });
+    expect(document.activeElement).toBe(clear);
+
+    fireEvent.keyDown(clear, { key: 'Enter' });
+    expect(input().value).toBe('');
+    expect(document.activeElement).toBe(input());
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Clear scope filter' })).not.toBeInTheDocument();
+  });
+
+  it('clears on Space and click and returns focus to the input', () => {
+    render(<CommandPalette isOpen onClose={onClose} />);
+    fireEvent.change(input(), { target: { value: 'v:key' } });
+    const clear = screen.getByRole('button', { name: 'Clear scope filter' });
+    clear.focus();
+    fireEvent.keyDown(clear, { key: ' ' });
+    expect(input().value).toBe('');
+    expect(document.activeElement).toBe(input());
+
+    fireEvent.change(input(), { target: { value: 'v:key' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear scope filter' }));
+    expect(input().value).toBe('');
+    expect(document.activeElement).toBe(input());
+  });
+
+  it('keeps focus on the input for Tab with no scope', () => {
+    render(<CommandPalette isOpen onClose={onClose} />);
+    input().focus();
+    fireEvent.keyDown(input(), { key: 'Tab' });
+    expect(document.activeElement).toBe(input());
+    fireEvent.keyDown(input(), { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(input());
+  });
+
+  it.each(['t:', 'v:', 'l:', 'r:', '>'])('removes a bare %s with one Backspace', (prefix) => {
+    render(<CommandPalette isOpen onClose={onClose} />);
+    fireEvent.change(input(), { target: { value: prefix } });
+    fireEvent.keyDown(input(), { key: 'Backspace' });
+    expect(input().value).toBe('');
+  });
+
+  it('renders at most 50 rows and announces the full count', () => {
+    const many = Array.from({ length: 60 }, (_, i) =>
+      makeCommand({ id: `cmd:${i}`, label: `Command ${i}` }),
+    );
+    mockGetSortedCommands.mockImplementation((query?: string) => (query ? many : []));
+    render(<CommandPalette isOpen onClose={onClose} />);
+    fireEvent.change(input(), { target: { value: 'command' } });
+    expect(screen.getAllByRole('option')).toHaveLength(50);
+    expect(screen.getByText('Showing 50 of 60. Keep typing to narrow.')).toBeInTheDocument();
+    expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe('60 results');
+  });
+
+  it.each([
+    ['v:', 'No variables loaded yet. Open the Variables workspace to load them.'],
+    ['t:', 'No traces loaded yet. Open the Traces workspace to load the buffer.'],
+  ])('explains an empty %s scope with nothing loaded', (prefix, text) => {
+    render(<CommandPalette isOpen onClose={onClose} />);
+    fireEvent.change(input(), { target: { value: `${prefix}abc` } });
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
+  it('keeps the generic text when the scoped section has commands', () => {
+    const cmd = makeCommand({ id: 'vault:A', label: 'Open variable: A', section: 'vault' });
+    mockGetSortedCommands.mockImplementation((query?: string, scope?: string) =>
+      !query && scope === 'vault' ? [cmd] : [],
+    );
+    render(<CommandPalette isOpen onClose={onClose} />);
+    fireEvent.change(input(), { target: { value: 'v:zzz' } });
+    expect(screen.getByText(/No results for/)).toBeInTheDocument();
+    expect(screen.queryByText(/No variables loaded yet/)).not.toBeInTheDocument();
+  });
+
+  it('does not query the registry while closed', () => {
+    render(<CommandPalette isOpen={false} onClose={onClose} />);
+    expect(mockGetSortedCommands).not.toHaveBeenCalled();
+    expect(mockGetRecentCommands).not.toHaveBeenCalled();
   });
 });
 

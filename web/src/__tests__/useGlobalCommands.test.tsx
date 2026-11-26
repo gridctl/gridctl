@@ -198,11 +198,11 @@ describe('useGlobalCommands navigation guard', () => {
     useUIStore.setState({ resetDialogOpen: false });
   });
 
-  it('holds Open Logs behind the discard confirm and lands on /logs when confirmed', async () => {
+  it('holds Go to Logs behind the discard confirm and lands on /logs when confirmed', async () => {
     renderGuarded();
-    await waitFor(() => expect(registry?.commands.some((c) => c.id === 'navigate:logs')).toBe(true));
+    await waitFor(() => expect(registry?.commands.some((c) => c.id === 'navigate:workspace-logs')).toBe(true));
     registerDirty();
-    select('navigate:logs');
+    select('navigate:workspace-logs');
     expect(screen.getByTestId('location')).toHaveTextContent('/tools');
     expect(screen.getByText('Discard unsaved changes')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Discard & leave' }));
@@ -212,9 +212,9 @@ describe('useGlobalCommands navigation guard', () => {
 
   it('stays put when the confirm is canceled', async () => {
     renderGuarded();
-    await waitFor(() => expect(registry?.commands.some((c) => c.id === 'navigate:logs')).toBe(true));
+    await waitFor(() => expect(registry?.commands.some((c) => c.id === 'navigate:workspace-logs')).toBe(true));
     registerDirty();
-    select('navigate:logs');
+    select('navigate:workspace-logs');
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.getByTestId('location')).toHaveTextContent('/tools');
     expect(screen.queryByText('Discard unsaved changes')).not.toBeInTheDocument();
@@ -223,8 +223,8 @@ describe('useGlobalCommands navigation guard', () => {
 
   it('navigates with no dialog when nothing is dirty', async () => {
     renderGuarded();
-    await waitFor(() => expect(registry?.commands.some((c) => c.id === 'navigate:logs')).toBe(true));
-    select('navigate:logs');
+    await waitFor(() => expect(registry?.commands.some((c) => c.id === 'navigate:workspace-logs')).toBe(true));
+    select('navigate:workspace-logs');
     expect(screen.getByTestId('location')).toHaveTextContent('/logs');
     expect(screen.queryByText('Discard unsaved changes')).not.toBeInTheDocument();
   });

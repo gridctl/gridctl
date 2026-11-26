@@ -11,7 +11,7 @@ import {
   RefreshCw,
   SlidersHorizontal,
 } from 'lucide-react';
-import { Suspense, lazy, useState, useCallback, useRef } from 'react';
+import { Suspense, lazy, useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { formatShortcut, MOD_KEY, SHIFT_KEY } from '../../lib/platform';
@@ -29,6 +29,7 @@ import { SpecDiffModal } from '../spec/SpecDiffModal';
 import { HeaderTelemetryPill } from '../telemetry/HeaderTelemetryPill';
 import { useSpecStore } from '../../stores/useSpecStore';
 import { useWizardStore } from '../../stores/useWizardStore';
+import { useShellActionsStore } from '../../stores/useShellActionsStore';
 import { LogoWordmark } from './LogoWordmark';
 import type { PlanDiff } from '../../types';
 import { ThemePicker } from '../shell/ThemePicker';
@@ -125,6 +126,14 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
       return diffModalOpen && diffModalMode === 'apply';
     });
   }, [executeReload, refreshHealth, releaseReload]);
+
+  // The palette's Reload Config runs this same flow. handleReload ignores a
+  // call while a reload is in flight.
+  useEffect(() => {
+    const { register, clear } = useShellActionsStore.getState();
+    register({ reloadConfig: () => void handleReload() });
+    return clear;
+  }, [handleReload]);
 
   // Connection state and server health are surfaced continuously in the global
   // StatusBar; the header no longer mirrors them. We keep `isConnected` only to

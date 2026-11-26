@@ -6,6 +6,10 @@ import { useCommandRegistry } from '../../hooks/useCommandRegistry';
 import { useUIStore } from '../../stores/useUIStore';
 import { showToast } from '../ui/Toast';
 import { enterModal } from '../../lib/modalPresence';
+import {
+  WORKSPACE_PALETTE_SECTION,
+  WORKSPACE_VIEW_COMMAND_IDS,
+} from '../../lib/paletteWorkspaceCommands';
 import type { PaletteCommand, PaletteSection } from '../../types/palette';
 import { ShortcutKeys } from '../ui/ShortcutKeys';
 
@@ -14,14 +18,26 @@ interface CommandPaletteProps {
   onClose: () => void;
 }
 
-type ScopePrefix = 't:' | 'v:' | 'r:' | '>';
+// `r:` is the older Library prefix; it still works but is not advertised.
+type ScopePrefix = 't:' | 'v:' | 'l:' | 'r:' | '>';
+
+const SCOPE_PREFIXES: ScopePrefix[] = ['t:', 'v:', 'l:', 'r:', '>'];
 
 const SCOPE_CONFIG: Record<ScopePrefix, { label: string; section: PaletteSection }> = {
   't:': { label: 'Traces', section: 'traces' },
   'v:': { label: 'Variables', section: 'vault' },
+  'l:': { label: 'Library', section: 'registry' },
   'r:': { label: 'Library', section: 'registry' },
   '>': { label: 'Actions', section: 'global' },
 };
+
+// Why a scoped search over a store that has not loaded is empty.
+const UNLOADED_SCOPE_MESSAGE: Partial<Record<PaletteSection, string>> = {
+  vault: 'No variables loaded yet. Open the Variables workspace to load them.',
+  traces: 'No traces loaded yet. Open the Traces workspace to load the buffer.',
+};
+
+const RESULT_WINDOW = 50;
 
 const SECTION_DISPLAY: Record<PaletteSection, { label: string; className: string }> = {
   traces: { label: 'TRACES', className: 'text-secondary bg-secondary/5 border-secondary/20' },
@@ -31,6 +47,8 @@ const SECTION_DISPLAY: Record<PaletteSection, { label: string; className: string
   logs: { label: 'LOGS', className: 'text-text-muted bg-surface-highlight border-border/30' },
   metrics: { label: 'METRICS', className: 'text-secondary bg-secondary/5 border-secondary/20' },
   pins: { label: 'PINS', className: 'text-status-pending bg-status-pending/5 border-status-pending/20' },
+  tools: { label: 'TOOLS', className: 'text-tertiary bg-tertiary/5 border-tertiary/20' },
+  connections: { label: 'CONNECTIONS', className: 'text-text-muted bg-surface-highlight border-border/30' },
   global: { label: 'GLOBAL', className: 'text-primary bg-primary/5 border-primary/20' },
 };
 
@@ -39,13 +57,23 @@ function parsePrefixScope(input: string): {
   prefix: ScopePrefix | null;
   query: string;
 } {
-  const prefixes: ScopePrefix[] = ['t:', 'v:', 'r:', '>'];
-  for (const prefix of prefixes) {
+  for (const prefix of SCOPE_PREFIXES) {
     if (input.startsWith(prefix)) {
       return { scope: SCOPE_CONFIG[prefix].section, prefix, query: input.slice(prefix.length) };
     }
   }
   return { scope: null, prefix: null, query: input };
+}
+
+function ScopeHints({ className }: { className?: string }) {
+  return (
+    <span className={className}>
+      <code className="text-primary">t:</code> traces ·{' '}
+      <code className="text-secondary">v:</code> variables ·{' '}
+      <code className="text-tertiary">l:</code> library ·{' '}
+      <code className="text-text-secondary">{'>'}</code> actions
+    </span>
+  );
 }
 
 function SectionBadge({ section }: { section: PaletteSection }) {
@@ -115,6 +143,8 @@ function GroupHeading({ icon, label }: { icon: React.ReactNode; label: string })
 export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const [inputValue, setInputValue] = useState('');
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const clearScopeRef = useRef<HTMLButtonElement>(null);
 
   const { getSortedCommands, getRecentCommands, recordUsage } = useCommandRegistry();
   const activeWorkspace = useUIStore((s) => s.activeWorkspace);
@@ -163,36 +193,6 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
     return () => window.removeEventListener('keydown', handler, true);
   }, [isOpen, handleClose]);
 
-  const { scope, prefix, query } = parsePrefixScope(inputValue);
-  const isActiveSearch = query.trim().length > 0 || scope !== null;
-
-  // Determine current section context from the active workspace.
-  const currentSection: PaletteSection =
-    activeWorkspace === 'traces'
-      ? 'traces'
-      : activeWorkspace === 'metrics'
-        ? 'metrics'
-        : activeWorkspace === 'logs'
-          ? 'logs'
-          : activeWorkspace === 'vault'
-            ? 'vault'
-            : activeWorkspace === 'library'
-              ? 'registry'
-              : activeWorkspace === 'pins'
-                ? 'pins'
-                : 'canvas';
-
-  const recentCommands = getRecentCommands(5, activeWorkspace);
-  const contextCommands = getSortedCommands(undefined, currentSection, activeWorkspace).slice(0, 6);
-  const navCommands = getSortedCommands(undefined, undefined, activeWorkspace).filter(
-    (c) => c.id.startsWith('navigate:'),
-  );
-  const searchResults = isActiveSearch
-    ? getSortedCommands(query.trim() || undefined, scope ?? undefined, activeWorkspace)
-    : [];
-
-  const resultCount = isActiveSearch ? searchResults.length : null;
-
   const handleSelect = useCallback(
     (command: PaletteCommand) => {
       if (command.unavailable) {
@@ -209,7 +209,51 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
     [recordUsage, handleClose],
   );
 
+  const clearScope = useCallback(() => {
+    setInputValue('');
+    inputRef.current?.focus();
+  }, []);
+
   if (!isOpen) return null;
+
+  const { scope, prefix, query } = parsePrefixScope(inputValue);
+  const isActiveSearch = query.trim().length > 0 || scope !== null;
+  const currentSection = WORKSPACE_PALETTE_SECTION[activeWorkspace];
+
+  const recentCommands = isActiveSearch ? [] : getRecentCommands(5, activeWorkspace);
+  const contextCommands = isActiveSearch
+    ? []
+    : getSortedCommands(undefined, currentSection, activeWorkspace).slice(0, 6);
+  const navCommands = isActiveSearch
+    ? []
+    : getSortedCommands(undefined, undefined, activeWorkspace).filter((c) =>
+        c.id.startsWith('navigate:'),
+      );
+  const searchResults = isActiveSearch
+    ? getSortedCommands(query.trim() || undefined, scope ?? undefined, activeWorkspace)
+    : [];
+  const visibleResults = searchResults.slice(0, RESULT_WINDOW);
+  // The section also holds static view commands, so "loaded" means at least
+  // one entry that came from the store. The note shows even when a view
+  // command matches the query.
+  const unloadedMessage =
+    scope &&
+    UNLOADED_SCOPE_MESSAGE[scope] &&
+    !getSortedCommands(undefined, scope).some((c) => !WORKSPACE_VIEW_COMMAND_IDS.has(c.id))
+      ? UNLOADED_SCOPE_MESSAGE[scope]
+      : undefined;
+
+  const resultCount = isActiveSearch ? searchResults.length : null;
+
+  // Focus stays in the dialog: Tab moves between the input and the scope
+  // chip's clear button, or stays on the input when there is no chip.
+  const handleTab = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Tab') return;
+    e.preventDefault();
+    const clear = clearScopeRef.current;
+    if (clear && document.activeElement !== clear) clear.focus();
+    else inputRef.current?.focus();
+  };
 
   return (
     <div
@@ -234,9 +278,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
       <div
         className="glass-panel-elevated animate-fade-in-scale w-full max-w-xl mx-4 flex flex-col overflow-hidden"
         style={{ maxHeight: '64vh' }}
-        onKeyDown={(e) => {
-          if (e.key === 'Tab') e.preventDefault(); // focus trap
-        }}
+        onKeyDown={handleTab}
       >
         <Command shouldFilter={false} className="group/cmd flex flex-col overflow-hidden flex-1 min-h-0">
           {/* Input row */}
@@ -250,11 +292,24 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                   {SCOPE_CONFIG[prefix].label}
                 </span>
                 <button
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    setInputValue('');
+                  ref={clearScopeRef}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={clearScope}
+                  onKeyDown={(e) => {
+                    // cmdk's root runs the selected command on Enter; keep
+                    // Enter and Space on this button.
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      clearScope();
+                    }
                   }}
-                  className="text-primary hover:text-text-primary transition-colors ml-0.5"
+                  className={cn(
+                    'inline-flex items-center justify-center w-6 h-6 -my-1 -mr-1 rounded-full',
+                    'text-primary hover:text-text-primary transition-colors',
+                    'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-primary',
+                  )}
                   aria-label="Clear scope filter"
                 >
                   <X size={10} />
@@ -263,8 +318,16 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
             )}
 
             <Command.Input
+              ref={inputRef}
               value={inputValue}
               onValueChange={setInputValue}
+              onKeyDown={(e) => {
+                // One Backspace removes a bare scope prefix.
+                if (e.key === 'Backspace' && (SCOPE_PREFIXES as string[]).includes(inputValue)) {
+                  e.preventDefault();
+                  setInputValue('');
+                }
+              }}
               placeholder={
                 scope && prefix
                   ? `Search ${SCOPE_CONFIG[prefix].label}...`
@@ -323,12 +386,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                   navCommands.length === 0 && (
                     <div className="flex flex-col items-center gap-2 py-10 text-center">
                       <p className="text-sm text-text-muted">Start typing to search commands</p>
-                      <p className="text-xs text-text-muted opacity-60">
-                        <code className="text-primary">t:</code> traces ·{' '}
-                        <code className="text-secondary/70">v:</code> variables ·{' '}
-                        <code className="text-tertiary/70">r:</code> library ·{' '}
-                        <code className="text-text-muted">{'>'}</code> actions
-                      </p>
+                      <ScopeHints className="text-xs text-text-muted" />
                     </div>
                   )}
               </>
@@ -338,28 +396,35 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                 <Command.Empty>
                   <div className="flex flex-col items-center gap-2 py-10 text-center">
                     <p className="text-sm text-text-secondary">
-                      No results for{' '}
-                      <span className="text-text-primary font-medium">
-                        "{query || (prefix ? SCOPE_CONFIG[prefix].label : '')}"
-                      </span>
+                      {unloadedMessage ?? (
+                        <>
+                          No results for{' '}
+                          <span className="text-text-primary font-medium">
+                            "{query || (prefix ? SCOPE_CONFIG[prefix].label : '')}"
+                          </span>
+                        </>
+                      )}
                     </p>
-                    <p className="text-xs text-text-muted opacity-70 leading-relaxed">
-                      Try <code className="text-primary">{'>'}</code> for actions ·{' '}
-                      <code className="text-secondary/80">v:</code> for Variables ·{' '}
-                      <code className="text-primary">t:</code> for Traces ·{' '}
-                      <code className="text-tertiary/70">r:</code> for Library
-                    </p>
+                    <ScopeHints className="text-xs text-text-muted leading-relaxed" />
                   </div>
                 </Command.Empty>
-                {searchResults.map((cmd) => (
+                {unloadedMessage && visibleResults.length > 0 && (
+                  <div className="px-4 py-2 text-xs text-text-muted">{unloadedMessage}</div>
+                )}
+                {visibleResults.map((cmd) => (
                   <PaletteItem key={cmd.id} command={cmd} onSelect={handleSelect} showBadge />
                 ))}
+                {searchResults.length > visibleResults.length && (
+                  <div className="px-4 py-2 text-xs text-text-muted">
+                    Showing {visibleResults.length} of {searchResults.length}. Keep typing to narrow.
+                  </div>
+                )}
               </>
             )}
           </Command.List>
 
           {/* Footer hints */}
-          <div className="flex items-center gap-3 px-4 py-2 border-t border-border/20 shrink-0">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 border-t border-border/20 shrink-0">
             <span className="flex items-center gap-1 text-3xs text-text-muted">
               <kbd className="px-1 py-0.5 rounded bg-surface border border-border/50 font-mono text-3xs">
                 ↑↓
@@ -372,12 +437,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
               </kbd>
               select
             </span>
-            <span className="ml-auto text-3xs text-text-muted opacity-50">
-              <code className="text-primary">t:</code>{' '}
-              <code className="text-secondary/80">v:</code>{' '}
-              <code className="text-tertiary/80">r:</code>{' '}
-              <code>{'>'}</code>
-            </span>
+            <ScopeHints className="ml-auto text-3xs text-text-muted" />
           </div>
         </Command>
       </div>

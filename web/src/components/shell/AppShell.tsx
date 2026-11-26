@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Outlet, useLocation } from 'react-router';
+import { Outlet, useLocation, useNavigate } from 'react-router';
 import { Header } from '../layout/Header';
 import { StatusBar } from '../layout/StatusBar';
 import { CommandPalette } from '../palette/CommandPalette';
@@ -20,6 +20,7 @@ import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { documentTitleForWorkspace, isWorkspace, type Workspace } from '../../types/workspace';
 import { writePref } from '../../lib/preferences';
 import { restoreNodeFocus } from '../../lib/inspectorFocus';
+import { navigateToWorkspace } from '../../lib/workspaceNav';
 
 const HEADER_HEIGHT = 56;
 const STATUSBAR_HEIGHT = 32;
@@ -51,6 +52,7 @@ export function AppShell() {
   const setShortcutsOpen = useUIStore((s) => s.setShortcutsOpen);
 
   const navigate = useGuardedNavigate();
+  const rawNavigate = useNavigate();
   const { pathname } = useLocation();
   const { refresh } = usePolling({ registerRetry: true });
 
@@ -102,7 +104,10 @@ export function AppShell() {
     onRefresh: handleRefresh,
     onOpenLogs: () => navigate('/logs'),
     onOpenPalette: toggleCommandPalette,
-    onSwitchToWorkspace: (id) => navigate(`/${id}`),
+    // Same rule as the palette's Go to commands: the current workspace's
+    // shortcut keeps its params, and leaving asks first when a draft is dirty.
+    onSwitchToWorkspace: (id) =>
+      navigateToWorkspace((to) => void rawNavigate(to), pathname, `/${id}`),
     onToggleCompactMode: () => toggleCompactMode(activeWorkspace),
     onOpenShortcuts: () => setShortcutsOpen(true),
   });

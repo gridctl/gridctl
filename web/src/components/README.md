@@ -166,9 +166,11 @@ store:
 
 Several supporting stores (`useSpecStore`, `useAuthStore`, `usePinsStore`,
 `useTelemetryStore`, `useTracesStore`, `useVaultStore`, `useWizardStore`,
-`useCanvasActionsStore`) sit alongside the workspace stores. `useCanvasActionsStore`
+`useCanvasActionsStore`, `useShellActionsStore`) sit alongside the workspace stores. `useCanvasActionsStore`
 holds fit and zoom until `graph/Canvas.tsx` registers them, so the shell does
-not import React Flow. `useAuthStore` owns the credential, verification
+not import React Flow. `useShellActionsStore` holds the header's Reload Config
+flow, which `Header` registers on mount, so the palette command runs the same
+path (including the spec diff modal) without the header using the registry. `useAuthStore` owns the credential, verification
 attempt, and credential generation shared by protected requests and their
 consumers. Data stores and polling hooks consult that generation to discard
 superseded results.
@@ -246,6 +248,20 @@ workspace-specific props.
 - Register workspace-specific command-palette entries via
   `useCommandRegistry().registerCommands(scope, commands)` on mount; clean
   up on unmount. See `useLibraryCommands` for the pattern.
+  Give each command the `PaletteSection` its workspace's Current Context
+  group reads (`WORKSPACE_PALETTE_SECTION` in
+  `lib/paletteWorkspaceCommands.ts`; Tools and Connections use the `tools`
+  and `connections` sections). `aliases` lists strings that name the command
+  outright: a query equal to one ranks it first, and each alias must also
+  appear in the label or a keyword. Search ranks by match quality (exact,
+  prefix, word start, keyword prefix, substring, subsequence, in
+  `lib/paletteScore.ts`) and orders by usage only within a tier.
+- The shell registers a "Go to" command per `WORKSPACE_CONFIG` entry and
+  the URL-param view commands for Tools, Metrics, Traces, Connections, and
+  Variables (`lib/paletteWorkspaceCommands.ts`). Palette and `⌘1`-`⌘9`
+  navigation goes through `navigateToWorkspace` (`lib/workspaceNav.ts`),
+  which keeps the current URL when the target is the current workspace and
+  otherwise asks the shared leave guard first.
 - Spread `listNavProps` from `hooks/useListNav.ts` on the element that
   holds a `useListNav` list's rows, and `listNavRowProps` on each focusable
   row. Arrows, Home, End, `e`, `d`, and Enter act only when focus is on the
