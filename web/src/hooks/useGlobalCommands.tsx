@@ -25,6 +25,8 @@ import {
   Database,
   FileCog,
   Rows3,
+  Table,
+  Network,
 } from 'lucide-react';
 import type { ThemeMode } from '../themes/types';
 import { MOD_KEY, SHIFT_KEY } from '../lib/platform';
@@ -280,6 +282,24 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         icon: <Eye size={14} />,
         keywords: ['spec', 'mode', 'ghost', 'undeployed', 'preview', 'drift', 'diff', 'changes', 'diverged', 'toggle'],
         onSelect: () => toggleSpecMode(),
+      },
+      {
+        id: 'canvas:view-table',
+        label: 'Show Stack as table',
+        section: 'canvas',
+        workspaces: ['stack'],
+        icon: <Table size={14} />,
+        keywords: ['table', 'list', 'rows', 'view', 'stack', 'servers'],
+        onSelect: () => useUIStore.getState().setStackPrefs({ view: 'table' }),
+      },
+      {
+        id: 'canvas:view-graph',
+        label: 'Show Stack as graph',
+        section: 'canvas',
+        workspaces: ['stack'],
+        icon: <Network size={14} />,
+        keywords: ['graph', 'canvas', 'diagram', 'view', 'stack'],
+        onSelect: () => useUIStore.getState().setStackPrefs({ view: 'graph' }),
       },
       {
         id: 'action:wizard',

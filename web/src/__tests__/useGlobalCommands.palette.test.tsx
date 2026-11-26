@@ -208,6 +208,30 @@ describe('palette navigation commands', () => {
   });
 });
 
+describe('palette Stack view commands', () => {
+  beforeEach(resetStores);
+  afterEach(resetStores);
+
+  it('offers table and graph views in Stack only and writes the preference', async () => {
+    useUIStore.setState({ stackPrefs: { view: null } });
+    await renderAt();
+    const inStack = ids(reg().getSortedCommands(undefined, undefined, 'stack'));
+    expect(inStack).toContain('canvas:view-table');
+    expect(inStack).toContain('canvas:view-graph');
+    const inTools = ids(reg().getSortedCommands(undefined, undefined, 'tools'));
+    expect(inTools).not.toContain('canvas:view-table');
+    expect(inTools).not.toContain('canvas:view-graph');
+
+    const find = (id: string) => reg().commands.find((c) => c.id === id)!;
+    expect(find('canvas:view-table').label).toBe('Show Stack as table');
+    expect(find('canvas:view-graph').label).toBe('Show Stack as graph');
+    act(() => find('canvas:view-table').onSelect());
+    expect(useUIStore.getState().stackPrefs.view).toBe('table');
+    act(() => find('canvas:view-graph').onSelect());
+    expect(useUIStore.getState().stackPrefs.view).toBe('graph');
+  });
+});
+
 describe('palette dynamic entries', () => {
   beforeEach(resetStores);
   afterEach(resetStores);
