@@ -208,6 +208,32 @@ describe('ToolNode', () => {
     }
   });
 
+  it('pans instantly under prefers-reduced-motion', async () => {
+    const original = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      const base = { top: 0, bottom: 100, height: 100, y: 0, toJSON: () => ({}) };
+      if (this.classList.contains('w-72')) {
+        return { ...base, left: 900, right: 1188, width: 288, x: 900 } as DOMRect;
+      }
+      return { ...base, left: 0, right: 1024, width: 1024, x: 0 } as DOMRect;
+    };
+    window.matchMedia = ((query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    try {
+      renderNode();
+      fireEvent.click(trigger());
+      await screen.findByText('github__search-repos');
+      expect(setViewport).toHaveBeenCalledWith({ x: -172, y: 0, zoom: 1 }, { duration: 0 });
+    } finally {
+      Element.prototype.getBoundingClientRect = original;
+      delete (window as { matchMedia?: unknown }).matchMedia;
+    }
+  });
+
   it('re-pans when the viewport settles with the card still overrunning', async () => {
     const original = Element.prototype.getBoundingClientRect;
     // A refit can still be animating when the card opens, so the settle

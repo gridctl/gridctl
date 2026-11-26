@@ -8,6 +8,7 @@ import { horizontalOverflow } from '../../lib/graph/popoverPlacement';
 import { TOOL_NAME_DELIMITER } from '../../lib/constants';
 import { formatLastUsed } from '../../lib/toolAudit';
 import { fetchToolUsage } from '../../lib/api';
+import { motionDuration } from '../../lib/motion';
 import { useStackStore } from '../../stores/useStackStore';
 
 interface ToolDetailPopoverProps {
@@ -39,9 +40,9 @@ const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }
   const navigate = useGuardedNavigate();
   const prefixedName = `${serverName}${TOOL_NAME_DELIMITER}${toolName}`;
 
-  // Tool pills are the rightmost nodes in the graph and the auto-refit frames
-  // them flush against the canvas edge, so the right-opening card routinely
-  // lands past it. Mirroring the card to the anchor's left would cover the
+  // Tool pills are the rightmost nodes in the graph, framed flush against the
+  // canvas edge by the auto-refit or left there by the user's own pan, so the
+  // right-opening card routinely lands past it. Mirroring the card to the anchor's left would cover the
   // graph instead, so pan the viewport left by the overrun: the card is glued
   // to its anchor, so the pan carries it fully into view. Rects and the
   // viewport translation are both screen-space, so the canvas zoom is already
@@ -59,14 +60,14 @@ const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }
     );
     if (overflow === 0) return;
     const viewport = getViewport();
-    void setViewport({ ...viewport, x: viewport.x - overflow }, { duration: 200 });
+    void setViewport({ ...viewport, x: viewport.x - overflow }, { duration: motionDuration(200) });
   }, [getViewport, setViewport]);
 
   // Check once on open, before paint (the card unmounts on close, so mount is
   // open), and again whenever the viewport comes to rest: a programmatic fit
-  // can still be animating when the card opens (expanding a fan-out starts a
-  // 400ms refit), so the mount-time measurement can be taken mid-flight and
-  // the frame settles with the card clipped. Manual pans never fight the
+  // or reveal pan can still be animating when the card opens (expanding a
+  // fan-out can start a refit or a pan), so the mount-time measurement can be
+  // taken mid-flight and the frame settles with the card clipped. Manual pans never fight the
   // re-check since a pane mousedown dismisses the card first (useDismiss),
   // and the re-pan converges: its own settle re-measures to zero overrun.
   useLayoutEffect(() => {

@@ -138,6 +138,67 @@ describe('useStackStore graph identity', () => {
     expect(useStackStore.getState().nodes.find((node) => node.id === 'mcp-jira')?.selected).not.toBe(true);
   });
 
+  it('moves the React Flow selected flag on a programmatic selection', () => {
+    useStackStore.getState().setGatewayStatus(status([makeServer('a'), makeServer('b')]));
+    useStackStore.getState().setNodes(
+      useStackStore.getState().nodes.map((node) => (
+        node.id === 'mcp-a' ? { ...node, selected: true } : node
+      )),
+    );
+    const before = useStackStore.getState().nodes;
+
+    useStackStore.getState().selectNode('mcp-b');
+
+    const after = useStackStore.getState().nodes;
+    expect(useStackStore.getState().selectedNodeId).toBe('mcp-b');
+    expect(after.find((node) => node.id === 'mcp-b')?.selected).toBe(true);
+    expect(after.find((node) => node.id === 'mcp-a')?.selected).toBe(false);
+    expect(after.filter((node) => node.selected).map((node) => node.id)).toEqual(['mcp-b']);
+    // Nodes whose flag did not change keep their identity.
+    expect(after.find((node) => node.id === 'gateway')).toBe(before.find((node) => node.id === 'gateway'));
+  });
+
+  it('writes no new nodes array when the selected flags already match', () => {
+    useStackStore.getState().setGatewayStatus(status([makeServer('a'), makeServer('b')]));
+    useStackStore.getState().selectNode('mcp-b');
+    const nodes = useStackStore.getState().nodes;
+
+    useStackStore.getState().selectNode('mcp-b');
+    expect(useStackStore.getState().nodes).toBe(nodes);
+
+    // React Flow flagging the clicked node first leaves nothing for selectNode to write.
+    useStackStore.getState().setNodes(
+      useStackStore.getState().nodes.map((node) => (
+        node.id === 'mcp-a' ? { ...node, selected: true } : node.id === 'mcp-b' ? { ...node, selected: false } : node
+      )),
+    );
+    const flagged = useStackStore.getState().nodes;
+    useStackStore.getState().selectNode('mcp-a');
+    expect(useStackStore.getState().nodes).toBe(flagged);
+    expect(useStackStore.getState().selectedNodeId).toBe('mcp-a');
+  });
+
+  it('clears other flags and records an id that matches no node', () => {
+    useStackStore.getState().setGatewayStatus(status([makeServer('a')]));
+    useStackStore.getState().selectNode('mcp-a');
+
+    useStackStore.getState().selectNode('missing');
+
+    expect(useStackStore.getState().selectedNodeId).toBe('missing');
+    expect(useStackStore.getState().nodes.some((node) => node.selected)).toBe(false);
+  });
+
+  it('writes no new nodes array when clearing an unflagged selection', () => {
+    useStackStore.getState().setGatewayStatus(status([makeServer('a')]));
+    useStackStore.setState({ selectedNodeId: 'mcp-a' });
+    const nodes = useStackStore.getState().nodes;
+
+    useStackStore.getState().selectNode(null);
+
+    expect(useStackStore.getState().selectedNodeId).toBeNull();
+    expect(useStackStore.getState().nodes).toBe(nodes);
+  });
+
   it('keeps sibling client slots after a drag on the next poll', () => {
     const clients: ClientStatus[] = [
       { ...linked, name: 'Alpha', slug: 'alpha' },
