@@ -222,6 +222,34 @@ describe('SidebarTelemetrySection reflection', () => {
     expect(segment('metrics', 'On')).toHaveAttribute('aria-pressed', 'false');
     expect(segment('logs', 'Off')).toHaveAttribute('aria-pressed', 'true');
   });
+
+  it('restores the earlier selection when a second change to the same signal fails', async () => {
+    render(<SidebarTelemetrySection serverName="vault" />);
+    await click(segment('logs', 'Off'));
+    updateMock.mockRejectedValue(new Error('reload failed'));
+    await click(segment('logs', 'On'));
+    expect(segment('logs', 'Off')).toHaveAttribute('aria-pressed', 'true');
+    expect(segment('logs', 'On')).toHaveAttribute('aria-pressed', 'false');
+    expect(segment('logs', 'Inherit')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: /reset to global/i })).toBeInTheDocument();
+  });
+
+  it('keeps Inherit after Reset to global when the config refreshes mid-request', async () => {
+    seed({ global: {}, servers: { vault: { logs: false } } });
+    const update = deferred<typeof OK>();
+    updateMock.mockReturnValue(update.promise);
+    render(<SidebarTelemetrySection serverName="vault" />);
+    await click(screen.getByRole('button', { name: /reset to global/i }));
+    await act(async () => {
+      useTelemetryStore.setState({ config: { global: {}, servers: { vault: { logs: false } } } });
+    });
+    await act(async () => {
+      update.resolve(OK);
+    });
+    expect(segment('logs', 'Inherit')).toHaveAttribute('aria-pressed', 'true');
+    expect(segment('logs', 'Off')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('button', { name: /reset to global/i })).not.toBeInTheDocument();
+  });
 });
 
 describe('SidebarTelemetrySection busy state', () => {
