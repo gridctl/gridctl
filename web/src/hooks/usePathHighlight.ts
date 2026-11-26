@@ -177,7 +177,8 @@ function narrowToClientScope(
  * reachable-servers path. For other node types: highlight only the selected
  * node. In every case, the fanned-out tools of a highlighted server are
  * highlighted too, so expanding a reachable server in focus mode keeps its
- * tools at full opacity. Pure function so it can be unit-tested without React.
+ * tools at full opacity. A selection whose node is missing from the graph
+ * highlights nothing. Pure function so it can be unit-tested without React.
  *
  * @param nodes - All nodes in the graph
  * @param edges - All edges in the graph
@@ -200,13 +201,11 @@ export function computeHighlightState(
   }
 
   // Find the selected node
+  // A selection that is not in the graph (removed, or restarting) dims
+  // nothing, so the canvas stays readable while the inspector says so.
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   if (!selectedNode) {
-    return {
-      highlightedNodeIds: new Set([selectedNodeId]),
-      highlightedEdgeIds: new Set<string>(),
-      hasSelection: true,
-    };
+    return emptyHighlight();
   }
 
   const nodeData = selectedNode.data as Record<string, unknown>;

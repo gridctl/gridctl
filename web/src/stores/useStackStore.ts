@@ -22,6 +22,7 @@ import { useRegistryStore } from './useRegistryStore';
 import { useUIStore } from './useUIStore';
 import { usePinsStore } from './usePinsStore';
 import { requestInspectorLeave } from './useInspectorToolsGuardStore';
+import { useShellNavStore } from './useShellNavStore';
 
 // Per-server autoscale sample. Populated every poll cycle; capped at
 // AUTOSCALE_HISTORY_CAP entries so the ring buffer stays O(1) in memory.
@@ -46,6 +47,17 @@ export interface AutoscaleDecision {
 
 export const AUTOSCALE_HISTORY_CAP = 120; // 6 minutes at 3s polling
 export const AUTOSCALE_DECISIONS_CAP = 10;
+
+// How long a selected node may be absent from the graph before the selection
+// is dropped. A restarting server leaves /api/status until it re-initializes,
+// so a single absent poll is not proof that it was removed.
+export const SELECTION_MISSING_GRACE_MS = 20_000;
+
+export interface MissingSelection {
+  id: string;
+  name?: string;
+  since: number;  // ms since epoch when the selected node was first absent
+}
 
 interface StackState {
   // === Raw API Data ===
@@ -88,6 +100,8 @@ interface StackState {
 
   // === UI State ===
   selectedNodeId: string | null;
+  // Set while the selected node is absent from the graph; null otherwise.
+  missingSelection: MissingSelection | null;
   // Server node ids (e.g. "mcp-github") whose tools are fanned out on the
   // canvas. Independent per server and preserved across polling refreshes so
   // an expanded server stays expanded when the graph data refetches.
@@ -150,6 +164,7 @@ export const useStackStore = create<StackState>()(
     activeServers: new Set<string>(),
     tokenTotalsLastSeen: {},
     selectedNodeId: null,
+    missingSelection: null,
     expandedServers: new Set<string>(),
     layoutEpoch: 0,
     connectionStatus: 'connecting',
@@ -176,13 +191,7 @@ export const useStackStore = create<StackState>()(
             action: {
               label: 'Authorize',
               onClick: () => {
-                requestInspectorLeave(
-                  () => {
-                    get().selectNode(`mcp-${s.name}`);
-                    useUIStore.getState().setSidebarOpen(true);
-                  },
-                  { targetServer: s.name },
-                );
+                openServerInspector(s.name);
               },
             },
           });
@@ -251,17 +260,22 @@ export const useStackStore = create<StackState>()(
     // clear React Flow's flag too. Escape and the inspector close often run
     // while focus is outside the node, where React Flow's own handler does not.
     selectNode: (nodeId) => {
+      const missing =
+        nodeId !== get().selectedNodeId && get().missingSelection !== null
+          ? { missingSelection: null }
+          : {};
       if (nodeId === null) {
         const nodes = get().nodes;
         if (nodes.some((node) => node.selected)) {
           set({
             nodes: nodes.map((node) => (node.selected ? { ...node, selected: false } : node)),
             selectedNodeId: null,
+            ...missing,
           });
           return;
         }
       }
-      set({ selectedNodeId: nodeId });
+      set({ selectedNodeId: nodeId, ...missing });
     },
 
     toggleServerExpanded: (serverId) => {
@@ -354,8 +368,33 @@ export const useStackStore = create<StackState>()(
         previousEdges,
         fanned.edges,
       );
-      if (reused.nodes === previousNodes && reused.edges === previousEdges) return;
-      set({ nodes: reused.nodes, edges: reused.edges });
+      const selectedNodeId = get().selectedNodeId;
+      const missingSelection = get().missingSelection;
+      const selection = reconcileSelection(
+        selectedNodeId,
+        missingSelection,
+        reused.nodes,
+        previousNodes,
+      );
+      // A node rebuilt after an absence has no carried React Flow `selected`
+      // flag, so restore it for the returning selection to keep its ring.
+      const nextNodes =
+        missingSelection && missingSelection.id === selectedNodeId
+          ? reused.nodes.map((n) =>
+              n.id === selectedNodeId && !n.selected ? { ...n, selected: true } : n,
+            )
+          : reused.nodes;
+      if (reused.nodes === previousNodes && reused.edges === previousEdges) {
+        if (selection.update) set(selection.update);
+      } else {
+        set({ nodes: nextNodes, edges: reused.edges, ...selection.update });
+      }
+      if (selection.dropped) {
+        useUIStore.getState().setSidebarOpen(false);
+        if (selection.dropped.name) {
+          showToast('warning', `${selection.dropped.name} is no longer in the stack`);
+        }
+      }
     },
 
     resetLayout: () => {
@@ -408,6 +447,63 @@ export const useStackStore = create<StackState>()(
     },
   }))
 );
+
+// openServerInspector selects a server, opens the inspector, and moves to
+// Stack, which is the only workspace that renders it. A stale toast can name
+// a server that has since left the stack; that selects nothing.
+export function openServerInspector(name: string): void {
+  if (!useStackStore.getState().mcpServers.some((s) => s.name === name)) {
+    showToast('warning', `${name} is no longer in the stack`);
+    return;
+  }
+  requestInspectorLeave(
+    () => {
+      useStackStore.getState().selectNode(`mcp-${name}`);
+      useUIStore.getState().setSidebarOpen(true);
+      useShellNavStore.getState().goToStack();
+    },
+    { targetServer: name },
+  );
+}
+
+type SelectionUpdate = Pick<StackState, 'selectedNodeId' | 'missingSelection'>;
+
+// Reconciles the selection with a new node list. A selected node that is
+// absent is recorded first and dropped only after SELECTION_MISSING_GRACE_MS,
+// so a server that comes back from a restart keeps its selection. `update` is
+// null when nothing changes, so an unchanged poll writes nothing.
+function reconcileSelection(
+  selectedNodeId: string | null,
+  missingSelection: MissingSelection | null,
+  nodes: Node[],
+  previousNodes: Node[],
+): { update: Partial<SelectionUpdate> | null; dropped: MissingSelection | null } {
+  if (!selectedNodeId || nodes.some((n) => n.id === selectedNodeId)) {
+    return { update: missingSelection ? { missingSelection: null } : null, dropped: null };
+  }
+  const now = Date.now();
+  if (!missingSelection || missingSelection.id !== selectedNodeId) {
+    const previous = previousNodes.find((n) => n.id === selectedNodeId);
+    const name = (previous?.data as Record<string, unknown> | undefined)?.name;
+    return {
+      update: {
+        missingSelection: {
+          id: selectedNodeId,
+          name: typeof name === 'string' ? name : undefined,
+          since: now,
+        },
+      },
+      dropped: null,
+    };
+  }
+  if (now - missingSelection.since >= SELECTION_MISSING_GRACE_MS) {
+    return {
+      update: { selectedNodeId: null, missingSelection: null },
+      dropped: missingSelection,
+    };
+  }
+  return { update: null, dropped: null };
+}
 
 // Selectors
 export const useSelectedNode = () => {

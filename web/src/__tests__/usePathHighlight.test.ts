@@ -135,12 +135,12 @@ describe('computeHighlightState', () => {
     expect(state.highlightedEdgeIds.size).toBe(0);
   });
 
-  it('highlights just the id when the selected node is missing', () => {
+  it('highlights nothing when the selected node is missing', () => {
     const { edges } = makeGraph();
     const state = computeHighlightState([], edges, 'ghost');
 
-    expect(state.hasSelection).toBe(true);
-    expect([...state.highlightedNodeIds]).toEqual(['ghost']);
+    expect(state.hasSelection).toBe(false);
+    expect(state.highlightedNodeIds.size).toBe(0);
     expect(state.highlightedEdgeIds.size).toBe(0);
   });
 

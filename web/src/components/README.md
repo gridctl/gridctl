@@ -166,11 +166,15 @@ store:
 
 Several supporting stores (`useSpecStore`, `useAuthStore`, `usePinsStore`,
 `useTelemetryStore`, `useTracesStore`, `useVaultStore`, `useWizardStore`,
-`useCanvasActionsStore`, `useShellActionsStore`) sit alongside the workspace stores. `useCanvasActionsStore`
+`useCanvasActionsStore`, `useShellActionsStore`, `useShellNavStore`) sit alongside the workspace stores. `useCanvasActionsStore`
 holds fit and zoom until `graph/Canvas.tsx` registers them, so the shell does
 not import React Flow. `useShellActionsStore` holds the header's Reload Config
 flow, which `Header` registers on mount, so the palette command runs the same
-path (including the spec diff modal) without the header using the registry. `useAuthStore` owns the credential, verification
+path (including the spec diff modal) without the header using the registry. `useShellNavStore` holds `goToStack`, the
+guarded navigation to Stack that `AppShell` registers on mount, so store
+actions such as `openServerInspector` (the needs-auth toast and status bar
+chip) can open the inspector from any workspace; it is a no-op until
+registered. `useAuthStore` owns the credential, verification
 attempt, and credential generation shared by protected requests and their
 consumers. Data stores and polling hooks consult that generation to discard
 superseded results.
