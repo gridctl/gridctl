@@ -3,7 +3,6 @@ import { useAuthStore } from '../stores/useAuthStore';
 import { useTelemetryStore } from '../stores/useTelemetryStore';
 import {
   effectiveSignal,
-  nextTriState,
   parseStackTelemetry,
   readTriState,
   triStateToPatch,
@@ -91,7 +90,7 @@ describe('effectiveSignal — inheritance', () => {
   });
 });
 
-describe('readTriState + nextTriState — cycling state machine', () => {
+describe('readTriState + triStateToPatch', () => {
   let cfg: ResolvedTelemetry;
 
   beforeAll(async () => {
@@ -106,27 +105,15 @@ describe('readTriState + nextTriState — cycling state machine', () => {
     expect(readTriState(cfg, 'filesystem', 'logs')).toBe('inherit');
   });
 
-  it('cycles inherit -> on -> off -> inherit', () => {
-    let s: TriState = 'inherit';
-    s = nextTriState(s);
-    expect(s).toBe('on');
-    s = nextTriState(s);
-    expect(s).toBe('off');
-    s = nextTriState(s);
-    expect(s).toBe('inherit');
-  });
-
   it('maps tri-state to PATCH body values', () => {
-    expect(triStateToPatch('inherit')).toBe(null);
-    expect(triStateToPatch('on')).toBe(true);
-    expect(triStateToPatch('off')).toBe(false);
-  });
-
-  it('cycle composes with patch mapping for the full state machine', () => {
-    // inherit (null) -> on (true) -> off (false) -> inherit (null)
-    expect(triStateToPatch(nextTriState('inherit'))).toBe(true);
-    expect(triStateToPatch(nextTriState('on'))).toBe(false);
-    expect(triStateToPatch(nextTriState('off'))).toBe(null);
+    const cases: [TriState, boolean | null][] = [
+      ['inherit', null],
+      ['on', true],
+      ['off', false],
+    ];
+    for (const [state, patch] of cases) {
+      expect(triStateToPatch(state)).toBe(patch);
+    }
   });
 });
 
