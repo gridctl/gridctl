@@ -368,16 +368,26 @@ export const useStackStore = create<StackState>()(
         previousEdges,
         fanned.edges,
       );
+      const selectedNodeId = get().selectedNodeId;
+      const missingSelection = get().missingSelection;
       const selection = reconcileSelection(
-        get().selectedNodeId,
-        get().missingSelection,
+        selectedNodeId,
+        missingSelection,
         reused.nodes,
         previousNodes,
       );
+      // A node rebuilt after an absence has no carried React Flow `selected`
+      // flag, so restore it for the returning selection to keep its ring.
+      const nextNodes =
+        missingSelection && missingSelection.id === selectedNodeId
+          ? reused.nodes.map((n) =>
+              n.id === selectedNodeId && !n.selected ? { ...n, selected: true } : n,
+            )
+          : reused.nodes;
       if (reused.nodes === previousNodes && reused.edges === previousEdges) {
         if (selection.update) set(selection.update);
       } else {
-        set({ nodes: reused.nodes, edges: reused.edges, ...selection.update });
+        set({ nodes: nextNodes, edges: reused.edges, ...selection.update });
       }
       if (selection.dropped) {
         useUIStore.getState().setSidebarOpen(false);

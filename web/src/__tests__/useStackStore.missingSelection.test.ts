@@ -56,6 +56,9 @@ describe('missing selection reconcile', () => {
     expect(useStackStore.getState().missingSelection).toBeNull();
     expect(useUIStore.getState().sidebarOpen).toBe(true);
     expect(showToast).not.toHaveBeenCalled();
+    const returned = useStackStore.getState().nodes.find((n) => n.id === 'mcp-a');
+    expect(returned?.selected).toBe(true);
+    expect(useStackStore.getState().nodes.find((n) => n.id === 'mcp-b')?.selected).toBeFalsy();
 
     deliver('b');
     expect(useStackStore.getState().missingSelection?.name).toBe('a');
