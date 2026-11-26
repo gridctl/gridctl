@@ -4,12 +4,16 @@ import { useSearchParams } from 'react-router';
 import { Sidebar } from '../layout/Sidebar';
 import { Canvas } from '../graph/Canvas';
 import { AccessLens } from '../stack/AccessLens';
+import { StackToolbar } from '../stack/StackToolbar';
+import { StackTable, type StackTableHandle } from '../stack/StackTable';
 import { SpecPane } from '../spec/SpecPane';
 import { ResizeHandle } from '../ui/ResizeHandle';
 import { FailedState, FailureBanner } from '../ui/EmptyState';
 import { WorkspaceHeader } from '../ui/WorkspaceHeader';
 import { useStackStore } from '../../stores/useStackStore';
 import { useUIStore } from '../../stores/useUIStore';
+import { useAccessLensStore } from '../../stores/useAccessLensStore';
+import { STACK_TABLE_AUTO_THRESHOLD, type StackFacet, type StackFilter } from '../../lib/stackRows';
 import { usePollingRefresh } from '../../hooks/usePolling';
 import { WORKSPACE_LABELS } from '../../types/workspace';
 import { cn } from '../../lib/cn';
@@ -32,8 +36,8 @@ export function clampSidebarWidth(next: number, containerWidth: number): number 
   return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, next));
 }
 
-// Stack workspace body: a slim header, then the canvas, loading/error
-// overlays, and the right-rail inspector. Rendered inside <AppShell>'s <main>
+// Stack workspace body: a slim header, then a toolbar over the graph or table
+// body, loading/error overlays, and the right-rail inspector. Rendered inside <AppShell>'s <main>
 // outlet. CSS grid: a canvas column plus a collapsible inspector column (0px
 // when closed) so switching workspaces doesn't shift the canvas.
 export function StackWorkspace() {
@@ -63,6 +67,29 @@ export function StackWorkspace() {
   const mcpServers = useStackStore((s) => s.mcpServers);
   const tools = useStackStore((s) => s.tools);
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
+  const gatewayInfo = useStackStore((s) => s.gatewayInfo);
+  const storedView = useUIStore((s) => s.stackPrefs.view);
+  const lensEnabled = useAccessLensStore((s) => s.enabled);
+
+  // The toolbar filter is transient: component state, not persisted or in the URL.
+  const [query, setQuery] = useState('');
+  const [facets, setFacets] = useState<Set<StackFacet>>(() => new Set());
+  const filter = useMemo<StackFilter>(() => ({ query, facets }), [query, facets]);
+  const clearFilter = useCallback(() => {
+    setQuery('');
+    setFacets(new Set());
+  }, []);
+
+  // With no stored choice, a large fleet opens on the table. Decided once per
+  // mount at the first status and never written to the preference.
+  const [autoView, setAutoView] = useState<'graph' | 'table' | null>(null);
+  if (autoView === null && gatewayInfo !== null) {
+    setAutoView(mcpServers.length > STACK_TABLE_AUTO_THRESHOLD ? 'table' : 'graph');
+  }
+  const view: 'graph' | 'table' = lensEnabled ? 'graph' : (storedView ?? autoView ?? 'graph');
+
+  const tableRef = useRef<StackTableHandle>(null);
+  const focusTable = useCallback(() => tableRef.current?.focusActiveRow(), []);
 
   const accessServers = useMemo(
     () => [...mcpServers].sort((a, b) => a.name.localeCompare(b.name)),
@@ -107,6 +134,7 @@ export function StackWorkspace() {
         />
         <div
           ref={containerRef}
+          data-testid="stack-grid"
           className="grid flex-1 min-h-0"
           style={{
             // min() is a backstop after a window resize without a drag. A CSS-only
@@ -153,6 +181,13 @@ export function StackWorkspace() {
             {/* Overlays stay outside this wrapper so their Retry stays usable
                 while everything they cover is inert. */}
             <div inert={overlayUp} className="absolute inset-0 flex flex-col">
+              <StackToolbar
+                filter={filter}
+                view={view}
+                onQueryChange={setQuery}
+                onFacetsChange={setFacets}
+                onFocusTable={focusTable}
+              />
               {phase === 'stale' && error && (
                 <FailureBanner
                   message={error}
@@ -161,21 +196,27 @@ export function StackWorkspace() {
                   className="mx-3 mt-2 mb-2 flex-shrink-0"
                 />
               )}
-              <div className="relative flex-1 min-h-0">
-                {/* Desaturate only the graph; the spec and Access Lens editors stay at full color. */}
-                <div
-                  className={cn(
-                    'absolute inset-0 transition motion-reduce:transition-none',
-                    phase === 'stale' && 'grayscale opacity-70',
-                  )}
-                >
-                  <Canvas />
-                </div>
+              <div className="relative flex-1 min-h-0 overflow-hidden">
+                {view === 'graph' ? (
+                  <>
+                    {/* Desaturate only the graph; the spec and Access Lens editors stay at full color. */}
+                    <div
+                      className={cn(
+                        'absolute inset-0 transition motion-reduce:transition-none',
+                        phase === 'stale' && 'grayscale opacity-70',
+                      )}
+                    >
+                      <Canvas filter={filter} />
+                    </div>
 
-                {/* Access Lens authoring surface: header toggle, slide-over editor,
-                    action bar, commit gate, and dirty-exit guard. Mounted beside
-                    the canvas so its absolute overlays anchor to the canvas. */}
-                <AccessLens servers={accessServers} />
+                    {/* Access Lens authoring surface: header toggle, slide-over editor,
+                        action bar, commit gate, and dirty-exit guard. Mounted beside
+                        the canvas so its absolute overlays anchor to the canvas. */}
+                    <AccessLens servers={accessServers} />
+                  </>
+                ) : (
+                  <StackTable ref={tableRef} filter={filter} onClearFilter={clearFilter} />
+                )}
 
                 {specOpen && <SpecPane onClose={closeSpec} />}
               </div>
