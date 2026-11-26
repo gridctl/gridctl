@@ -5,14 +5,23 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
   useReactFlow,
+  useStoreApi,
   type EdgeChange,
+  type Node,
   type NodeChange,
+  type OnMove,
+  type OnMoveStart,
+  type Viewport,
 } from '@xyflow/react';
 import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Layers, Server, Database } from 'lucide-react';
 
 import { nodeTypes } from './nodeTypes';
 import { useStackStore } from '../../stores/useStackStore';
-import { useCanvasActionsStore } from '../../stores/useCanvasActionsStore';
+import {
+  useCanvasActionsStore,
+  type CanvasViewportOptions,
+  type CanvasZoomOptions,
+} from '../../stores/useCanvasActionsStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useWizardStore } from '../../stores/useWizardStore';
 import { useAccessLensStore, buildDraftScope, flattenTools, isDirty } from '../../stores/useAccessLensStore';
@@ -20,6 +29,10 @@ import { useThemeColors } from '../../themes/useTheme';
 import { usePathHighlight } from '../../hooks/usePathHighlight';
 import { cn } from '../../lib/cn';
 import { applyEdgeThemeColors } from '../../lib/graph/edges';
+import { getNodeDimensions } from '../../lib/graph/utils';
+import { isRectVisible, revealViewport, unionRect, type FlowRect } from '../../lib/graph/viewport';
+import { LAYOUT, NODE_TYPES } from '../../lib/constants';
+import { motionDuration } from '../../lib/motion';
 import { CanvasBase } from '../canvas/CanvasBase';
 import { SpecModeOverlay } from '../spec/SpecModeOverlay';
 import { OverlaysMenu } from './OverlaysMenu';
@@ -49,6 +62,25 @@ function gatedAnimatedIds(
     if (serverName && activeServers.has(serverName)) ids.add(edge.id);
   }
   return ids;
+}
+
+// A user move translates by the pointer delta, and React Flow's default
+// paneClickDistance lets a click jitter by 1 px; squared to skip the root.
+const CLICK_TOLERANCE_SQ = 1;
+
+// Flow-space bounds of a node. A node added this frame is not measured yet,
+// so fall back to its layout size.
+function nodeRect(node: Node): FlowRect {
+  const fallback =
+    node.type === NODE_TYPES.TOOL || node.type === NODE_TYPES.TOOL_OVERFLOW
+      ? { width: LAYOUT.TOOL_WIDTH, height: LAYOUT.TOOL_HEIGHT }
+      : getNodeDimensions(node, useUIStore.getState().compactCards);
+  return {
+    x: node.position.x,
+    y: node.position.y,
+    width: node.measured?.width ?? fallback.width,
+    height: node.measured?.height ?? fallback.height,
+  };
 }
 
 type ActivatableNode = {
@@ -118,14 +150,87 @@ export function Canvas() {
     lensSavedTools,
   ]);
 
-  // React Flow controls. Registered for shell shortcuts that live outside this tree.
-  const { zoomIn, zoomOut, fitView } = useReactFlow();
+  const { zoomIn, zoomOut, fitView, getViewport, setViewport, getNode } = useReactFlow();
+  const flowStore = useStoreApi();
+
+  // Whether the user has moved the viewport since the last explicit fit.
+  // While set, automatic fits are skipped so the chosen viewport survives.
+  // React Flow reports programmatic moves (fits, setViewport, zoomIn/zoomOut)
+  // with a null event, and a pane mousedown or tap starts a gesture with an
+  // event before anything moves, so only a non-null onMove whose viewport
+  // left the recorded start by more than click jitter counts. Refs only:
+  // onMove runs on every frame of a drag and of every animated fit.
+  const userMovedRef = useRef(false);
+  const moveStartRef = useRef<Viewport | null>(null);
+  const onMoveStart = useCallback<OnMoveStart>((event, viewport) => {
+    moveStartRef.current = event ? viewport : null;
+  }, []);
+  const onMove = useCallback<OnMove>((event, viewport) => {
+    const start = moveStartRef.current;
+    if (!event || !start || userMovedRef.current) return;
+    const dx = viewport.x - start.x;
+    const dy = viewport.y - start.y;
+    if (viewport.zoom !== start.zoom || dx * dx + dy * dy > CLICK_TOLERANCE_SQ) {
+      userMovedRef.current = true;
+    }
+  }, []);
+
+  // React Flow controls, wrapped so every caller (canvas buttons, shell
+  // shortcuts, palette) shares the user-moved bookkeeping and reduced motion.
+  // An explicit fit re-arms automatic fits; a zoom step is a user move.
+  const fit = useCallback((options?: CanvasViewportOptions) => {
+    userMovedRef.current = false;
+    void fitView({ ...options, duration: motionDuration(options?.duration ?? 0) });
+  }, [fitView]);
+  const zoomInUser = useCallback((options?: CanvasZoomOptions) => {
+    userMovedRef.current = true;
+    void zoomIn({ duration: motionDuration(options?.duration ?? 0) });
+  }, [zoomIn]);
+  const zoomOutUser = useCallback((options?: CanvasZoomOptions) => {
+    userMovedRef.current = true;
+    void zoomOut({ duration: motionDuration(options?.duration ?? 0) });
+  }, [zoomOut]);
+  const autoFit = useCallback((ids: { id: string }[]) => {
+    void fitView({ nodes: ids, padding: 0.25, duration: motionDuration(400), maxZoom: 1.5 });
+  }, [fitView]);
+
+  // Registered for shell shortcuts that live outside this tree.
   const registerCanvasActions = useCanvasActionsStore((s) => s.register);
   const clearCanvasActions = useCanvasActionsStore((s) => s.clear);
   useEffect(() => {
-    registerCanvasActions({ fitView, zoomIn, zoomOut });
+    registerCanvasActions({ fitView: fit, zoomIn: zoomInUser, zoomOut: zoomOutUser });
     return () => clearCanvasActions();
-  }, [fitView, zoomIn, zoomOut, registerCanvasActions, clearCanvasActions]);
+  }, [fit, zoomInUser, zoomOutUser, registerCanvasActions, clearCanvasActions]);
+
+  // The canvas size as laid out now. A frame callback runs before
+  // ResizeObserver notifications, so React Flow's stored size is still the
+  // pre-inspector width when a selection opens the sidebar in the same
+  // commit; reading the wrapper forces layout and is current. The store
+  // covers an unlaid-out wrapper (jsdom).
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const canvasSize = useCallback(() => {
+    const el = wrapperRef.current;
+    if (el && el.clientWidth > 0 && el.clientHeight > 0) {
+      return { width: el.clientWidth, height: el.clientHeight };
+    }
+    const { width, height } = flowStore.getState();
+    return { width, height };
+  }, [flowStore]);
+
+  // Pans by the minimum amount at the current zoom so `rect` is on screen.
+  // Returns false only when it cannot fit at this zoom, leaving the fallback
+  // to the caller; an unmeasured canvas moves nothing. Reads the viewport and
+  // the canvas size imperatively so the canvas never re-renders on pan.
+  const panToReveal = useCallback((rect: FlowRect): boolean => {
+    const { width, height } = canvasSize();
+    if (!(width > 0 && height > 0)) return true;
+    const viewport = getViewport();
+    if (isRectVisible(rect, viewport, { width, height })) return true;
+    const next = revealViewport(rect, viewport, { width, height });
+    if (!next) return false;
+    void setViewport(next, { duration: motionDuration(300) });
+    return true;
+  }, [canvasSize, getViewport, setViewport]);
 
   // The canvas is read-only: the graph mirrors the running stack, so a
   // removal from React Flow would only hide an element until the next poll.
@@ -158,14 +263,16 @@ export function Canvas() {
   // override re-lights the canvas live against unsaved edits.
   const highlightState = usePathHighlight(nodes, edges, selectedNodeId, scopeOverride);
 
-  // Auto-fit the view whenever the visible layout changes. With a client
-  // focused the fit key is its highlighted reachable subgraph; otherwise it is
-  // every node id, so expanding or collapsing a server's tool fan-out (or
-  // servers appearing on hot reload) re-frames the whole graph at max zoom.
-  // The layout epoch folds in resetLayout (reset button, compact-cards
-  // toggle), which recomputes every position without changing the id set.
-  // Keying on epoch plus sorted ids keeps the canvas still during status
-  // polls and node drags, which change neither.
+  // Auto-fit the view whenever the visible layout changes, until the user
+  // moves the viewport. With a client focused the fit key is its highlighted
+  // reachable subgraph; otherwise it is every node id, so expanding or
+  // collapsing a server's tool fan-out (or servers appearing on hot reload)
+  // re-frames the whole graph at max zoom. The layout epoch folds in
+  // resetLayout (reset button, compact-cards toggle), which recomputes every
+  // position without changing the id set; an epoch change is an explicit
+  // request, so it re-arms automatic fits before the guard. Keying on epoch
+  // plus sorted ids keeps the canvas still during status polls and node
+  // drags, which change neither.
   //
   // Access Lens uses the whole-graph key even though a client is selected:
   // the operator can grant servers outside the current reach, so every server
@@ -184,20 +291,26 @@ export function Canvas() {
     return fitIds ? `${layoutEpoch}:${fitIds}` : '';
   }, [nodes, selectedNodeId, highlightState, lensActive, layoutEpoch]);
   const fitSetRef = useRef<{ id: string }[]>([]);
+  const prevEpochRef = useRef(layoutEpoch);
   useEffect(() => {
+    if (prevEpochRef.current !== layoutEpoch) {
+      prevEpochRef.current = layoutEpoch;
+      userMovedRef.current = false;
+    }
     if (!fitKey) return;
     const ids = fitKey.slice(fitKey.indexOf(':') + 1).split(',').map((id) => ({ id }));
     fitSetRef.current = ids;
+    if (userMovedRef.current) return;
     // fitView queues internally until new nodes are measured (React Flow
     // 12.5+), but it never re-reads a container resized in the same commit:
     // selecting a client opens the sidebar grid column synchronously with
     // this effect, so defer one frame to let React Flow's ResizeObserver
     // record the narrowed width before framing.
     const raf = requestAnimationFrame(() => {
-      fitView({ nodes: ids, padding: 0.25, duration: 400, maxZoom: 1.5 });
+      if (!userMovedRef.current) autoFit(ids);
     });
     return () => cancelAnimationFrame(raf);
-  }, [fitKey, fitView]);
+  }, [fitKey, layoutEpoch, autoFit]);
 
   // Re-frame the current fit set when the canvas container's width changes.
   // The detail sidebar is a grid column, so opening, closing, or dragging it
@@ -207,8 +320,8 @@ export function Canvas() {
   // width so height-only changes hold the viewport still, and debounced so
   // the sidebar resize handle re-frames once per gesture. The first
   // observation reports the mount-time size and must not re-frame a canvas
-  // nobody resized.
-  const wrapperRef = useRef<HTMLDivElement>(null);
+  // nobody resized. A user-moved viewport is kept; the flag is read when the
+  // debounce fires, since the user may move during the wait.
   useEffect(() => {
     const el = wrapperRef.current;
     if (!el) return;
@@ -223,8 +336,8 @@ export function Canvas() {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         const ids = fitSetRef.current;
-        if (ids.length === 0) return;
-        fitView({ nodes: ids, padding: 0.25, duration: 400, maxZoom: 1.5 });
+        if (ids.length === 0 || userMovedRef.current) return;
+        autoFit(ids);
       }, 150);
     });
     observer.observe(el);
@@ -232,7 +345,79 @@ export function Canvas() {
       window.clearTimeout(timer);
       observer.disconnect();
     };
-  }, [fitView]);
+  }, [autoFit]);
+
+  // Bring a selected node into view at the current zoom. Selection often
+  // comes from outside the canvas (palette, toasts, links) for a node the
+  // user has panned away from. Deferred one frame so the inspector column has
+  // laid out; panToReveal measures the wrapper, not React Flow's stored size,
+  // which lags that frame. Before any user move, a selection that
+  // also re-keys the fit (a client outside Access Lens) is framed by the
+  // fit-key effect alone: two viewport calls in one frame interrupt each
+  // other. Previous-value refs, not effect order, decide what changed.
+  const prevSelectedRef = useRef(selectedNodeId);
+  const prevFitKeyRef = useRef(fitKey);
+  useEffect(() => {
+    const selectionChanged = prevSelectedRef.current !== selectedNodeId;
+    const fitKeyChanged = prevFitKeyRef.current !== fitKey;
+    prevSelectedRef.current = selectedNodeId;
+    prevFitKeyRef.current = fitKey;
+    if (!selectionChanged || !selectedNodeId) return;
+    if (!userMovedRef.current && fitKeyChanged) return;
+    const id = selectedNodeId;
+    const raf = requestAnimationFrame(() => {
+      const node = getNode(id);
+      if (!node?.measured?.width || !node.measured.height) return;
+      panToReveal(nodeRect(node));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [selectedNodeId, fitKey, getNode, panToReveal]);
+
+  // After a user move, expanding a server keeps the viewport unless its tool
+  // band is off screen; then pan just enough to show the server and its
+  // tools, or, when they cannot fit at this zoom, frame only them without
+  // zooming in. Collapsing moves nothing. Before a user move the fit-key
+  // effect re-frames the whole graph instead.
+  const expandedServers = useStackStore((s) => s.expandedServers);
+  const prevExpandedRef = useRef(expandedServers);
+  useEffect(() => {
+    const prev = prevExpandedRef.current;
+    prevExpandedRef.current = expandedServers;
+    if (!userMovedRef.current) return;
+    const added = [...expandedServers].filter((id) => !prev.has(id));
+    if (added.length === 0) return;
+    const raf = requestAnimationFrame(() => {
+      const addedSet = new Set(added);
+      const storeNodes = useStackStore.getState().nodes;
+      const toolIds = storeNodes
+        .filter((n) => {
+          const owner = (n.data as { serverNodeId?: string } | undefined)?.serverNodeId;
+          return owner !== undefined && addedSet.has(owner);
+        })
+        .map((n) => n.id);
+      if (toolIds.length === 0) return;
+      // React Flow's lookup carries measurements; the store node covers a
+      // node it has not picked up yet.
+      const lookup = (id: string) => getNode(id) ?? storeNodes.find((n) => n.id === id);
+      const { width, height } = canvasSize();
+      if (!(width > 0 && height > 0)) return;
+      const viewport = getViewport();
+      const toolRects = toolIds.map(lookup).filter((n): n is Node => n !== undefined).map(nodeRect);
+      if (toolRects.every((r) => isRectVisible(r, viewport, { width, height }))) return;
+      const bandIds = [...added, ...toolIds];
+      const band = unionRect(
+        bandIds.map(lookup).filter((n): n is Node => n !== undefined).map(nodeRect),
+      );
+      if (!band || panToReveal(band)) return;
+      void fitView({
+        nodes: bandIds.map((id) => ({ id })),
+        padding: 0.1,
+        maxZoom: viewport.zoom,
+        duration: motionDuration(400),
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [expandedServers, getNode, getViewport, canvasSize, fitView, panToReveal]);
 
   // Dynamic edge options based on toggle
   const defaultEdgeOptions = useMemo(() => ({
@@ -353,20 +538,14 @@ export function Canvas() {
     if (event.key === ' ' && activated) event.preventDefault();
   }, [nodes, activateNode]);
 
-  // Handle pane click: return to the default view. Deselect, close the
-  // sidebar, and collapse every tool fan-out (which also unmounts any open
-  // tool detail popover), then zoom back out to frame the whole graph. When
-  // fan-outs were open the collapse changes the node-id set and the auto-fit
-  // above re-frames; the explicit fitView covers the nothing-was-open case.
-  const collapseAllServers = useStackStore((s) => s.collapseAllServers);
+  // Handle pane click: deselect and close the sidebar. Tool fan-outs stay
+  // expanded and the viewport stays where the user left it.
   const onPaneClick = useCallback(() => {
     requestInspectorLeave(() => {
       selectNode(null);
       setSidebarOpen(false);
-      collapseAllServers();
-      fitView({ padding: 0.2, duration: 400 });
     });
-  }, [selectNode, setSidebarOpen, collapseAllServers, fitView]);
+  }, [selectNode, setSidebarOpen]);
 
   // No-op connect handler. The canvas does not support drawing connections;
   // per-client access is edited through Access Lens, not by dragging edges.
@@ -445,6 +624,8 @@ export function Canvas() {
         onKeyDown={onCanvasKeyDown}
         onConnect={onConnect}
         onPaneClick={onPaneClick}
+        onMoveStart={onMoveStart}
+        onMove={onMove}
         defaultEdgeOptions={defaultEdgeOptions}
         fitView
         fitViewOptions={{ padding: 0.2, maxZoom: 1.5 }}
@@ -465,7 +646,7 @@ export function Canvas() {
         {/* Controls */}
         <Panel position="bottom-left" className="flex gap-1">
           <button
-            onClick={() => zoomIn({ duration: 200 })}
+            onClick={() => zoomInUser({ duration: 200 })}
             className="control-button"
             title="Zoom in"
             aria-label="Zoom in"
@@ -473,7 +654,7 @@ export function Canvas() {
             <Plus className="w-4 h-4" />
           </button>
           <button
-            onClick={() => zoomOut({ duration: 200 })}
+            onClick={() => zoomOutUser({ duration: 200 })}
             className="control-button"
             title="Zoom out"
             aria-label="Zoom out"
@@ -481,7 +662,7 @@ export function Canvas() {
             <Minus className="w-4 h-4" />
           </button>
           <button
-            onClick={() => fitView({ padding: 0.2, duration: 300 })}
+            onClick={() => fit({ padding: 0.2, duration: 300 })}
             className="control-button"
             title="Fit view"
             aria-label="Fit view"

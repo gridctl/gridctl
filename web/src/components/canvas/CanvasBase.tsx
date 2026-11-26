@@ -12,6 +12,8 @@ import {
   type Connection,
   type DefaultEdgeOptions,
   type FitViewOptions,
+  type OnMove,
+  type OnMoveStart,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { cn } from '../../lib/cn';
@@ -33,6 +35,10 @@ export interface CanvasBaseProps<NodeData extends Record<string, unknown> = Reco
   onEdgesChange?: (changes: EdgeChange[]) => void;
   onNodeClick?: (event: MouseEvent, node: RFNode<NodeData>) => void;
   onPaneClick?: () => void;
+  // Viewport move callbacks. React Flow also fires them for programmatic
+  // moves, with a null event.
+  onMoveStart?: OnMoveStart;
+  onMove?: OnMove;
   // Forwarded onto the React Flow wrapper. Workspace canvases own the handler.
   onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
   onConnect?: (connection: Connection) => void;
@@ -91,6 +97,8 @@ export function CanvasBase<
   onEdgesChange,
   onNodeClick,
   onPaneClick,
+  onMoveStart,
+  onMove,
   onKeyDown,
   onConnect,
   defaultEdgeOptions,
@@ -121,6 +129,8 @@ export function CanvasBase<
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick as never}
         onPaneClick={onPaneClick}
+        onMoveStart={onMoveStart}
+        onMove={onMove}
         onKeyDown={onKeyDown}
         onConnect={onConnect}
         defaultEdgeOptions={defaultEdgeOptions}

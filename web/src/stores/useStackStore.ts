@@ -128,7 +128,6 @@ interface StackState {
   toggleServerExpanded: (serverId: string) => void;
   expandServer: (serverId: string) => void;
   collapseServer: (serverId: string) => void;
-  collapseAllServers: () => void;
   refreshNodesAndEdges: () => void;
   resetLayout: () => void;
 
@@ -256,24 +255,30 @@ export const useStackStore = create<StackState>()(
 
     setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
 
-    // selected is carried across polls, so clearing the store selection has to
-    // clear React Flow's flag too. Escape and the inspector close often run
-    // while focus is outside the node, where React Flow's own handler does not.
+    // React Flow draws the selection ring from each node's selected flag, which
+    // is carried across polls, so the store selection owns that flag: exactly
+    // the selected node carries it (none for null). Escape, the inspector
+    // close, and programmatic selection (palette, toasts, links) run outside
+    // React Flow's own click handling. The nodes array is rewritten only when
+    // a flag actually changes, so a canvas click that React Flow already
+    // flagged writes nothing extra.
     selectNode: (nodeId) => {
       const missing =
         nodeId !== get().selectedNodeId && get().missingSelection !== null
           ? { missingSelection: null }
           : {};
-      if (nodeId === null) {
-        const nodes = get().nodes;
-        if (nodes.some((node) => node.selected)) {
-          set({
-            nodes: nodes.map((node) => (node.selected ? { ...node, selected: false } : node)),
-            selectedNodeId: null,
-            ...missing,
-          });
-          return;
-        }
+      const nodes = get().nodes;
+      const flagged = (node: Node) => node.selected === true;
+      if (nodes.some((node) => flagged(node) !== (node.id === nodeId))) {
+        set({
+          nodes: nodes.map((node) => {
+            const want = node.id === nodeId;
+            return flagged(node) === want ? node : { ...node, selected: want };
+          }),
+          selectedNodeId: nodeId,
+          ...missing,
+        });
+        return;
       }
       set({ selectedNodeId: nodeId, ...missing });
     },
@@ -302,15 +307,6 @@ export const useStackStore = create<StackState>()(
       const next = new Set(get().expandedServers);
       next.delete(serverId);
       set({ expandedServers: next });
-      get().refreshNodesAndEdges();
-    },
-
-    // A blank-pane click resets the canvas to its default view; collapsing
-    // every fan-out also unmounts any open tool detail popover, whose state
-    // lives in the tool nodes themselves.
-    collapseAllServers: () => {
-      if (get().expandedServers.size === 0) return;
-      set({ expandedServers: new Set<string>() });
       get().refreshNodesAndEdges();
     },
 
