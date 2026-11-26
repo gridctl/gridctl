@@ -42,9 +42,10 @@ const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }
 
   // Tool pills are the rightmost nodes in the graph, framed flush against the
   // canvas edge by the auto-refit or left there by the user's own pan, so the
-  // right-opening card routinely lands past it. Mirroring the card to the anchor's left would cover the
-  // graph instead, so pan the viewport left by the overrun: the card is glued
-  // to its anchor, so the pan carries it fully into view. Rects and the
+  // right-opening card routinely lands past it. Mirroring the card to the
+  // anchor's left would cover the graph instead, so pan the viewport left by
+  // the overrun: the card is glued to its anchor, so the pan carries it fully
+  // into view. Rects and the
   // viewport translation are both screen-space, so the canvas zoom is already
   // applied; a missing container falls back to the document and an
   // unmeasurable rect (jsdom) pans nothing.
@@ -67,9 +68,10 @@ const ToolDetailPopover = memo(({ serverName, toolName, positionStyle, onClose }
   // open), and again whenever the viewport comes to rest: a programmatic fit
   // or reveal pan can still be animating when the card opens (expanding a
   // fan-out can start a refit or a pan), so the mount-time measurement can be
-  // taken mid-flight and the frame settles with the card clipped. Manual pans never fight the
-  // re-check since a pane mousedown dismisses the card first (useDismiss),
-  // and the re-pan converges: its own settle re-measures to zero overrun.
+  // taken mid-flight and the frame settles with the card clipped. Manual pans
+  // never fight the re-check since a pane mousedown dismisses the card first
+  // (useDismiss), and the re-pan converges: its own settle re-measures to
+  // zero overrun.
   useLayoutEffect(() => {
     panIntoView();
   }, [panIntoView]);
