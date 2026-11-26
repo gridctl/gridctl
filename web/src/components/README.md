@@ -200,7 +200,9 @@ workspaces. Reach for them before duplicating UI:
 |---|---|---|
 | `CanvasBase` | `components/canvas/` | Stack `graph/Canvas.tsx` |
 | `InspectorHeader` | `components/inspector/` | Inspectors that need the standard icon + title + close/popout strip. `headingRef` makes the title a focus target (`tabIndex={-1}`); only the Stack inspector passes it |
-| `InspectorSection` | `components/inspector/` | Stack `Sidebar.tsx`, `GatewaySidebar.tsx`, `DetachedSidebarPage.tsx` (collapsible section pattern; contents mount on first open) |
+| `InspectorSection` | `components/inspector/` | Stack `Sidebar.tsx`, `GatewaySidebar.tsx`, `DetachedSidebarPage.tsx` (collapsible section pattern; contents mount on first open; an optional `summary` is a second header line that reads while collapsed) |
+| `InspectorValueRow` | `components/inspector/` | Identifier rows in the Stack inspector, the detached inspector, and `SourceProvenance`. The value wraps (`break-all`), is focusable, and has no hover `title`; `copyLabel` adds a `CopyButton` |
+| `CopyButton` | `components/ui/` | Copies through `copyTextToClipboard`, stops click propagation, and shows the result in place for 1.5 seconds ("Copied" or "Copy failed") with a visually hidden status announcement. `label` is the accessible name and names the field. Use it where a toast is unavailable or too loud; `copyWithToast` remains for toolbar copies |
 | `WorkspaceHeader` | `components/ui/` | Every workspace and Library segment. The one visible `<h1>` (`title`, `headingId`), then an optional `switcher`, a one-line truncating `summary` at `text-xs`, and right-aligned `actions`; `children` add rows below. `compact` selects `py-2`. Empty slots render no wrapper |
 | `Tabs` / `Tab` / `TabPanel` | `components/ui/` | Keyboard-operable tab lists. Arrow keys move and select. `InspectorTabList` / `InspectorTabButton` are wrappers that keep inspector chrome. `variant="segmented"` renders an inline segment control (the Traces and Runs switch); `SEGMENT_GROUP_CLASS` and `segmentClass` (`ui/segment.ts`) give a non-tab group, such as `LibraryKindSwitch`, the same chrome |
 | `EmptyState` | `components/ui/` | Anywhere a "no items / no selection" affordance is needed |
@@ -386,7 +388,7 @@ web/src/components/
 ├── shell/            AppShell, WorkspaceSwitcher, RootRedirect
 ├── workspaces/       StackWorkspace, LibraryWorkspace, … (one per top-level workspace)
 ├── layout/           Header, StatusBar, Sidebar (Stack inspector), WorkspaceShell
-├── inspector/        InspectorHeader, InspectorSection, InspectorTabList (wraps ui/Tabs)
+├── inspector/        InspectorHeader, InspectorSection, InspectorValueRow, InspectorTabList (wraps ui/Tabs)
 ├── canvas/           CanvasBase                                              ← shared React Flow scaffolding
 ├── graph/            Stack Canvas + custom node types
 ├── registry/         Library workspace (LibraryGrid, SkillEditor, …)
