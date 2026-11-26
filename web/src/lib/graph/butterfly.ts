@@ -32,10 +32,94 @@ const DEFAULT_ZONE_CONFIGS: Record<ButterflyZone, ZoneConfig> = {
   [4]: { zone: 4, baseX: -400, nodeSpacing: 80 },       // CLIENTS (far left)
   [0]: { zone: 0, baseX: 0, nodeSpacing: 80 },          // AGENTS (left, reserved)
   [1]: { zone: 1, baseX: 400, nodeSpacing: 0 },         // GATEWAY (center)
-  [2]: { zone: 2, baseX: 800, nodeSpacing: 80 },        // SERVERS (right)
-  [3]: { zone: 3, baseX: 1200, nodeSpacing: 80 },       // RESOURCES (far right)
+  [2]: { zone: 2, baseX: 800, nodeSpacing: LAYOUT.SERVER_ROW_GAP, compactNodeSpacing: LAYOUT.SERVER_ROW_GAP }, // SERVERS (right)
+  [3]: { zone: 3, baseX: 1200, nodeSpacing: LAYOUT.SERVER_ROW_GAP, compactNodeSpacing: LAYOUT.SERVER_ROW_GAP }, // RESOURCES (far right)
   [5]: { zone: 5, baseX: 1600, nodeSpacing: 80 }, // SKILLS (far far right)
 };
+
+// getNodeZone places linked clients in zone 0.
+const CLIENTS_ZONE: ButterflyZone = 0;
+
+/** Vertical gap between cards of a zone; compact halves it unless set. */
+function zoneSpacing(config: ZoneConfig, compact: boolean): number {
+  if (!compact) return config.nodeSpacing;
+  return config.compactNodeSpacing ?? Math.round(config.nodeSpacing * 0.5);
+}
+
+/** Height of `count` cards of one height stacked with `gap` between them. */
+function stackHeight(count: number, height: number, gap: number): number {
+  return count > 0 ? count * height + (count - 1) * gap : 0;
+}
+
+/** Card height the server grid assumes for every card in a mode. */
+function nominalCardHeight(compact: boolean): number {
+  return compact ? LAYOUT.NODE_HEIGHT_COMPACT : LAYOUT.NODE_HEIGHT_FULL_NOMINAL;
+}
+
+/** Node counts per zone that decide the server column count. */
+export interface ServerColumnInput {
+  serverCount: number;
+  clientCount?: number;
+  resourceCount?: number;
+  compact?: boolean;
+}
+
+/**
+ * Choose how many columns the server zone wraps into.
+ *
+ * Each candidate count is scored by how large the whole graph's nominal
+ * bounding box could be drawn in the reference box, capped at the fit
+ * maxZoom; the best score wins and ties go to fewer columns. The result
+ * depends only on zone counts and the card mode, never on card data, drags,
+ * or the canvas size, so a click or a status change cannot reflow the grid.
+ */
+export function chooseServerColumns(
+  input: ServerColumnInput,
+  zoneConfigs: Record<ButterflyZone, ZoneConfig> = DEFAULT_ZONE_CONFIGS,
+): number {
+  const { serverCount, clientCount = 0, resourceCount = 0, compact = false } = input;
+  const maxColumns = Math.min(LAYOUT.SERVER_MAX_COLUMNS, serverCount);
+  if (maxColumns <= 1) return 1;
+
+  const clients = zoneConfigs[CLIENTS_ZONE];
+  const gateway = zoneConfigs[1];
+  const servers = zoneConfigs[2];
+  const resources = zoneConfigs[3];
+  const nominal = nominalCardHeight(compact);
+  const pitch = LAYOUT.NODE_WIDTH + LAYOUT.SERVER_COLUMN_GAP;
+
+  const clientWidth = compact ? LAYOUT.CLIENT_WIDTH : LAYOUT.CLIENT_WIDTH_FULL;
+  const clientHeight = compact ? LAYOUT.CLIENT_HEIGHT_COMPACT : LAYOUT.CLIENT_HEIGHT;
+  const left = clientCount > 0
+    ? clients.baseX - clientWidth / 2
+    : gateway.baseX - LAYOUT.GATEWAY_WIDTH / 2;
+  const fixedHeight = Math.max(
+    LAYOUT.GATEWAY_HEIGHT,
+    stackHeight(clientCount, clientHeight, zoneSpacing(clients, compact)),
+    stackHeight(resourceCount, nominal, zoneSpacing(resources, compact)),
+  );
+
+  let best = 1;
+  let bestScore = -Infinity;
+  for (let columns = 1; columns <= maxColumns; columns += 1) {
+    const offset = (columns - 1) * pitch;
+    const right = resourceCount > 0
+      ? resources.baseX + LAYOUT.NODE_WIDTH / 2 + offset
+      : servers.baseX + LAYOUT.NODE_WIDTH / 2 + offset;
+    const rows = Math.ceil(serverCount / columns);
+    const height = Math.max(fixedHeight, stackHeight(rows, nominal, zoneSpacing(servers, compact)));
+    const score = Math.min(
+      LAYOUT.LAYOUT_REFERENCE_WIDTH / (right - left),
+      LAYOUT.LAYOUT_REFERENCE_HEIGHT / height,
+      LAYOUT.LAYOUT_MAX_SCORE,
+    );
+    if (score > bestScore) {
+      best = columns;
+      bestScore = score;
+    }
+  }
+  return best;
+}
 
 /**
  * Determine which zone a node belongs to based on its type and data
@@ -111,12 +195,32 @@ export class ButterflyLayoutEngine implements LayoutEngine {
       nodesByZone.set(zone, existing);
     }
 
+    const serverCount = nodesByZone.get(2)?.length ?? 0;
+    const columns = chooseServerColumns(
+      {
+        serverCount,
+        clientCount: nodesByZone.get(CLIENTS_ZONE)?.length ?? 0,
+        resourceCount: nodesByZone.get(3)?.length ?? 0,
+        compact,
+      },
+      this.zoneConfigs,
+    );
+    // Resources stay one column, right of the last server column.
+    const resourceShift = (columns - 1) * (LAYOUT.NODE_WIDTH + LAYOUT.SERVER_COLUMN_GAP);
+
     // Calculate positioned nodes for each zone
     const positionedNodes: Node[] = [];
 
     for (const [zone, zoneNodes] of nodesByZone) {
       const config = this.zoneConfigs[zone];
-      const positioned = this.layoutZone(zoneNodes, config, preservedPositions, compact);
+      const positioned = zone === 2
+        ? this.layoutServerGrid(zoneNodes, config, columns, preservedPositions, compact)
+        : this.layoutZone(
+            zoneNodes,
+            zone === 3 ? { ...config, baseX: config.baseX + resourceShift } : config,
+            preservedPositions,
+            compact,
+          );
       positionedNodes.push(...positioned);
     }
 
@@ -135,8 +239,7 @@ export class ButterflyLayoutEngine implements LayoutEngine {
   ): Node[] {
     if (nodes.length === 0) return [];
 
-    // Tighter spacing in compact mode — full gaps look excessive between short cards
-    const spacing = compact ? Math.round(config.nodeSpacing * 0.5) : config.nodeSpacing;
+    const spacing = zoneSpacing(config, compact);
 
     // Calculate total height of all nodes plus spacing
     const totalHeight = nodes.reduce((sum, node, index) => {
@@ -160,6 +263,45 @@ export class ButterflyLayoutEngine implements LayoutEngine {
         y: currentY,
       };
       currentY += height + spacing;
+
+      const preserved = preservedPositions?.get(node.id);
+      return { ...node, position: preserved ?? slot };
+    });
+  }
+
+  /**
+   * Layout the servers zone as a column-major grid: the first `rows` nodes
+   * fill column 0 top to bottom, the next `rows` column 1, and so on.
+   *
+   * The zone is centered on its nominal height, so its top edge depends only
+   * on the server count and the card mode. Inside a column each card sits
+   * its own height plus the gap below the previous one, so a card that
+   * changes height moves only the cards below it in the same column.
+   */
+  private layoutServerGrid(
+    nodes: Node[],
+    config: ZoneConfig,
+    columns: number,
+    preservedPositions?: Map<string, { x: number; y: number }>,
+    compact = false
+  ): Node[] {
+    if (nodes.length === 0) return [];
+
+    const spacing = zoneSpacing(config, compact);
+    const rows = Math.ceil(nodes.length / columns);
+    const top = -stackHeight(rows, nominalCardHeight(compact), spacing) / 2 + this.verticalMargin;
+    const maxWidth = Math.max(...nodes.map((n) => getNodeDimensions(n, compact).width));
+    const left = config.baseX - maxWidth / 2;
+    const pitch = LAYOUT.NODE_WIDTH + LAYOUT.SERVER_COLUMN_GAP;
+
+    let currentY = top;
+    return nodes.map((node, index) => {
+      if (index % rows === 0) currentY = top;
+      const column = Math.floor(index / rows);
+
+      // A dragged node still reserves its slot so later nodes do not shift up.
+      const slot = { x: left + column * pitch, y: currentY };
+      currentY += getNodeDimensions(node, compact).height + spacing;
 
       const preserved = preservedPositions?.get(node.id);
       return { ...node, position: preserved ?? slot };

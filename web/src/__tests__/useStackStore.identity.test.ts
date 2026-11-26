@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useStackStore } from '../stores/useStackStore';
 import { usePinsStore } from '../stores/usePinsStore';
+import { useUIStore } from '../stores/useUIStore';
 import type { ClientStatus, GatewayStatus, MCPServerStatus, TokenUsage } from '../types';
 import type { ServerPins } from '../lib/api';
 
@@ -302,5 +303,92 @@ describe('useStackStore graph identity', () => {
 
     useStackStore.getState().setGatewayStatus(status([makeServer('github')], usage({ github: 12 })));
     expect(useStackStore.getState().activeServers.size).toBe(0);
+  });
+  describe('attention order', () => {
+    const serverIds = () => useStackStore.getState().nodes
+      .filter((node) => node.type === 'mcpServer')
+      .map((node) => node.id);
+
+    it('moves a server that becomes unhealthy to the first server position', () => {
+      useStackStore.getState().setGatewayStatus(status([makeServer('alpha'), makeServer('bravo'), makeServer('charlie')]));
+      expect(serverIds()).toEqual(['mcp-alpha', 'mcp-bravo', 'mcp-charlie']);
+      const before = useStackStore.getState().nodes;
+
+      useStackStore.getState().setGatewayStatus(status([
+        makeServer('alpha'),
+        makeServer('bravo'),
+        makeServer('charlie', { healthy: false }),
+      ]));
+
+      expect(serverIds()).toEqual(['mcp-charlie', 'mcp-alpha', 'mcp-bravo']);
+      expect(useStackStore.getState().nodes.findIndex((node) => node.type === 'mcpServer'))
+        .toBe(useStackStore.getState().nodes.findIndex((node) => node.id === 'mcp-charlie'));
+      // The store keeps the API order for other consumers.
+      expect(useStackStore.getState().mcpServers.map((s) => s.name)).toEqual(['alpha', 'bravo', 'charlie']);
+      expect(useStackStore.getState().nodes.find((node) => node.id === 'gateway'))
+        .toBe(before.find((node) => node.id === 'gateway'));
+    });
+
+    it('moves a server whose pin status becomes drift ahead of healthy servers', () => {
+      useStackStore.getState().setGatewayStatus(status([makeServer('alpha'), makeServer('bravo'), makeServer('charlie')]));
+      usePinsStore.setState({ pins: { bravo: pin('pinned', 2) } });
+      useStackStore.getState().refreshNodesAndEdges();
+      expect(serverIds()).toEqual(['mcp-alpha', 'mcp-bravo', 'mcp-charlie']);
+
+      usePinsStore.setState({ pins: { bravo: pin('drift', 2) } });
+      useStackStore.getState().refreshNodesAndEdges();
+
+      expect(serverIds()).toEqual(['mcp-bravo', 'mcp-alpha', 'mcp-charlie']);
+    });
+
+    it('keeps references across an identical poll with a promoted server', () => {
+      const payload = status([makeServer('alpha'), makeServer('bravo', { healthy: false })]);
+      useStackStore.getState().setGatewayStatus(payload);
+      const nodes = useStackStore.getState().nodes;
+      const edges = useStackStore.getState().edges;
+
+      useStackStore.getState().setGatewayStatus(JSON.parse(JSON.stringify(payload)) as GatewayStatus);
+
+      expect(useStackStore.getState().nodes).toBe(nodes);
+      expect(useStackStore.getState().edges).toBe(edges);
+    });
+
+    it('gives resetLayout the same order and pin state as a refresh', () => {
+      useStackStore.getState().setGatewayStatus(status([
+        makeServer('alpha'),
+        makeServer('bravo'),
+        makeServer('charlie', { authStatus: 'needs_auth' }),
+        makeServer('delta', { healthy: false }),
+      ]));
+      usePinsStore.setState({ pins: { bravo: pin('drift', 4) } });
+      useStackStore.getState().refreshNodesAndEdges();
+      const refreshed = useStackStore.getState().nodes.map((node) => node.id);
+      const refreshedEdges = useStackStore.getState().edges.map((edge) => edge.id);
+      expect(serverIds()).toEqual(['mcp-delta', 'mcp-charlie', 'mcp-bravo', 'mcp-alpha']);
+
+      useStackStore.getState().resetLayout();
+
+      expect(useStackStore.getState().nodes.map((node) => node.id)).toEqual(refreshed);
+      expect(useStackStore.getState().edges.map((edge) => edge.id)).toEqual(refreshedEdges);
+      const data = (id: string) => useStackStore.getState().nodes.find((node) => node.id === id)?.data as Record<string, unknown>;
+      expect(data('mcp-bravo').pinStatus).toBe('drift');
+      expect(data('mcp-bravo').pinDriftCount).toBe(4);
+      expect('pinStatus' in data('mcp-alpha')).toBe(false);
+      expect('pinDriftCount' in data('mcp-alpha')).toBe(false);
+    });
+
+    it('keeps pin state on full cards after the compact toggle resets the layout', () => {
+      useUIStore.setState({ compactCards: true });
+      useStackStore.getState().setGatewayStatus(status([makeServer('alpha'), makeServer('bravo')]));
+      usePinsStore.setState({ pins: { alpha: pin('drift', 1) } });
+      useStackStore.getState().refreshNodesAndEdges();
+
+      useUIStore.setState({ compactCards: false });
+      useStackStore.getState().resetLayout();
+
+      const alpha = useStackStore.getState().nodes.find((node) => node.id === 'mcp-alpha');
+      expect((alpha?.data as { pinStatus?: string }).pinStatus).toBe('drift');
+      useUIStore.setState({ compactCards: true });
+    });
   });
 });

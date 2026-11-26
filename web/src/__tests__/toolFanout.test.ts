@@ -235,3 +235,51 @@ describe('appendToolFanout', () => {
     expect(bMinY).toBeGreaterThan(aMaxY);
   });
 });
+
+describe('appendToolFanout with server columns', () => {
+  const pitch = LAYOUT.NODE_WIDTH + LAYOUT.SERVER_COLUMN_GAP;
+  const grid = (): Node[] => [
+    makeServerNode('a', ['a1', 'a2'], 672, 0),
+    makeServerNode('b', ['b1'], 672, 88),
+    makeServerNode('c', ['c1'], 672 + pitch, 0),
+    makeServerNode('d', ['d1'], 672 + pitch, 88),
+  ];
+  const columnX = (nodes: Node[]) => {
+    const xs = new Set(nodes.filter((n) => n.type === 'tool').map((n) => n.position.x));
+    expect(xs.size).toBe(1);
+    return [...xs][0];
+  };
+
+  it('puts the tool column right of the last server column', () => {
+    const result = appendToolFanout(grid(), [], new Set(['mcp-a']), { compact: true });
+    expect(columnX(result.nodes)).toBe(672 + pitch + LAYOUT.NODE_WIDTH + LAYOUT.TOOL_OFFSET_X);
+  });
+
+  it('does not follow a non-expanded server dragged to the right', () => {
+    const nodes = grid();
+    const without = appendToolFanout(nodes, [], new Set(['mcp-a']), { compact: true });
+    const dragged = nodes.map((n) => (n.id === 'mcp-d' ? { ...n, position: { x: 4000, y: 88 } } : n));
+    const draggedPositions = new Map([['mcp-d', { x: 4000, y: 88 }]]);
+    const withDrag = appendToolFanout(dragged, [], new Set(['mcp-a']), { compact: true, draggedPositions });
+    expect(columnX(withDrag.nodes)).toBe(columnX(without.nodes));
+  });
+
+  it('still follows an expanded server dragged to the right', () => {
+    const nodes = grid().map((n) => (n.id === 'mcp-a' ? { ...n, position: { x: 4000, y: 0 } } : n));
+    const draggedPositions = new Map([['mcp-a', { x: 4000, y: 0 }]]);
+    const result = appendToolFanout(nodes, [], new Set(['mcp-a']), { compact: true, draggedPositions });
+    expect(columnX(result.nodes)).toBe(4000 + LAYOUT.NODE_WIDTH + LAYOUT.TOOL_OFFSET_X);
+  });
+
+  it('orders bands by column, then row', () => {
+    const result = appendToolFanout(grid(), [], new Set(['mcp-c', 'mcp-b', 'mcp-a']), { compact: true });
+    const firstY = (serverNodeId: string) => Math.min(
+      ...result.nodes
+        .filter((n) => (n.data as { serverNodeId?: string }).serverNodeId === serverNodeId)
+        .map((n) => n.position.y),
+    );
+    // Column 0 (a, b) before column 1 (c), even though c sits above b.
+    expect(firstY('mcp-a')).toBeLessThan(firstY('mcp-b'));
+    expect(firstY('mcp-b')).toBeLessThan(firstY('mcp-c'));
+  });
+});
