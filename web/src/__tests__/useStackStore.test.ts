@@ -176,3 +176,25 @@ describe('updateAutoscaleObservability — decision feed', () => {
     expect(step2.decisions['srv-a']).toBeUndefined();
   });
 });
+
+describe('selectNode selection ring', () => {
+  it('moves the selected flag to the programmatic selection and keeps a no-op stable', () => {
+    useStackStore.setState({ selectedNodeId: null, missingSelection: null });
+    useStackStore.getState().setGatewayStatus({
+      gateway: { name: 'gridctl-gateway', version: 'dev' },
+      'mcp-servers': [makeServer({ name: 'a' }), makeServer({ name: 'b' })],
+    });
+
+    useStackStore.getState().selectNode('mcp-a');
+    useStackStore.getState().selectNode('mcp-b');
+    const nodes = useStackStore.getState().nodes;
+    expect(nodes.filter((n) => n.selected).map((n) => n.id)).toEqual(['mcp-b']);
+
+    useStackStore.getState().selectNode('mcp-b');
+    expect(useStackStore.getState().nodes).toBe(nodes);
+
+    useStackStore.getState().selectNode(null);
+    expect(useStackStore.getState().selectedNodeId).toBeNull();
+    expect(useStackStore.getState().nodes.some((n) => n.selected)).toBe(false);
+  });
+});
