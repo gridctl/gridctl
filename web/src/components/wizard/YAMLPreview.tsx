@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { AlertCircle, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { AlertCircle, AlertTriangle, CheckCircle2, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { validateStackResource, validateStackSpec, isStackFragmentType } from '../../lib/api';
 import type { ValidationIssue } from '../../types';
+import { maskYAMLSecrets } from '../../lib/wizard-secrets';
 
 interface YAMLPreviewProps {
   yaml: string;
@@ -32,6 +33,24 @@ function highlightYAML(yaml: string): Array<{ lineNum: number; html: string }> {
       .replace(/:\s+(true|false)$/gm, ': <span class="text-primary-light">$1</span>');
     return { lineNum: i + 1, html };
   });
+}
+
+// Display-only placeholder for a masked literal. Plain text with no markup
+// characters, so it is inert in the highlighted HTML.
+export const SECRET_MASK = '••••••••';
+
+export function SecretsToggle({ shown, onToggle }: { shown: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={shown}
+      className="flex items-center gap-1 text-3xs text-text-muted hover:text-text-secondary transition-colors"
+    >
+      {shown ? <EyeOff size={11} /> : <Eye size={11} />}
+      {shown ? 'Hide secrets' : 'Show secrets'}
+    </button>
+  );
 }
 
 export function YAMLPreview({ yaml, resourceType, className }: YAMLPreviewProps) {
@@ -71,7 +90,12 @@ export function YAMLPreview({ yaml, resourceType, className }: YAMLPreviewProps)
     };
   }, [yaml, validate]);
 
-  const lines = highlightYAML(yaml);
+  const [showSecrets, setShowSecrets] = useState(false);
+  // Literal secrets are masked on screen only; validation and every action
+  // that consumes the YAML keep the real text.
+  const masked = useMemo(() => maskYAMLSecrets(yaml, SECRET_MASK), [yaml]);
+  const maskedCount = masked?.masked ?? 0;
+  const lines = highlightYAML(maskedCount > 0 && !showSecrets ? masked!.yaml : yaml);
   const errorCount = issues.filter((i) => i.severity === 'error').length;
   const warningCount = issues.filter((i) => i.severity === 'warning').length;
 
@@ -91,6 +115,9 @@ export function YAMLPreview({ yaml, resourceType, className }: YAMLPreviewProps)
           YAML Preview
         </span>
         <div className="flex items-center gap-2">
+          {maskedCount > 0 && (
+            <SecretsToggle shown={showSecrets} onToggle={() => setShowSecrets((v) => !v)} />
+          )}
           {validating && (
             <Loader2 size={12} className="text-text-muted animate-spin" />
           )}

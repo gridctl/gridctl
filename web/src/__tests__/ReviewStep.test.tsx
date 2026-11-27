@@ -974,3 +974,39 @@ describe('ReviewStep states what the primary action changes', () => {
     expect(previewStackAppend).not.toHaveBeenCalled();
   });
 });
+
+describe('ReviewStep exact YAML secrets', () => {
+  const SECRET_YAML = 'name: remote\nurl: https://example.com/mcp\nauth:\n  type: bearer\n  token: sk-literal-123\n';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(validateStackResource).mockResolvedValue({ valid: true, errorCount: 0, warningCount: 0, issues: [] });
+    vi.mocked(appendToStack).mockResolvedValue({ success: true, resourceType: 'mcp-server', resourceName: 'remote' } as Awaited<ReturnType<typeof appendToStack>>);
+    vi.mocked(fetchStatus).mockResolvedValue({ 'mcp-servers': [{ name: 'remote', initialized: true }] } as unknown as Awaited<ReturnType<typeof fetchStatus>>);
+  });
+
+  it('masks literals until revealed and deploys the real YAML', async () => {
+    const { container } = render(<ReviewStep yaml={SECRET_YAML} resourceType="mcp-server" resourceName="remote" />);
+    const code = container.querySelector('details code')!;
+    expect(code.textContent).not.toContain('sk-literal-123');
+    expect(code.textContent).toContain('token: ••••••••');
+
+    const toggle = screen.getByRole('button', { name: 'Show secrets' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(toggle);
+    expect(code.textContent).toContain('token: sk-literal-123');
+    expect(screen.getByRole('button', { name: 'Hide secrets' })).toHaveAttribute('aria-pressed', 'true');
+
+    await waitFor(() => expect(validateStackResource).toHaveBeenCalledWith(SECRET_YAML, 'mcp-server'));
+    const deploy = await screen.findByRole('button', { name: 'Deploy' });
+    await waitFor(() => expect(deploy).not.toBeDisabled());
+    fireEvent.click(deploy);
+    await waitFor(() => expect(appendToStack).toHaveBeenCalled());
+    expect(JSON.stringify(vi.mocked(appendToStack).mock.calls[0])).toContain('sk-literal-123');
+  });
+
+  it('shows no toggle when there is nothing to mask', () => {
+    render(<ReviewStep yaml={'name: remote\nauth:\n  type: bearer\n  token: "${var:T}"\n'} resourceType="mcp-server" resourceName="remote" />);
+    expect(screen.queryByRole('button', { name: 'Show secrets' })).not.toBeInTheDocument();
+  });
+});
