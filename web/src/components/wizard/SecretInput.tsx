@@ -52,6 +52,9 @@ export function SecretInput({
   const setVariables = useVaultStore((s) => s.setVariables);
 
   const literal = sensitive && isLiteralSecret(value);
+  // A reveal applies to the literal it was given for: once the field holds no
+  // literal, the next one starts masked.
+  if (revealed && !literal) setRevealed(false);
   const masked = literal && !revealed;
   const keyId = `${uid}-key`;
   const warningId = `${uid}-warning`;

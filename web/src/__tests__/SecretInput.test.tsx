@@ -75,6 +75,17 @@ describe('SecretInput', () => {
     expect(screen.getByLabelText('Token')).toHaveAttribute('type', 'password');
   });
 
+  it('masks a new literal after the revealed one is cleared', () => {
+    render(<Harness initial="sk-literal-123" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Show value' }));
+    const input = screen.getByLabelText('Token');
+    expect(input).toHaveAttribute('type', 'text');
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.change(input, { target: { value: 'sk-second-456' } });
+    expect(input).toHaveAttribute('type', 'password');
+    expect(screen.getByRole('button', { name: 'Show value' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
   it('stores a new variable and replaces the field with its reference', async () => {
     vi.mocked(fetchVariables)
       .mockResolvedValueOnce([])
