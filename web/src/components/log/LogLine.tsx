@@ -11,6 +11,8 @@ import {
   PROMOTED_LOG_FIELDS,
   PROMOTED_LOG_KEYS,
   formatTimestamp,
+  formatTimestampTitle,
+  hiddenQueryMatch,
   inlineLogFields,
   stringifyAttrValue,
   type ParsedLog,
@@ -28,6 +30,7 @@ export const LogLine = memo(function LogLine({
   wrap = false,
   relativeTime = false,
   timeAnchor,
+  showDate = false,
 }: {
   log: ParsedLog;
   isExpanded: boolean;
@@ -49,17 +52,29 @@ export const LogLine = memo(function LogLine({
   relativeTime?: boolean;
   /** Epoch ms anchor for relative timestamps (the last completed load). */
   timeAnchor?: number;
+  /** Prefix absolute timestamps with MM-DD (the loaded window spans days). */
+  showDate?: boolean;
 }) {
   const styles = LEVEL_STYLES[log.level] || LEVEL_STYLES.DEBUG;
   const showSource = source !== undefined;
   const inlineFields = useMemo(() => inlineLogFields(log), [log]);
 
-  const absoluteTs = formatTimestamp(log.timestamp);
+  const wideTime = showDate && !relativeTime;
   const parsedTs = Date.parse(log.timestamp);
   const timeLabel =
     relativeTime && Number.isFinite(parsedTs)
       ? formatRelativeTimeFine(new Date(parsedTs), timeAnchor)
-      : absoluteTs;
+      : formatTimestamp(log.timestamp, wideTime);
+  const hiddenMatch = useMemo(
+    () =>
+      hiddenQueryMatch(log, searchQuery, [
+        log.message,
+        log.component,
+        showSource ? source : undefined,
+        ...inlineFields.map((f) => f.value),
+      ]),
+    [log, searchQuery, showSource, source, inlineFields],
+  );
 
   return (
     <div
@@ -75,15 +90,20 @@ export const LogLine = memo(function LogLine({
         className={cn(
           'grid gap-2 px-3 py-1 log-text cursor-pointer',
           showSource
-            ? 'grid-cols-[8.5em_5.5em_7em_7.5em_1fr_2em]'
-            : 'grid-cols-[8.5em_5.5em_7.5em_1fr_2em]',
+            ? wideTime
+              ? 'grid-cols-[11.5em_7em_7em_7.5em_1fr_2em]'
+              : 'grid-cols-[8.5em_7em_7em_7.5em_1fr_2em]'
+            : wideTime
+              ? 'grid-cols-[11.5em_7em_7.5em_1fr_2em]'
+              : 'grid-cols-[8.5em_7em_7.5em_1fr_2em]',
         )}
         onClick={() => onToggle(isExpanded ? null : entryKey)}
       >
         {/* Timestamp */}
         <span
-          className="text-text-muted font-mono log-text tabular-nums"
-          title={relativeTime ? absoluteTs : log.timestamp}
+          data-testid="log-time"
+          className="text-text-muted font-mono log-text tabular-nums whitespace-nowrap"
+          title={formatTimestampTitle(log.timestamp)}
         >
           {timeLabel}
         </span>
@@ -97,7 +117,7 @@ export const LogLine = memo(function LogLine({
           )}
         >
           <span className={cn('w-1 h-1 rounded-full', styles.dot)} />
-          {log.level.slice(0, 4)}
+          {log.level}
         </span>
 
         {/* Source (aggregate view only) — click filters to this source */}
@@ -122,7 +142,7 @@ export const LogLine = memo(function LogLine({
                   source === GATEWAY_LOG_SOURCE ? 'bg-primary' : 'bg-tertiary-light'
                 )}
               />
-              <span className="truncate">{source}</span>
+              <span className="truncate">{highlightMatches(source, searchQuery)}</span>
             </button>
           ) : (
             <span
@@ -138,13 +158,13 @@ export const LogLine = memo(function LogLine({
                   source === GATEWAY_LOG_SOURCE ? 'bg-primary' : 'bg-tertiary-light'
                 )}
               />
-              <span className="truncate">{source}</span>
+              <span className="truncate">{highlightMatches(source, searchQuery)}</span>
             </span>
           ))}
 
         {/* Component */}
         <span className="text-secondary font-mono log-text truncate" title={log.component}>
-          {log.component || '\u2014'}
+          {log.component ? highlightMatches(log.component, searchQuery) : '\u2014'}
         </span>
 
         {/* Message, then inline attribute chips */}
@@ -157,7 +177,11 @@ export const LogLine = memo(function LogLine({
           <span
             className={cn(
               'min-w-0 font-mono log-text',
-              wrap ? 'whitespace-pre-wrap break-words' : 'truncate flex-shrink-0 max-w-full',
+              wrap
+                ? 'whitespace-pre-wrap break-words'
+                : hiddenMatch
+                  ? 'truncate'
+                  : 'truncate flex-shrink-0 max-w-full',
               log.level === 'ERROR' ? 'text-status-error' : 'text-text-primary'
             )}
             title={wrap ? undefined : log.message}
@@ -198,6 +222,14 @@ export const LogLine = memo(function LogLine({
               ))}
             </span>
           )}
+          {hiddenMatch && (
+            <span
+              className="flex-shrink-0 whitespace-nowrap font-mono log-text text-text-muted italic"
+              title={hiddenMatch.title}
+            >
+              match in {hiddenMatch.label}
+            </span>
+          )}
         </span>
 
         {/* Trace pivot + expand indicator */}
@@ -227,7 +259,12 @@ export const LogLine = memo(function LogLine({
 
       {/* Expanded details */}
       {isExpanded && (
-        <LogLineDetail log={log} searchQuery={searchQuery} onTraceClick={onTraceClick} />
+        <LogLineDetail
+          log={log}
+          searchQuery={searchQuery}
+          onTraceClick={onTraceClick}
+          wideTime={wideTime}
+        />
       )}
     </div>
   );
@@ -242,13 +279,13 @@ function LogLineDetail({
   log,
   searchQuery,
   onTraceClick,
+  wideTime,
 }: {
   log: ParsedLog;
   searchQuery: string;
   onTraceClick?: (traceId: string) => void;
+  wideTime: boolean;
 }) {
-  const [showOther, setShowOther] = useState(false);
-
   const promoted = PROMOTED_LOG_FIELDS.map(({ label, key }) => {
     const value = log.attrs?.[key];
     if (value == null || value === '') return null;
@@ -259,8 +296,14 @@ function LogLineDetail({
     ([key, value]) => !PROMOTED_LOG_KEYS.has(key) && value !== '' && value != null,
   );
 
+  // Opens on mount when the filter matched here; later query edits leave it alone.
+  const [showOther, setShowOther] = useState(() => {
+    const q = searchQuery.toLowerCase();
+    return q !== '' && otherEntries.some(([, v]) => stringifyAttrValue(v).toLowerCase().includes(q));
+  });
+
   return (
-    <div className="px-3 pb-2 log-text" style={{ marginLeft: '8.5em' }}>
+    <div className="px-3 pb-2 log-text" style={{ marginLeft: wideTime ? '11.5em' : '8.5em' }}>
       <div className="p-2 rounded-md bg-background/60 border border-border/30 font-mono log-text-detail">
         {/* Full message with wrapping */}
         <pre
@@ -307,7 +350,7 @@ function LogLineDetail({
           </div>
         )}
 
-        {/* Other attributes, collapsed by default; promoted keys excluded */}
+        {/* Other attributes, collapsed unless the filter matched one; promoted keys excluded */}
         {otherEntries.length > 0 && (
           <div className="mt-1.5 pt-1.5 border-t border-border/20">
             <button
@@ -322,7 +365,10 @@ function LogLineDetail({
             </button>
             {showOther && (
               <KVTable
-                rows={otherEntries.map(([key, value]) => [key, stringifyAttrValue(value)])}
+                rows={otherEntries.map(([key, value]) => [
+                  key,
+                  highlightMatches(stringifyAttrValue(value), searchQuery),
+                ])}
                 monoKeys
               />
             )}

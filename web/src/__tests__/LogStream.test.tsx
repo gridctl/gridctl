@@ -17,11 +17,12 @@ function entry(over: Partial<ParsedLog>): ParsedLog {
 
 // Expansion state is lifted out of LogStream (shared with keyboard nav and
 // hosts), so tests drive it through a minimal controlled harness.
-function Harness({ logs }: { logs: ParsedLog[] }) {
+function Harness({ logs, searchQuery }: { logs: ParsedLog[]; searchQuery?: string }) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   return (
     <LogStream
       logs={logs}
+      searchQuery={searchQuery}
       isLoading={false}
       error={null}
       fontSize={12}
@@ -316,5 +317,87 @@ describe('LogStream', () => {
     expect(run).toHaveClass('flex-wrap');
     expect(run).not.toHaveClass('overflow-hidden');
     expect(run.parentElement).toHaveClass('flex-wrap');
+  });
+
+  function renderStream(logs: ParsedLog[], extra: Partial<Parameters<typeof LogStream>[0]> = {}) {
+    return render(
+      <LogStream
+        logs={logs}
+        isLoading={false}
+        error={null}
+        fontSize={12}
+        containerRef={createRef<HTMLDivElement>()}
+        expandedKey={null}
+        onToggleExpand={() => {}}
+        {...extra}
+      />,
+    );
+  }
+
+  it('renders full level names', () => {
+    renderStream([
+      entry({ level: 'ERROR', message: 'boom', raw: 'a' }),
+      entry({ level: 'DEBUG', message: 'trace', raw: 'b', timestamp: '2026-07-24T10:00:01Z' }),
+    ]);
+    expect(screen.getByText('ERROR')).toBeInTheDocument();
+    expect(screen.getByText('DEBUG')).toBeInTheDocument();
+    expect(screen.queryByText('ERRO')).toBeNull();
+    expect(screen.queryByText('DEBU')).toBeNull();
+  });
+
+  it('highlights a match in the component and source cells', () => {
+    renderStream([entry({ component: 'gateway', message: 'listening' })], {
+      searchQuery: 'gate',
+      showSource: true,
+    });
+    const marks = Array.from(document.querySelectorAll('mark')).map((m) => m.textContent);
+    expect(marks.length).toBeGreaterThanOrEqual(1);
+    expect(marks.every((t) => t?.toLowerCase() === 'gate')).toBe(true);
+  });
+
+  it('shows a hint when the query matches only a hidden attribute', () => {
+    const log = entry({ message: 'request done', attrs: { user_agent: 'claude-code' } });
+    const { unmount } = renderStream([log], { searchQuery: 'claude' });
+    const hint = screen.getByText('match in attributes');
+    expect(hint).toHaveAttribute('title', 'user_agent=claude-code');
+    unmount();
+    renderStream([log], { searchQuery: 'request' });
+    expect(screen.queryByText(/match in/)).toBeNull();
+  });
+
+  it('shows a hint for a trace-only match', () => {
+    renderStream([entry({ message: 'ok', traceId: 'abc123def' })], { searchQuery: 'abc123' });
+    expect(screen.getByText('match in trace ID')).toBeInTheDocument();
+  });
+
+  it('opens Other attributes with the match marked when the filter matched there', () => {
+    const log = entry({ message: 'request done', attrs: { user_agent: 'claude-code' } });
+    render(<Harness logs={[log]} searchQuery="claude" />);
+    fireEvent.click(screen.getByText('request done'));
+    const toggle = screen.getByRole('button', { name: /Other attributes/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const marks = Array.from(document.querySelectorAll('mark')).map((m) => m.textContent);
+    expect(marks).toContain('claude');
+  });
+
+  it('keeps Other attributes collapsed when the filter matched elsewhere', () => {
+    const log = entry({ message: 'request done', attrs: { user_agent: 'claude-code' } });
+    render(<Harness logs={[log]} searchQuery="request" />);
+    fireEvent.click(screen.getAllByText('request')[0]);
+    expect(screen.getByRole('button', { name: /Other attributes/ })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  });
+
+  it('prefixes the date with showDate and keeps time only in relative mode', () => {
+    const ts = new Date(2026, 0, 15, 0, 5, 9, 123).toISOString();
+    const { unmount } = renderStream([entry({ timestamp: ts })], { showDate: true });
+    expect(screen.getByTestId('log-time').textContent).toMatch(/^\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/);
+    expect(screen.getByTestId('log-time').parentElement!.className).toContain('11.5em');
+    unmount();
+    renderStream([entry({ timestamp: ts })]);
+    expect(screen.getByTestId('log-time')).toHaveTextContent(/^\d{2}:\d{2}:\d{2}\.\d{3}$/);
+    expect(screen.getByTestId('log-time').parentElement!.className).toContain('8.5em');
   });
 });
