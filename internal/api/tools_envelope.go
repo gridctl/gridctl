@@ -55,6 +55,7 @@ type toolsCallEnvelope struct {
 	Outcome       mcp.CallOutcome     `json:"outcome"`
 	Result        *mcp.ToolCallResult `json:"result"`
 	Error         *toolsEndpointError `json:"error"`
+	TraceID       string              `json:"trace_id,omitempty"`
 }
 
 type toolsDiscoverEnvelope struct {

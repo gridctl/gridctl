@@ -105,6 +105,9 @@ func (s *Server) handleToolsCall(w http.ResponseWriter, r *http.Request) {
 		Name:          name,
 		Outcome:       outcome,
 	}
+	if s.traceBuffer != nil {
+		env.TraceID = outcome.TraceID
+	}
 	if includeDispatchResult(outcome) && result != nil {
 		env.Result = result
 	}

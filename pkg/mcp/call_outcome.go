@@ -30,6 +30,10 @@ type CallOutcome struct {
 	Completion  string `json:"completion"`
 	Gate        string `json:"gate,omitempty"`
 	Detail      string `json:"detail,omitempty"`
+	// TraceID is the hex trace ID of the root tools/call span when that
+	// span context is valid and sampled. It is not part of the CLI or
+	// run-record JSON; REST handlers opt in to exposing it.
+	TraceID string `json:"-"`
 }
 
 type dispatchOptions struct {
