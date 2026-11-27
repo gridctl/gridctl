@@ -4,6 +4,8 @@ import { cn } from '../../lib/cn';
 import { duplicateKeys, mapFromRows, newRow, rowsForMap, type KeyValueRow } from '../../lib/keyValueRows';
 import { FieldError } from '../ui/Field';
 import { VariablesPopover } from './VariablesPopover';
+import { SecretInput } from './SecretInput';
+import { isSensitiveEnvName } from '../../lib/wizard-secrets';
 
 const inputClass = 'w-full bg-background/60 border border-border/40 rounded-lg px-3 py-2 text-xs text-text-primary placeholder:text-text-muted transition-colors';
 
@@ -13,12 +15,16 @@ export function KeyValueEditor({
   onChange,
   placeholder,
   showSecrets = false,
+  sensitiveValues = false,
 }: {
   label: string;
   value: Record<string, string>;
   onChange: (val: Record<string, string>) => void;
   placeholder?: { key: string; value: string };
   showSecrets?: boolean;
+  // Treat every value as a credential. Otherwise only rows whose key names a
+  // credential (TOKEN, PASSWORD, and the rest of the export list) are masked.
+  sensitiveValues?: boolean;
 }) {
   const uid = useId();
   const labelId = `${uid}-label`;
@@ -69,13 +75,13 @@ export function KeyValueEditor({
               />
               <span className="text-text-muted text-xs">=</span>
               <div className="flex-1 flex items-center gap-0.5">
-                <input
-                  type="text"
+                <SecretInput
                   value={row.value}
-                  onChange={(e) => updateRow(row.id, { value: e.target.value })}
+                  onChange={(next) => updateRow(row.id, { value: next })}
                   placeholder={placeholder?.value ?? 'value'}
-                  aria-label={`${label} value ${i + 1}`}
-                  className={cn(inputClass, 'flex-1', row.value.startsWith('${var:') && 'text-tertiary font-medium')}
+                  ariaLabel={`${label} value ${i + 1}`}
+                  suggestedKey={row.key}
+                  sensitive={sensitiveValues || isSensitiveEnvName(row.key)}
                 />
                 {showSecrets && (
                   <VariablesPopover onSelect={(ref) => updateRow(row.id, { value: ref })} />

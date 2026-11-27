@@ -21,6 +21,7 @@ import { customHeaderErrors, probeHeaders, type AutoscaleFormData, type External
 import type { ProbeServerAuth, ProbeServerConfig } from '../../../lib/api';
 import { VariablesPopover } from '../VariablesPopover';
 import { KeyValueEditor } from '../KeyValueEditor';
+import { SecretInput } from '../SecretInput';
 import { TransportAdvisor } from '../TransportAdvisor';
 import { ToolsPicker } from './ToolsPicker';
 import { OperationsPicker } from './OperationsPicker';
@@ -238,6 +239,7 @@ function CustomHeadersEditor({
         onChange={(next) => onChange(Object.keys(next).length ? next : undefined)}
         placeholder={{ key: 'X-Tenant', value: '${var:TENANT}' }}
         showSecrets
+        sensitiveValues
       />
       <p className="text-3xs text-text-muted mt-1">Use a ${'{'}var:KEY{'}'} reference. Values are treated as sensitive.</p>
       {Object.entries(rowErrors).map(([name, message]) => (
@@ -1837,8 +1839,9 @@ function AutoscaleFields({
 
 // ExternalAuthFields — downstream auth for external URL servers. Mirrors
 // config.ServerAuth: static bearer/header credentials or OAuth 2.1 brokering.
-// Secret fields nudge toward ${var:KEY} references; the YAML preview emits
-// exactly what the user types, so literals are their explicit choice.
+// Secret fields mask a literal and offer to store it as a variable. The
+// generated YAML keeps what the user typed; the preview masks literals, and
+// session storage and drafts drop them.
 function ExternalAuthFields({
   auth,
   onChange,
@@ -1886,16 +1889,16 @@ function ExternalAuthFields({
             Token <span className="text-status-error">*</span>
           </label>
           <div className="flex items-center gap-0.5">
-            <input
+            <SecretInput
               id={`${uid}-token`}
-              type="text"
               value={auth.token ?? ''}
-              onChange={(e) => update({ token: e.target.value })}
+              onChange={(token) => update({ token })}
               placeholder="${var:MY_TOKEN}"
+              suggestedKey="MY_TOKEN"
               data-wizard-field={`${fieldPrefix}auth.token`}
               aria-invalid={errors?.['auth.token'] ? true : undefined}
               aria-describedby={errors?.['auth.token'] ? `${uid}-token-error` : undefined}
-              className={cn(inputClass, 'flex-1 font-mono', auth.token?.startsWith('${var:') && 'text-tertiary font-medium', errors?.['auth.token'] && 'border-status-error/50')}
+              className={cn('font-mono', errors?.['auth.token'] && 'border-status-error/50')}
             />
             <VariablesPopover onSelect={(ref) => update({ token: ref })} />
           </div>
@@ -1930,16 +1933,16 @@ function ExternalAuthFields({
               Value <span className="text-status-error">*</span>
             </label>
             <div className="flex items-center gap-0.5">
-              <input
+              <SecretInput
                 id={`${uid}-value`}
-                type="text"
                 value={auth.value ?? ''}
-                onChange={(e) => update({ value: e.target.value })}
+                onChange={(value) => update({ value })}
                 placeholder="${var:MY_API_KEY}"
+                suggestedKey={auth.header || 'MY_API_KEY'}
                 data-wizard-field={`${fieldPrefix}auth.value`}
                 aria-invalid={errors?.['auth.value'] ? true : undefined}
                 aria-describedby={errors?.['auth.value'] ? `${uid}-value-error` : undefined}
-                className={cn(inputClass, 'flex-1 font-mono', auth.value?.startsWith('${var:') && 'text-tertiary font-medium', errors?.['auth.value'] && 'border-status-error/50')}
+                className={cn('font-mono', errors?.['auth.value'] && 'border-status-error/50')}
               />
               <VariablesPopover onSelect={(ref) => update({ value: ref })} />
             </div>
@@ -1993,14 +1996,14 @@ function ExternalAuthFields({
             <div>
               <label htmlFor={`${uid}-client-secret`} className={labelClass}>Client Secret</label>
               <div className="flex items-center gap-0.5">
-                <input
+                <SecretInput
                   id={`${uid}-client-secret`}
-                  type="text"
-                  aria-label="OAuth client secret"
+                  ariaLabel="OAuth client secret"
                   value={auth.clientSecret ?? ''}
-                  onChange={(e) => update({ clientSecret: e.target.value })}
+                  onChange={(clientSecret) => update({ clientSecret })}
                   placeholder="${var:MY_CLIENT_SECRET}"
-                  className={cn(inputClass, 'flex-1 font-mono', auth.clientSecret?.startsWith('${var:') && 'text-tertiary font-medium')}
+                  suggestedKey="MY_CLIENT_SECRET"
+                  className="font-mono"
                 />
                 <VariablesPopover onSelect={(ref) => update({ clientSecret: ref })} />
               </div>

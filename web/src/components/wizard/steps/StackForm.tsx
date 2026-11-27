@@ -23,6 +23,7 @@ import type {
 } from '../../../lib/yaml-builder';
 import { VariablesPopover } from '../VariablesPopover';
 import { KeyValueEditor } from '../KeyValueEditor';
+import { SecretInput } from '../SecretInput';
 import { VaultSetSelector } from '../VaultSetSelector';
 import { Field, FieldError } from '../../ui/Field';
 import { MCPServerForm } from './MCPServerForm';
@@ -540,23 +541,18 @@ export function StackForm({ data, onChange, errors, revealKey, onRemoveItem }: S
                 Token <span className="text-status-error">*</span>
               </label>
               <div className="flex items-center gap-0.5">
-                <input
+                <SecretInput
                   id={`${uid}-token`}
-                  type="text"
                   value={data.gateway.auth.token}
-                  onChange={(e) =>
-                    onChange({ gateway: { ...data.gateway, auth: { ...data.gateway!.auth!, token: e.target.value } } })
+                  onChange={(token) =>
+                    onChange({ gateway: { ...data.gateway, auth: { ...data.gateway!.auth!, token } } })
                   }
-                  placeholder="auth-token-value"
+                  placeholder="${var:GATEWAY_TOKEN}"
+                  suggestedKey="GATEWAY_TOKEN"
                   data-wizard-field="gateway.auth.token"
                   aria-invalid={errors?.['gateway.auth.token'] ? true : undefined}
                   aria-describedby={errors?.['gateway.auth.token'] ? `${uid}-token-error` : undefined}
-                  className={cn(
-                    inputClass,
-                    'flex-1',
-                    data.gateway.auth.token.startsWith('${var:') && 'text-tertiary font-medium',
-                    errors?.['gateway.auth.token'] && 'border-status-error/50',
-                  )}
+                  className={cn(errors?.['gateway.auth.token'] && 'border-status-error/50')}
                 />
                 <VariablesPopover
                   onSelect={(ref) =>
