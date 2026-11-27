@@ -95,7 +95,7 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
       ...buildWorkspaceNavCommands((target) => go(target)),
       {
         id: 'navigate:spec',
-        label: 'Open Spec Editor',
+        label: 'Open spec',
         section: 'global',
         icon: <FileCode size={14} />,
         keywords: ['spec', 'yaml', 'editor', 'config', 'open'],

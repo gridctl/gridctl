@@ -129,7 +129,8 @@ describe('StackWorkspace refresh states', () => {
     expect(alert).toHaveTextContent(RECONNECT_HINT);
     expect(inertAncestor(screen.getByTestId('canvas'))).not.toBeNull();
     expect(inertAncestor(screen.getByTestId('access-lens'))).not.toBeNull();
-    expect(inertAncestor(screen.getByTestId('spec-pane'))).not.toBeNull();
+    // The spec column sits beside the canvas column, like the inspector.
+    expect(inertAncestor(screen.getByTestId('spec-pane'))).toBeNull();
 
     const retry = screen.getByRole('button', { name: 'Retry' });
     expect(inertAncestor(retry)).toBeNull();
@@ -174,6 +175,6 @@ describe('StackWorkspace refresh states', () => {
     expect(screen.getByText('Loading stack')).toBeInTheDocument();
     expect(screen.queryByText('Stack unavailable')).not.toBeInTheDocument();
     expect(inertAncestor(screen.getByTestId('canvas'))).not.toBeNull();
-    expect(inertAncestor(screen.getByTestId('spec-pane'))).not.toBeNull();
+    expect(inertAncestor(screen.getByTestId('spec-pane'))).toBeNull();
   });
 });

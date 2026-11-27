@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { useSearchParams } from 'react-router';
 import { Sidebar } from '../layout/Sidebar';
@@ -23,33 +23,44 @@ import { refreshPhase } from '../../lib/refreshPhase';
 const SIDEBAR_DEFAULT = 320;
 const SIDEBAR_MIN = 280;
 const SIDEBAR_MAX = 600;
+const SPEC_DEFAULT = 560;
+export const SPEC_MIN = 360;
+export const SPEC_MAX = 960;
 
 // Exported as a test seam. A zero clientWidth (jsdom, first paint) falls back
-// to the constants. Otherwise the open rail stays between 40% and 60% of the
-// container, and the constants win once the container is wide enough.
+// to the bounds. Otherwise the open rail stays between 40% and 60% of the
+// container, and the bounds win once the container is wide enough. The bounds
+// default to the inspector's; the spec column passes its own.
 // eslint-disable-next-line react-refresh/only-export-components -- test seam
-export function clampSidebarWidth(next: number, containerWidth: number): number {
+export function clampSidebarWidth(
+  next: number,
+  containerWidth: number,
+  min: number = SIDEBAR_MIN,
+  max: number = SIDEBAR_MAX,
+): number {
   if (containerWidth > 0) {
-    const lo = Math.min(SIDEBAR_MIN, Math.floor(containerWidth * 0.4));
-    const hi = Math.min(SIDEBAR_MAX, Math.floor(containerWidth * 0.6));
+    const lo = Math.min(min, Math.floor(containerWidth * 0.4));
+    const hi = Math.min(max, Math.floor(containerWidth * 0.6));
     return Math.min(hi, Math.max(lo, next));
   }
-  return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, next));
+  return Math.min(max, Math.max(min, next));
 }
 
 // Stack workspace body: a slim header, then a toolbar over the graph or table
 // body, loading/error overlays, and the right-rail inspector. Rendered inside <AppShell>'s <main>
-// outlet. CSS grid: a canvas column plus a collapsible inspector column (0px
-// when closed) so switching workspaces doesn't shift the canvas.
+// outlet. CSS grid: a canvas column plus one collapsible right column (0px
+// when closed) holding the spec or the inspector, never both, so switching
+// workspaces doesn't shift the canvas.
 export function StackWorkspace() {
   const headingId = useId();
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
+  const [specWidth, setSpecWidth] = useState(SPEC_DEFAULT);
   const containerRef = useRef<HTMLDivElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
   // ?node=<id> mirrors the selected node (useNodeParamSync). ?spec=1 opens
-  // the spec slide-over; the status-bar chip and the palette's "Open Spec
-  // Editor" deep-link it. Closing clears the flag.
+  // the spec column; the status-bar chip and the palette's "Open spec"
+  // deep-link it. Closing clears the flag.
   useNodeParamSync();
   const specOpen = searchParams.get('spec') === '1';
   const closeSpec = useCallback(() => {
@@ -63,6 +74,28 @@ export function StackWorkspace() {
     );
   }, [setSearchParams]);
 
+  // Opening the spec closes the other right-side panels.
+  useEffect(() => {
+    if (!specOpen) return;
+    useUIStore.getState().setSidebarOpen(false);
+    useAccessLensStore.getState().closeSlideOver();
+  }, [specOpen]);
+
+  // While the spec is open, a newly opened inspector or access editor replaces it.
+  useEffect(() => {
+    if (!specOpen) return;
+    const offUI = useUIStore.subscribe((s, prev) => {
+      if (s.sidebarOpen && !prev.sidebarOpen) closeSpec();
+    });
+    const offLens = useAccessLensStore.subscribe((s, prev) => {
+      if (s.slideOverOpen && !prev.slideOverOpen) closeSpec();
+    });
+    return () => {
+      offUI();
+      offLens();
+    };
+  }, [specOpen, closeSpec]);
+
   const isLoading = useStackStore((s) => s.isLoading);
   const error = useStackStore((s) => s.error);
   const connectionStatus = useStackStore((s) => s.connectionStatus);
@@ -73,6 +106,8 @@ export function StackWorkspace() {
   const gatewayInfo = useStackStore((s) => s.gatewayInfo);
   const storedView = useUIStore((s) => s.stackPrefs.view);
   const lensEnabled = useAccessLensStore((s) => s.enabled);
+  const rightPanel: 'spec' | 'inspector' | null = specOpen ? 'spec' : sidebarOpen ? 'inspector' : null;
+  const rightWidth = rightPanel === 'spec' ? specWidth : sidebarWidth;
 
   // The toolbar filter is transient: component state, not persisted or in the URL.
   const [query, setQuery] = useState('');
@@ -120,6 +155,11 @@ export function StackWorkspace() {
     setSidebarWidth((prev) => clampSidebarWidth(prev + delta, containerWidth));
   }, []);
 
+  const handleSpecResize = useCallback((delta: number) => {
+    const containerWidth = containerRef.current?.clientWidth ?? 0;
+    setSpecWidth((prev) => clampSidebarWidth(prev + delta, containerWidth, SPEC_MIN, SPEC_MAX));
+  }, []);
+
   return (
     <ReactFlowProvider>
       <div className="absolute inset-0 flex flex-col overflow-hidden">
@@ -142,7 +182,7 @@ export function StackWorkspace() {
           style={{
             // min() is a backstop after a window resize without a drag. A CSS-only
             // clamp would pin the track at 60% and ignore the drag below 280px.
-            gridTemplateColumns: `minmax(0, 1fr) ${sidebarOpen ? `min(${sidebarWidth}px, 60%)` : '0px'}`,
+            gridTemplateColumns: `minmax(0, 1fr) ${rightPanel ? `min(${rightWidth}px, 60%)` : '0px'}`,
           }}
         >
           <div className="relative overflow-hidden">
@@ -202,7 +242,7 @@ export function StackWorkspace() {
               <div className="relative flex-1 min-h-0 overflow-hidden">
                 {view === 'graph' ? (
                   <>
-                    {/* Desaturate only the graph; the spec and Access Lens editors stay at full color. */}
+                    {/* Desaturate only the graph; the Access Lens editor stays at full color. */}
                     <div
                       className={cn(
                         'absolute inset-0 transition motion-reduce:transition-none',
@@ -220,13 +260,13 @@ export function StackWorkspace() {
                 ) : (
                   <StackTable ref={tableRef} filter={filter} onClearFilter={clearFilter} />
                 )}
-
-                {specOpen && <SpecPane onClose={closeSpec} />}
               </div>
             </div>
           </div>
 
-          {sidebarOpen && (
+          {rightPanel === 'spec' && <SpecPane onClose={closeSpec} onResize={handleSpecResize} />}
+
+          {rightPanel === 'inspector' && (
             <aside aria-label="Stack inspector" className="flex flex-row overflow-hidden bg-surface-elevated border-l border-border shadow-pane-left">
               <ResizeHandle
                 direction="vertical"
