@@ -24,6 +24,16 @@ describe('clampDescription (UTF-16 code units)', () => {
     expect(clampDescription(text).hiddenChars).toBe(0);
   });
 
+  it('leaves eight lines with a trailing newline alone', () => {
+    const text = `${Array.from({ length: 8 }, (_, i) => `line ${i}`).join('\n')}\n`;
+    expect(clampDescription(text)).toEqual({ visible: text, hiddenChars: 0 });
+  });
+
+  it('leaves text at the character limit plus trailing whitespace alone', () => {
+    const text = `${'x'.repeat(DESCRIPTION_MAX_CHARS)}\n`;
+    expect(clampDescription(text)).toEqual({ visible: text, hiddenChars: 0 });
+  });
+
   it('clamps 12 short lines at eight lines', () => {
     const lines = Array.from({ length: 12 }, (_, i) => `line ${i}`);
     const text = lines.join('\n');

@@ -151,6 +151,11 @@ describe('ToolDetailPanel — description clamp', () => {
     expect(screen.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true');
   });
 
+  it('uses the singular for one hidden character', () => {
+    renderPanel({ tool: { name: 'getThing', description: 'x'.repeat(481) } as ToolRow });
+    expect(screen.getByRole('button', { name: 'Show more (1 more character)' })).toBeInTheDocument();
+  });
+
   it('shows a short description with no toggle', () => {
     renderPanel();
     expect(screen.queryByRole('button', { name: /show more/i })).not.toBeInTheDocument();
@@ -408,6 +413,12 @@ describe('ToolDetailPanel — pin chip', () => {
 
   it('reads Not in pin set for an exposed tool missing from the pin set', () => {
     renderPanel({ pin: pinEntry('drift', ['other']) });
+    const chip = screen.getByRole('link', { name: 'Pin status: Not in pin set. Open in Pins' });
+    expect(chip).toHaveAttribute('href', '/pins?server=atlassian&view=drift');
+  });
+
+  it('links Not in pin set without the drift view on a pinned server', () => {
+    renderPanel({ pin: pinEntry('pinned', ['other']) });
     const chip = screen.getByRole('link', { name: 'Pin status: Not in pin set. Open in Pins' });
     expect(chip).toHaveAttribute('href', '/pins?server=atlassian');
   });

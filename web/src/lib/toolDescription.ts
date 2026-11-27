@@ -29,7 +29,8 @@ export function clampDescription(text: string): ClampedDescription {
     }
   }
 
-  if (cut >= text.length) return { visible: text, hiddenChars: 0 };
+  // Trailing whitespace past the cut hides nothing a reader would see.
+  if (cut >= text.length || text.slice(cut).trim() === '') return { visible: text, hiddenChars: 0 };
 
   // Back up to the previous whitespace when one sits close to the cut. A cut
   // at a line limit already lands on a newline.

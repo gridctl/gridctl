@@ -307,7 +307,7 @@ function PinChip({
     label = 'Not in pin set';
     colorClass = 'text-text-muted';
   }
-  const drift = inPinSet && pin.status === 'drift';
+  const drift = pin.status === 'drift';
   const path = `/pins?server=${encodeURIComponent(serverName)}${drift ? '&view=drift' : ''}`;
 
   return (
@@ -349,7 +349,9 @@ function DescriptionBlock({ text, fontSize }: { text: string; fontSize: number }
           onClick={() => setExpanded((v) => !v)}
           className="text-3xs text-secondary hover:text-secondary-light transition-colors rounded"
         >
-          {expanded ? 'Show less' : `Show more (${hiddenChars.toLocaleString('en-US')} more characters)`}
+          {expanded
+            ? 'Show less'
+            : `Show more (${hiddenChars.toLocaleString('en-US')} more ${hiddenChars === 1 ? 'character' : 'characters'})`}
         </button>
       )}
     </div>
