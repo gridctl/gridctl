@@ -43,7 +43,7 @@ describe('describeOutcome', () => {
   });
 
   it('maps known codes to sentences', () => {
-    expect(describeOutcome(denial('client_scope')).sentences[0]).toContain('Add a `ui` profile under `clients:`');
+    expect(describeOutcome(denial('client_scope')).sentences[0]).toContain('Add a ui profile under clients:');
     expect(describeOutcome(denial('no_replica')).sentences).toEqual(['No healthy replica is available for this server.']);
     expect(describeOutcome(denial('cold_start')).sentences).toEqual(['The server failed to start.']);
     expect(describeOutcome(denial('gate_denied', { gate: 'rate_limit' })).sentences[0]).toContain('Gate: rate_limit.');

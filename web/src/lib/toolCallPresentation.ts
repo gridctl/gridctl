@@ -34,8 +34,8 @@ const CODE_LABEL: Record<string, string> = {
 };
 
 const CODE_SENTENCE: Record<string, string> = {
-  client_scope: 'The `ui` caller is outside the client scope. Add a `ui` profile under `clients:` or use `gridctl call --as <client>`.',
-  policy_blocked: 'A `policy:` rule blocks this tool.',
+  client_scope: 'The ui caller is outside the client scope. Add a ui profile under clients: or use gridctl call --as <client>.',
+  policy_blocked: 'A policy: rule blocks this tool.',
   schema_pin: 'The server is blocked until its schema change is approved.',
   unknown_tool: 'The gateway does not expose this tool. It is hidden by the allow-list or no longer exists.',
   no_replica: 'No healthy replica is available for this server.',

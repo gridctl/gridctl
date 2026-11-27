@@ -404,13 +404,13 @@ describe('ToolTryIt — results', () => {
   it('renders a policy denial at 200 with its sentence', async () => {
     const result = await runWith(200, denial('policy_blocked'));
     expect(result).toHaveAttribute('data-outcome', 'not_run');
-    expect(within(result).getByText('A `policy:` rule blocks this tool.')).toBeInTheDocument();
+    expect(within(result).getByText('A policy: rule blocks this tool.')).toBeInTheDocument();
     expect(within(result).queryByText(/^Completed/)).not.toBeInTheDocument();
   });
 
   it('renders client_scope with its remedy', async () => {
     const result = await runWith(200, denial('client_scope'));
-    expect(within(result).getByText(/Add a `ui` profile under `clients:`/)).toBeInTheDocument();
+    expect(within(result).getByText(/Add a ui profile under clients:/)).toBeInTheDocument();
   });
 
   it.each([
@@ -454,6 +454,19 @@ describe('ToolTryIt — results', () => {
 
     fireEvent.click(within(result).getByRole('button', { name: 'Show all' }));
     expect(within(result).getByTestId('tool-call-result-body').textContent!.length).toBe(200_000);
+  });
+
+  it('caps the next large result again after Show all', async () => {
+    const big = 'b'.repeat(200_000);
+    const result = await runWith(200, { ...OK, result: { content: [{ type: 'text', text: big }] } });
+    fireEvent.click(within(result).getByRole('button', { name: 'Show all' }));
+    expect(within(result).getByTestId('tool-call-result-body').textContent!.length).toBe(200_000);
+
+    fireEvent.click(runButton());
+    await waitFor(() =>
+      expect(screen.getByText(/Showing the first 20,000 of 200,000 characters/)).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId('tool-call-result-body').textContent!.length).toBeLessThanOrEqual(20_000);
   });
 
   it('summarizes non-text blocks without creating media or links from tool output', async () => {

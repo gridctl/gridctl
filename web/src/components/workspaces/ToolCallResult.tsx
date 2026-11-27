@@ -74,7 +74,9 @@ export function ToolCallResult({
   const sections = useMemo(() => resultSections(envelope.result), [envelope]);
   const total = useMemo(() => sectionsLength(sections), [sections]);
   const capped = useMemo(() => capSections(sections, RESULT_CHAR_CAP), [sections]);
-  const [showAll, setShowAll] = useState(false);
+  // Keyed to the envelope so a later large result starts capped again.
+  const [showAllFor, setShowAllFor] = useState<ToolCallEnvelope | null>(null);
+  const showAll = showAllFor === envelope;
   const [copied, setCopied] = useState<'copied' | 'failed' | null>(null);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
@@ -148,7 +150,7 @@ export function ToolCallResult({
           <p className="text-3xs text-text-muted">
             Showing the first {RESULT_CHAR_CAP.toLocaleString('en-US')} of {total.toLocaleString('en-US')} characters
           </p>
-          <button type="button" onClick={() => setShowAll(true)} className={LINK_CLASS}>
+          <button type="button" onClick={() => setShowAllFor(envelope)} className={LINK_CLASS}>
             Show all
           </button>
         </div>
