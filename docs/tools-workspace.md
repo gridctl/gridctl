@@ -5,7 +5,7 @@ The Tools workspace (`/tools` in the web UI on `:8180`) is the control plane for
 ## Layout
 
 - **Server rail (left)**: every MCP server in the stack with an `enabled/total` badge. While you have unsaved edits, the active server's badge shows the draft count with an `unsaved` chip; saving or discarding restores the live count.
-- **Center**: the whitelist editor for the selected server. The checkbox toggles a tool's exposure; clicking the row opens the tool in the detail rail. These are separate gestures on purpose, so inspecting a tool never changes what agents can call.
+- **Center**: the whitelist editor for the selected server. The checkbox toggles a tool's exposure; clicking the row opens the tool in the detail rail. These are separate gestures on purpose, so inspecting a tool never changes what agents can call. From the keyboard, Tab from the filter input moves to the highlighted row, Space toggles that tool, and Enter opens its details; arrow keys, Home, and End move the highlight and focus together. The checkboxes are not tab stops, so the next Tab leaves the list. Each row is announced with its name, enabled or disabled state, groups, hints, policy verdict, and Audit state. A list of more than 200 tools renders only the rows near the scroll position.
 - **Detail rail (right)**: a collapsed [Try it](#try-it) section for calling the tool, then the description, a parameters table (name, type, required, default, and allowed values) above a collapsible raw schema with a Copy button, server-reported hints, the policy verdict when one applies, and usage stats for the selected tool. The header has Copy name (copies the prefixed `server__tool` name), a pin chip that opens the server in Pins (pin status is per server, and the chip is absent for a tool the saved allow-list hides), and links to Traces and Metrics filtered to the tool. Metrics appears once the tool has recorded calls. Traces keeps a time range chosen on an earlier visit. With unsaved allow-list edits, these links ask before discarding them. Long descriptions are shortened with a count of the hidden characters and a Show more button, and descriptions are never rendered as markdown.
 - **Header**: global search across every server, plus the Groups, Access, Fleet, and Audit entry points.
 
@@ -61,13 +61,13 @@ Honesty rules to keep in mind when reading the overlay:
 
 ### Filtering and sorting
 
-With Audit on, filter chips narrow the list to All, Used, Unused, or Disabled, with per-state counts. The Destructive chip works with or without Audit and narrows to tools whose server reports `destructiveHint: true`. Sort by name, most recent use, or call count; the default keeps the server-advertised order, and an active search query keeps relevance order instead. Filter, sort, and risk choices persist across sessions and are shareable via the URL.
+With Audit on, filter chips narrow the list to All, Used, Unused, or Disabled, with per-state counts. The Destructive chip works with or without Audit and narrows to tools whose server reports `destructiveHint: true`. Sort by name, most recent use, or call count; the default keeps the server-advertised order, and an active filter query keeps relevance order instead. While the filter has text, Sort is disabled with a "Relevance order" note beside it; clearing the filter re-enables it with the chosen order. Filter, sort, and risk choices persist across sessions and are shareable via the URL.
 
 ### Remediation
 
 Two paths from "unused" to "disabled":
 
-- **Per server**: with Audit on, the banner above the list offers "Disable N unused" for the selected server.
+- **Per server**: with Audit on, the banner above the list offers "Disable N unused" for the selected server. It saves the saved allow-list minus the unused tools and nothing else: other unsaved checkbox changes stay unsaved and still count toward Save. If the save does not persist, the rows return to how they were before the click.
 - **Fleet**: the Fleet panel's "Disable unused" action plans the same change across all servers, the active server, or a hand-picked subset, previews exactly which tools it will disable per server, and applies everything with one stack write and one reload.
 
 Both paths refuse to empty a server's whitelist. A server whose every exposed tool is unused is skipped and reported, because an empty whitelist would re-expose everything.
