@@ -3,7 +3,8 @@ import { structurallyEqual } from './graph/identity';
 
 // yaml-builder.ts — Form state to YAML serialization
 // Converts structured wizard form data into valid YAML strings.
-// Never includes raw secrets — only ${var:KEY} references.
+// Emits credential fields exactly as entered, literals included; the wizard
+// masks literals in its preview and drops them from session storage and drafts.
 
 export type ResourceType = 'stack' | 'mcp-server' | 'resource' | 'skill' | 'pack' | 'secret' | 'global-context' | 'client-link';
 
