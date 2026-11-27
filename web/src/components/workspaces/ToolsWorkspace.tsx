@@ -38,7 +38,6 @@ import {
   auditWindowMs,
   classifyTool,
   effectiveEnabledTools,
-  formatLastUsed,
   unusedEnabledTools,
   type AuditState,
   type AuditWindow,
@@ -65,10 +64,10 @@ import { ClientAccessEditor } from './ClientAccessEditor';
 import { GroupsPanel } from './GroupsPanel';
 import { useGroups } from '../../hooks/useGroups';
 import { usePolicy } from '../../hooks/usePolicy';
-import { ANNOTATION_CHIP_LEGEND, CHIP_TONE_CLASS, groupsForTool, policyChip } from '../../lib/groups';
+import { ANNOTATION_CHIP_LEGEND, CHIP_TONE_CLASS, groupsForTool } from '../../lib/groups';
 import { toolExposureSummary } from '../../lib/toolExposure';
 import { Popover } from '../ui/Popover';
-import { joinToolGroups, ToolListRow } from './ToolListRow';
+import { ToolRowList } from './ToolRowList';
 import type { PolicyToolStatus } from '../../lib/api';
 import { ToolDetailPanel } from './ToolDetailPanel';
 import type { MCPServerStatus, NodeStatus, Tool, ToolUsageStat } from '../../types';
@@ -1341,6 +1340,8 @@ function ServerDetail({
     if (query.trim()) return filtered;
     return sortToolRows(filtered, sortMode, usage);
   }, [visible, auditActive, auditFilter, destructiveOnly, auditByTool, query, sortMode, usage]);
+  const sortLocked = query.trim() !== '';
+  const sortNoteId = useId();
 
   // Chip counts cover the whole server (not the query-narrowed list) so the
   // chips read as a per-server summary, mirroring the rail badge math.
@@ -1364,22 +1365,17 @@ function ServerDetail({
   // Confirm gate for the remediation bulk action (consequence-stating).
   const [remediateOpen, setRemediateOpen] = useState(false);
 
-  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  // One ref callback for the list. A fresh callback per row would both defeat
-  // memo and re-register the node on every parent render.
-  const registerRef = useCallback((name: string, el: HTMLDivElement | null) => {
-    if (el) rowRefs.current.set(name, el);
-    else rowRefs.current.delete(name);
+  const [listElement, setListElement] = useState<HTMLDivElement | null>(null);
+  // cmdk runs this before its own key handling. Marks a cursor move that
+  // starts on an option so ToolRowList moves focus with it.
+  const keyNavRef = useRef(false);
+  const onCommandKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const onOption = e.target instanceof Element && e.target.closest('[cmdk-item]') !== null;
+    keyNavRef.current = onOption && isCursorKey(e);
   }, []);
-
-  // Scroll the selected tool into view (e.g. after a global-search reveal).
-  // `block: 'nearest'` no-ops when the row is already visible, so clicking a
-  // visible row to select it never jumps the list. DOM-only — no state writes.
-  useEffect(() => {
-    if (!selectedTool) return;
-    // Optional-chain: scrollIntoView is absent in jsdom and older embeds.
-    rowRefs.current.get(selectedTool)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
-  }, [selectedTool]);
+  const onCommandKeyUp = useCallback(() => {
+    keyNavRef.current = false;
+  }, []);
 
   const saveLabel = dirty
     ? `Save ${diffCount} change${diffCount === 1 ? '' : 's'} & Reload`
@@ -1490,13 +1486,21 @@ function ServerDetail({
               {shown.length} of {rows.length} shown
             </span>
           )}
+          {sortLocked && (
+            <span id={sortNoteId} className="text-text-muted italic">
+              Relevance order
+            </span>
+          )}
           <label className="inline-flex items-center gap-1 text-text-muted">
             <span className="sr-only">Sort tools</span>
             <select
               value={sortMode}
               onChange={(e) => onSort(e.target.value as ToolSortMode)}
               aria-label="Sort tools"
-              className="bg-background/60 border border-border/40 rounded-md px-1.5 py-1 text-3xs text-text-secondary"
+              disabled={sortLocked}
+              title={sortLocked ? 'Filtered results are in relevance order. Clear the filter to sort.' : undefined}
+              aria-describedby={sortLocked ? sortNoteId : undefined}
+              className="bg-background/60 border border-border/40 rounded-md px-1.5 py-1 text-3xs text-text-secondary disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {TOOL_SORT_MODES.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -1510,7 +1514,13 @@ function ServerDetail({
       </div>
 
       <div className="rounded-lg border border-border/40 bg-background/60 overflow-hidden">
-        <Command shouldFilter={false} label={`Tools for ${server.name}`} className="group/cmd flex flex-col">
+        <Command
+          shouldFilter={false}
+          label={`Tools for ${server.name}`}
+          className="group/cmd flex flex-col"
+          onKeyDown={onCommandKeyDown}
+          onKeyUp={onCommandKeyUp}
+        >
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30">
             <Search size={12} className="text-text-muted flex-shrink-0" aria-hidden="true" />
             <Command.Input
@@ -1522,7 +1532,7 @@ function ServerDetail({
             />
           </div>
 
-          <Command.List className="max-h-[60vh] overflow-y-auto" aria-label="Available tools">
+          <Command.List ref={setListElement} className="max-h-[60vh] overflow-y-auto" aria-label="Available tools">
             <Command.Empty>
               <p className="text-2xs text-text-muted italic py-4 px-3 text-center">
                 {rows.length === 0
@@ -1532,31 +1542,20 @@ function ServerDetail({
                     : 'No tools match the active filters.'}
               </p>
             </Command.Empty>
-            {shown.map((opt) => {
-              const auditState = auditByTool.get(opt.name) ?? null;
-              const chip = policyChip(policyTools?.[`${server.name}${TOOL_NAME_DELIMITER}${opt.name}`]);
-              return (
-                <ToolListRow
-                  key={opt.name}
-                  opt={opt}
-                  groups={joinToolGroups(groupsFor(opt.name))}
-                  lastUsed={
-                    auditState && auditState !== 'disabled'
-                      ? formatLastUsed(usage?.[opt.name]?.lastCalledAt)
-                      : ''
-                  }
-                  isEnabled={selected.has(opt.name)}
-                  isActive={selectedTool === opt.name}
-                  auditState={auditState}
-                  policyLabel={chip?.label ?? ''}
-                  policyTitle={chip?.title ?? ''}
-                  policyTone={chip?.tone ?? ''}
-                  onSelect={onSelect}
-                  onToggle={toggle}
-                  registerRef={registerRef}
-                />
-              );
-            })}
+            <ToolRowList
+              serverName={server.name}
+              shown={shown}
+              selected={selected}
+              selectedTool={selectedTool}
+              auditByTool={auditByTool}
+              usage={usage}
+              groupsFor={groupsFor}
+              policyTools={policyTools}
+              onSelect={onSelect}
+              onToggle={toggle}
+              listElement={listElement}
+              keyNavRef={keyNavRef}
+            />
           </Command.List>
         </Command>
       </div>
@@ -1651,6 +1650,25 @@ function ServerDetail({
       />
     </div>
   );
+}
+
+// isCursorKey matches the keys cmdk uses to move its cursor (arrows, Home,
+// End, and the Ctrl+N/J/P/K vim bindings).
+function isCursorKey(e: React.KeyboardEvent): boolean {
+  switch (e.key) {
+    case 'ArrowDown':
+    case 'ArrowUp':
+    case 'Home':
+    case 'End':
+      return true;
+    case 'n':
+    case 'j':
+    case 'p':
+    case 'k':
+      return e.ctrlKey;
+    default:
+      return false;
+  }
 }
 
 // FacetChip is an aria-pressed filter pill (the Metrics ToolsFilterBar idiom).

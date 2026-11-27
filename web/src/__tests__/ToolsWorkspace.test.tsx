@@ -230,7 +230,7 @@ describe('ToolsWorkspace', () => {
     // Before selection the right rail prompts the user.
     expect(screen.getByText(/select a tool to view/i)).toBeInTheDocument();
     // Clicking the row body (the cmdk option) selects it for the panel.
-    fireEvent.click(screen.getByRole('option', { name: /create_issue details/i }));
+    fireEvent.click(screen.getByRole('option', { name: /^create_issue, / }));
     // The panel summarizes the schema; the raw JSON sits behind a disclosure.
     expect(screen.getByRole('table', { name: 'create_issue parameters' })).toBeInTheDocument();
     expect(screen.queryByLabelText('create_issue input schema')).not.toBeInTheDocument();
@@ -514,7 +514,7 @@ describe('ToolsWorkspace — URL writers', () => {
     const loc = () => screen.getByTestId('loc').textContent ?? '';
 
     // Selecting a row writes ?tool=.
-    fireEvent.click(screen.getByRole('option', { name: /create_issue details/i }));
+    fireEvent.click(screen.getByRole('option', { name: /^create_issue, / }));
     expect(loc()).toContain('tool=create_issue');
 
     // Toggling Audit writes ?audit=1; the default 7d window stays omitted.
@@ -537,7 +537,7 @@ describe('ToolsWorkspace — URL writers', () => {
     expect(loc()).not.toContain('window=');
 
     // Switching servers clears the tool selection from the URL.
-    fireEvent.click(screen.getByRole('option', { name: /create_issue details/i }));
+    fireEvent.click(screen.getByRole('option', { name: /^create_issue, / }));
     expect(loc()).toContain('tool=create_issue');
     fireEvent.click(screen.getByRole('button', { name: /atlassian/i }));
     expect(loc()).toContain('server=atlassian');
@@ -709,7 +709,7 @@ describe('ToolsWorkspace — annotation chips', () => {
     expect(screen.getByText('RW')).toBeInTheDocument();
     expect(screen.getByText('DESTR')).toBeInTheDocument();
     // The unannotated tool renders no chip vocabulary.
-    const listRepos = screen.getByRole('option', { name: /list_repos details/i });
+    const listRepos = screen.getByRole('option', { name: /^list_repos, / });
     expect(within(listRepos).queryByText('RO')).not.toBeInTheDocument();
     expect(within(listRepos).queryByText('DESTR')).not.toBeInTheDocument();
   });
@@ -734,14 +734,14 @@ describe('ToolsWorkspace — annotation chips', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Destructive 1' }));
     expect(loc()).toContain('risk=destructive');
-    expect(screen.getByRole('option', { name: /create_issue details/i })).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: /list_repos details/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /^create_issue, / })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /^list_repos, / })).not.toBeInTheDocument();
     expect(screen.getByText('1 of 2 shown')).toBeInTheDocument();
 
     // Toggling it off restores the list and drops the param.
     fireEvent.click(screen.getByRole('button', { name: 'Destructive 1' }));
     expect(loc()).not.toContain('risk=');
-    expect(screen.getByRole('option', { name: /list_repos details/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /^list_repos, / })).toBeInTheDocument();
   });
 });
 
@@ -779,13 +779,13 @@ describe('ToolsWorkspace — audit filters and sort', () => {
     const unusedChip = await screen.findByRole('button', { name: 'Unused 1' });
     fireEvent.click(unusedChip);
     expect(loc()).toContain('filter=unused');
-    expect(screen.getByRole('option', { name: /list_repos details/i })).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: /create_issue details/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /^list_repos, / })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /^create_issue, / })).not.toBeInTheDocument();
 
     // Back to All drops the param.
     fireEvent.click(screen.getByRole('button', { name: 'All 2' }));
     expect(loc()).not.toContain('filter=');
-    expect(screen.getByRole('option', { name: /create_issue details/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /^create_issue, / })).toBeInTheDocument();
   });
 
   it('name sort orders rows alphabetically and writes ?sort=; default restores server order', () => {
@@ -1311,5 +1311,325 @@ describe('ToolsWorkspace — global search navigation', () => {
     const id = input.getAttribute('aria-activedescendant')!;
     expect(id).toBeTruthy();
     expect(document.getElementById(id)).toBe(screen.getByRole('option', { name: /do thing/ }));
+  });
+});
+
+describe('ToolsWorkspace — row keyboard and labels', () => {
+  const options = () =>
+    within(screen.getByPlaceholderText(/^filter github tools/i).closest('[cmdk-root]') as HTMLElement).getAllByRole('option');
+
+  it('gives the list one tab stop on the cursor row and none on checkboxes', () => {
+    renderAt('/tools?server=github');
+    const tabbable = options().filter((o) => o.tabIndex === 0);
+    expect(tabbable).toHaveLength(1);
+    expect(tabbable[0]).toHaveAttribute('aria-selected', 'true');
+    for (const cb of screen.getAllByRole('checkbox')) expect(cb.tabIndex).toBe(-1);
+  });
+
+  it('Space on a focused row toggles it without opening the detail rail', () => {
+    renderWithProbe('/tools?server=github');
+    const row = options()[0];
+    expect(row).toHaveAttribute('tabindex', '0');
+    row.focus();
+    expect(screen.getByRole('checkbox', { name: /create_issue/i })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.keyDown(row, { key: ' ' });
+    expect(screen.getByRole('checkbox', { name: /create_issue/i })).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByTestId('loc').textContent).not.toContain('tool=');
+    expect(screen.getByText(/select a tool to view/i)).toBeInTheDocument();
+  });
+
+  it('Space on a focused checkbox does not toggle through the row handler', () => {
+    renderAt('/tools?server=github');
+    const cb = screen.getByRole('checkbox', { name: /create_issue/i });
+    fireEvent.keyDown(cb, { key: ' ' });
+    expect(screen.getByRole('checkbox', { name: /create_issue/i })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('Enter on a focused row opens the detail rail', () => {
+    renderWithProbe('/tools?server=github');
+    const row = options()[0];
+    row.focus();
+    fireEvent.keyDown(row, { key: 'Enter' });
+    expect(screen.getByTestId('loc').textContent).toContain('tool=create_issue');
+  });
+
+  it('Space in the filter input changes no checkbox', () => {
+    renderAt('/tools?server=github');
+    const before = screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-checked'));
+    const input = screen.getByPlaceholderText(/^filter github tools/i);
+    input.focus();
+    const ev = fireEvent.keyDown(input, { key: ' ' });
+    expect(ev).toBe(true);
+    expect(screen.getAllByRole('checkbox').map((c) => c.getAttribute('aria-checked'))).toEqual(before);
+  });
+
+  it('arrow keys, Home, and End from a focused row move focus with the cursor', () => {
+    renderAt('/tools?server=github');
+    const [first, second] = options();
+    first.focus();
+    fireEvent.keyDown(first, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(second);
+    expect(second).toHaveAttribute('tabindex', '0');
+    expect(first).toHaveAttribute('tabindex', '-1');
+    fireEvent.keyDown(second, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first, { key: 'End' });
+    expect(document.activeElement).toBe(second);
+    fireEvent.keyDown(second, { key: 'Home' });
+    expect(document.activeElement).toBe(first);
+  });
+
+  it('hovering another row does not move focus off a focused row', () => {
+    renderAt('/tools?server=github');
+    const [first, second] = options();
+    first.focus();
+    fireEvent.pointerMove(second);
+    expect(second).toHaveAttribute('aria-selected', 'true');
+    expect(document.activeElement).toBe(first);
+  });
+
+  it('hovering a row while typing keeps focus in the filter input', () => {
+    renderAt('/tools?server=github');
+    const input = screen.getByPlaceholderText(/^filter github tools/i);
+    input.focus();
+    fireEvent.pointerMove(options()[1]);
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('names each option from its state and chips, with the description as its description', async () => {
+    const catalog = [
+      {
+        ...tool(`${GITHUB}${TOOL_NAME_DELIMITER}create_issue`, 'Create a GitHub issue'),
+        annotations: { readOnlyHint: false, destructiveHint: true },
+      },
+      tool(`${GITHUB}${TOOL_NAME_DELIMITER}list_repos`, 'List repositories'),
+    ];
+    useStackStore.setState({
+      mcpServers: [server(GITHUB, ['create_issue', 'list_repos'], ['create_issue'])],
+      tools: catalog,
+      toolCatalog: catalog,
+    });
+    vi.mocked(api.fetchPolicy).mockResolvedValue({
+      configured: true,
+      default: 'allow',
+      block_destructive: false,
+      rules: [{ index: 0, match: 'github__create_issue', action: 'require_approval' }],
+      tools: {
+        [`${GITHUB}${TOOL_NAME_DELIMITER}create_issue`]: {
+          action: 'require_approval',
+          source: 'rule',
+          rule_index: 0,
+          rule: 'github__create_issue',
+          exposed: true,
+        },
+      },
+    });
+    renderAt('/tools?server=github');
+    await screen.findByText('APPROVAL');
+    const enabled = screen.getByRole('option', {
+      name: 'create_issue, enabled, read-write, destructive, blocked by policy rule 1: github__create_issue (requires approval, enforced as block)',
+    });
+    expect(enabled).toHaveAccessibleDescription('Create a GitHub issue');
+    const disabled = screen.getByRole('option', { name: 'list_repos, disabled' });
+    expect(disabled).toHaveAccessibleDescription('List repositories');
+    for (const o of options()) expect(o.getAttribute('aria-label')).not.toMatch(/details/);
+  });
+
+  it('attaches no description when a tool has none', () => {
+    const catalog = [tool(`${GITHUB}${TOOL_NAME_DELIMITER}bare`)];
+    useStackStore.setState({
+      mcpServers: [server(GITHUB, ['bare'], [])],
+      tools: catalog,
+      toolCatalog: catalog,
+    });
+    renderAt('/tools?server=github');
+    expect(screen.getByRole('option', { name: 'bare, enabled' })).not.toHaveAttribute('aria-describedby');
+  });
+});
+
+describe('ToolsWorkspace — sort while filtering', () => {
+  it('disables Sort with a described reason while the filter has text', () => {
+    renderWithProbe('/tools?server=github&sort=name');
+    const sort = () => screen.getByRole('combobox', { name: /sort tools/i });
+    expect(sort()).toBeEnabled();
+    expect(screen.queryByText('Relevance order')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText(/^filter github tools/i), { target: { value: 'repo' } });
+    expect(sort()).toBeDisabled();
+    expect(sort()).toHaveValue('name');
+    expect(sort()).toHaveAttribute('title', 'Filtered results are in relevance order. Clear the filter to sort.');
+    expect(screen.getByText('Relevance order')).toBeInTheDocument();
+    expect(sort()).toHaveAccessibleDescription('Relevance order');
+    expect(screen.getByTestId('loc').textContent).toContain('sort=name');
+
+    fireEvent.change(screen.getByPlaceholderText(/^filter github tools/i), { target: { value: '' } });
+    expect(sort()).toBeEnabled();
+    expect(sort()).not.toHaveAttribute('aria-describedby');
+    expect(sort()).not.toHaveAttribute('title');
+    expect(screen.queryByText('Relevance order')).not.toBeInTheDocument();
+    expect(screen.getByTestId('loc').textContent).toContain('sort=name');
+  });
+});
+
+describe('ToolsWorkspace — Disable unused with other draft edits', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('saves only the unused removal and leaves other toggles unsaved', async () => {
+    const recent = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const catalog = [
+      tool(`gitlab${TOOL_NAME_DELIMITER}a`),
+      tool(`gitlab${TOOL_NAME_DELIMITER}b`),
+      tool(`gitlab${TOOL_NAME_DELIMITER}c`),
+      tool(`gitlab${TOOL_NAME_DELIMITER}d`),
+    ];
+    useStackStore.setState({
+      isLoading: false,
+      mcpServers: [server('gitlab', ['a', 'b', 'c', 'd'], ['a', 'b'])],
+      tools: catalog,
+      toolCatalog: catalog,
+    });
+    vi.spyOn(api, 'fetchToolUsage').mockResolvedValue({
+      observedSince: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      servers: { gitlab: { a: { calls: 9, lastCalledAt: recent }, c: { calls: 1, lastCalledAt: recent } } },
+    });
+    const saveSpy = vi
+      .spyOn(api, 'setServerTools')
+      .mockResolvedValue({ server: 'gitlab', tools: ['a'], reloaded: true });
+    vi.spyOn(api, 'fetchStatus').mockResolvedValue({ gateway: { name: 'x', version: '1' }, 'mcp-servers': [] });
+    vi.spyOn(api, 'fetchTools').mockResolvedValue({ tools: [] });
+    vi.spyOn(api, 'fetchToolCatalog').mockResolvedValue({ tools: [] });
+
+    renderAt('/tools?server=gitlab');
+    fireEvent.click(screen.getByRole('button', { name: /toggle audit mode/i }));
+    // c is a draft-only enable (used, so not an unused target).
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Enable c' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: /disable 1 unused tools/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /disable & reload/i }));
+
+    await waitFor(() => expect(saveSpy).toHaveBeenCalledWith('gitlab', ['a']));
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+    // The poll adopts the saved list; the draft-only enable stays unsaved.
+    act(() => {
+      useStackStore.setState({ mcpServers: [server('gitlab', ['a', 'b', 'c', 'd'], ['a'])] });
+    });
+    expect(screen.getByRole('checkbox', { name: 'Disable c' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('checkbox', { name: 'Enable b' })).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByRole('button', { name: 'Save 1 change & Reload' })).toBeEnabled();
+  });
+});
+
+describe('ToolsWorkspace — long lists', () => {
+  function seed(count: number) {
+    const names = Array.from({ length: count }, (_, i) => `t${String(i).padStart(3, '0')}`);
+    const catalog = names.map((n) => tool(`${GITHUB}${TOOL_NAME_DELIMITER}${n}`, `Tool ${n}`));
+    useStackStore.setState({
+      isLoading: false,
+      mcpServers: [server(GITHUB, names, [])],
+      tools: catalog,
+      toolCatalog: catalog,
+    });
+    return names;
+  }
+
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(480);
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(640);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const options = () =>
+    within(screen.getByPlaceholderText(/^filter github tools/i).closest('[cmdk-root]') as HTMLElement).getAllByRole('option');
+
+  it('renders every row at the 200-row threshold', () => {
+    seed(200);
+    renderAt('/tools?server=github');
+    expect(options()).toHaveLength(200);
+  });
+
+  it('renders a window above the threshold that keeps the first and last rows', () => {
+    const names = seed(300);
+    renderAt('/tools?server=github');
+    const rendered = options();
+    expect(rendered.length).toBeLessThan(100);
+    expect(screen.getByRole('option', { name: new RegExp(`^${names[0]}, `) })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: new RegExp(`^${names[299]}, `) })).toBeInTheDocument();
+    expect(screen.queryByText(/no tools match/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no tools discovered/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps the cursor row and its neighbors mounted', () => {
+    const names = seed(300);
+    renderAt('/tools?server=github');
+    const last = screen.getByRole('option', { name: new RegExp(`^${names[299]}, `) });
+    // The cursor starts on the first row; End moves it to the last.
+    last.focus();
+    fireEvent.keyDown(last, { key: 'End' });
+    expect(last).toHaveAttribute('aria-selected', 'true');
+    expect(document.activeElement).toBe(last);
+    fireEvent.keyDown(last, { key: 'ArrowUp' });
+    const prev = screen.getByRole('option', { name: new RegExp(`^${names[298]}, `) });
+    expect(prev).toHaveAttribute('aria-selected', 'true');
+    expect(document.activeElement).toBe(prev);
+    expect(screen.getByRole('option', { name: new RegExp(`^${names[297]}, `) })).toBeInTheDocument();
+    fireEvent.keyDown(prev, { key: 'Home' });
+    expect(document.activeElement).toBe(screen.getByRole('option', { name: new RegExp(`^${names[0]}, `) }));
+  });
+
+  it('reveals a deep-linked tool far down the list without throwing', () => {
+    seed(300);
+    const scrollToSpy = vi.fn();
+    // getMaxScrollOffset reads scrollHeight - clientHeight, both 0 in jsdom.
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(300 * 48);
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(480);
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: scrollToSpy });
+    try {
+      renderAt('/tools?server=github&tool=t250');
+      expect(screen.getByRole('heading', { name: 't250' })).toBeInTheDocument();
+      expect(scrollToSpy).toHaveBeenCalled();
+      const top = scrollToSpy.mock.calls.at(-1)?.[0]?.top;
+      expect(top).toBeGreaterThan(0);
+    } finally {
+      delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo;
+    }
+  });
+});
+
+describe('ToolsWorkspace — long lists keep the focused row', () => {
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(480);
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(640);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('keeps a focused row mounted after a hover moves the cursor and the list scrolls', () => {
+    const names = Array.from({ length: 300 }, (_, i) => `t${String(i).padStart(3, '0')}`);
+    const catalog = names.map((n) => tool(`${GITHUB}${TOOL_NAME_DELIMITER}${n}`, `Tool ${n}`));
+    useStackStore.setState({
+      isLoading: false,
+      mcpServers: [server(GITHUB, names, [])],
+      tools: catalog,
+      toolCatalog: catalog,
+    });
+    renderAt('/tools?server=github');
+    const option = (n: string) => screen.queryByRole('option', { name: new RegExp(`^${n}, `) });
+    const focused = option('t005')!;
+    focused.focus();
+    fireEvent.pointerMove(option('t000')!);
+    expect(option('t000')).toHaveAttribute('aria-selected', 'true');
+    const list = screen.getByPlaceholderText(/^filter github tools/i)
+      .closest('[cmdk-root]')!.querySelector('[cmdk-list]') as HTMLElement;
+    act(() => {
+      list.scrollTop = 6000;
+      fireEvent.scroll(list);
+    });
+    expect(option('t005')).toBe(focused);
+    expect(document.activeElement).toBe(focused);
   });
 });

@@ -1,8 +1,9 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useId, type KeyboardEvent } from 'react';
 import { Command } from 'cmdk';
 import { Check, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { CHIP_TONE_CLASS, annotationChips, type AnnotationChip } from '../../lib/groups';
+import { toolRowLabel } from '../../lib/toolRowLabel';
 import type { AuditState } from '../../lib/toolAudit';
 import type { ToolAnnotations } from '../../types';
 import type { ToolRow } from '../../hooks/useToolsEditor';
@@ -47,12 +48,16 @@ export interface ToolListRowProps {
   lastUsed: string;
   isEnabled: boolean;
   isActive: boolean;
+  /** True for cmdk's cursor row, which holds the list's single tab stop. */
+  isCursor: boolean;
   auditState: AuditState | null;
   /** Rendered policy chip label. Empty when the verdict paints nothing. */
   policyLabel: string;
   policyTitle: string;
   /** Tone declared by policyChip. Empty when the chip is absent. */
   policyTone: AnnotationChip['tone'] | '';
+  /** policyDetailText for the verdict, read into the accessible name. Empty when the chip is absent. */
+  policyText: string;
   onSelect: (name: string) => void;
   onToggle: (name: string) => void;
   registerRef: (name: string, el: HTMLDivElement | null) => void;
@@ -70,10 +75,12 @@ export function toolListRowPropsEqual(prev: ToolListRowProps, next: ToolListRowP
     prev.lastUsed === next.lastUsed &&
     prev.isEnabled === next.isEnabled &&
     prev.isActive === next.isActive &&
+    prev.isCursor === next.isCursor &&
     prev.auditState === next.auditState &&
     prev.policyLabel === next.policyLabel &&
     prev.policyTitle === next.policyTitle &&
     prev.policyTone === next.policyTone &&
+    prev.policyText === next.policyText &&
     prev.onSelect === next.onSelect &&
     prev.onToggle === next.onToggle &&
     prev.registerRef === next.registerRef
@@ -86,10 +93,12 @@ export const ToolListRow = memo(function ToolListRow({
   lastUsed,
   isEnabled,
   isActive,
+  isCursor,
   auditState,
   policyLabel,
   policyTitle,
   policyTone,
+  policyText,
   onSelect,
   onToggle,
   registerRef,
@@ -99,6 +108,24 @@ export const ToolListRow = memo(function ToolListRow({
   const setRowRef = useCallback((el: HTMLDivElement | null) => {
     registerRef(opt.name, el);
   }, [registerRef, opt.name]);
+  const descriptionId = useId();
+  const label = toolRowLabel({
+    name: opt.name,
+    isEnabled,
+    groups: groupNames,
+    annotations: opt.annotations,
+    policyText,
+    auditState,
+    lastUsed,
+  });
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    // Only Space on the option itself: a click-focused checkbox already
+    // toggles on Space through its own button activation.
+    if (e.key === ' ' && e.target === e.currentTarget) {
+      e.preventDefault();
+      onToggle(opt.name);
+    }
+  };
 
   return (
     <div
@@ -115,7 +142,10 @@ export const ToolListRow = memo(function ToolListRow({
         value={opt.name}
         onSelect={() => onSelect(opt.name)}
         aria-current={isActive}
-        aria-label={`${opt.name} details`}
+        aria-label={label}
+        aria-describedby={opt.description ? descriptionId : undefined}
+        tabIndex={isCursor ? 0 : -1}
+        onKeyDown={onKeyDown}
         className={cn(
           'flex items-start gap-2.5 px-3 py-2 cursor-pointer select-none transition-colors',
           'hover:bg-surface-highlight/40',
@@ -126,6 +156,7 @@ export const ToolListRow = memo(function ToolListRow({
         <button
           type="button"
           role="checkbox"
+          tabIndex={-1}
           aria-checked={isEnabled}
           aria-label={isEnabled ? `Disable ${opt.name}` : `Enable ${opt.name}`}
           onClick={(e) => {
@@ -189,7 +220,9 @@ export const ToolListRow = memo(function ToolListRow({
             )}
           </div>
           {opt.description && (
-            <div className="text-3xs text-text-muted truncate">{opt.description}</div>
+            <div id={descriptionId} className="text-3xs text-text-muted truncate">
+              {opt.description}
+            </div>
           )}
           {auditState && (
             <div
