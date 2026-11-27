@@ -81,6 +81,16 @@ describe('runsFilters', () => {
     expect(parseRunsSearch(new URLSearchParams('range=nope')).filters).toEqual(emptyFilters());
     expect(parseRunsSearch(new URLSearchParams('since=garbage')).filters).toEqual({ ...emptyFilters(), range: 'custom' });
     expect(resolveRunsQuery(parseRunsSearch(new URLSearchParams('range=nope&disposition=nope&since=garbage')).filters!, NOW)).toEqual({});
+    // Date parses these; the server's RFC3339 parser rejects them.
+    for (const bad of ['2026-01-01t00:00:00z', '2026-01-01T24:00:00Z', '2026-02-31T00:00:00Z', '2026-01-01T00:00:60Z']) {
+      expect(parseRunsSearch(new URLSearchParams({ range: 'custom', since: bad, until: bad })).filters).toEqual({
+        ...emptyFilters(),
+        range: 'custom',
+      });
+    }
+    expect(parseRunsSearch(new URLSearchParams('since=2024-02-29T23:59:59.5%2B05:30')).filters!.since).toBe(
+      '2024-02-29T23:59:59.5+05:30',
+    );
   });
 
   it('treats since without range as a custom range', () => {

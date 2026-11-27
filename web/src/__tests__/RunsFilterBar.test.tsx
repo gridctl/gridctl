@@ -319,6 +319,76 @@ describe('RunsFilterBar', () => {
     await new Promise((r) => setTimeout(r, 350));
     expect(fetchRuns).toHaveBeenCalledTimes(2);
   });
+
+  it('clears with one reload when a More filters draft is pending', async () => {
+    renderAt('/traces?view=runs&tool=t');
+    await settled();
+    fireEvent.click(screen.getByRole('button', { name: 'More filters' }));
+    fireEvent.change(screen.getByLabelText('Trace ID'), { target: { value: 'draft' } });
+    const clear = screen.getByRole('button', { name: 'Clear filters' });
+    fireEvent.mouseDown(clear);
+    expect(screen.queryByRole('dialog', { name: 'More filters' })).not.toBeInTheDocument();
+    fireEvent.click(clear);
+    await settled(2);
+    await new Promise((r) => setTimeout(r, 350));
+    expect(fetchRuns).toHaveBeenCalledTimes(2);
+    expect(lastCall()).toEqual({});
+    expect(useRunsStore.getState().filters).toEqual(emptyFilters());
+  });
+
+  it('commits a pending More filters draft when the popover closes', async () => {
+    renderAt();
+    await settled();
+    fireEvent.click(screen.getByRole('button', { name: 'More filters' }));
+    fireEvent.change(screen.getByLabelText('Trace ID'), { target: { value: 'abc' } });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'More filters' })).not.toBeInTheDocument();
+    await settled(2);
+    await new Promise((r) => setTimeout(r, 350));
+    expect(fetchRuns).toHaveBeenCalledTimes(2);
+    expect(lastCall()).toMatchObject({ trace: 'abc' });
+  });
+
+  it('closes More filters on an outside click', async () => {
+    renderAt();
+    await settled();
+    fireEvent.click(screen.getByRole('button', { name: 'More filters' }));
+    expect(screen.getByRole('dialog', { name: 'More filters' })).toBeInTheDocument();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('dialog', { name: 'More filters' })).not.toBeInTheDocument();
+  });
+
+  it('anchors More filters to the right when the left anchor would overflow', async () => {
+    renderAt();
+    await settled();
+    const more = screen.getByRole('button', { name: 'More filters' });
+    const rect = (left: number) => ({ left, right: left + 90, top: 0, bottom: 24, width: 90, height: 24, x: left, y: 0 });
+    const spy = vi.spyOn(more, 'getBoundingClientRect');
+    try {
+      spy.mockReturnValue({ ...rect(window.innerWidth - 120), toJSON: () => ({}) } as DOMRect);
+      fireEvent.click(more);
+      expect(screen.getByRole('dialog', { name: 'More filters' })).toHaveClass('right-0');
+      fireEvent.click(more);
+      spy.mockReturnValue({ ...rect(10), toJSON: () => ({}) } as DOMRect);
+      fireEvent.click(more);
+      expect(screen.getByRole('dialog', { name: 'More filters' })).toHaveClass('left-0');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('clears a pending debounce timer on unmount', async () => {
+    const { unmount } = renderAt();
+    await settled();
+    vi.useFakeTimers();
+    fireEvent.change(screen.getByLabelText('Filter by tool'), { target: { value: 'pending' } });
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(fetchRuns).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('RunsView URL state', () => {

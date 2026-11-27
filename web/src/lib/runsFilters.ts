@@ -126,10 +126,20 @@ function isDisposition(value: string): boolean {
   return (RUN_DISPOSITIONS as readonly string[]).includes(value);
 }
 
-const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/i;
+const RFC3339 = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/;
 
+// Date accepts values the server's time.RFC3339 parser rejects (lowercase t
+// and z, hour 24, February 31), so each field is range-checked first.
 function validInstant(value: string): boolean {
-  return RFC3339.test(value) && !Number.isNaN(new Date(value).getTime());
+  const m = RFC3339.exec(value);
+  if (!m) return false;
+  const [y, mo, d, h, mi, s] = m.slice(1, 7).map(Number);
+  if (h > 23 || mi > 59 || s > 59) return false;
+  if (m[7] != null && (Number(m[7]) > 23 || Number(m[8]) > 59)) return false;
+  const day = new Date(0);
+  day.setUTCFullYear(y, mo - 1, d);
+  if (day.getUTCFullYear() !== y || day.getUTCMonth() !== mo - 1 || day.getUTCDate() !== d) return false;
+  return !Number.isNaN(new Date(value).getTime());
 }
 
 /** Converts a datetime-local value (local time) to RFC3339 in UTC; '' when empty or invalid. */

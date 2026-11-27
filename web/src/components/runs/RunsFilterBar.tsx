@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Popover } from '../ui/Popover';
@@ -14,6 +14,8 @@ import {
   type RunTextFilterKey,
   type RunsTimeRange,
 } from '../../lib/runsFilters';
+
+const POPOVER_WIDTH = 256;
 
 const CONTROL =
   'h-6 px-1.5 text-3xs bg-background/60 border border-border/40 rounded text-text-secondary';
@@ -31,7 +33,11 @@ export function RunsFilterBar({ servers }: RunsFilterBarProps) {
   const clearFilters = useRunsStore((s) => s.clearFilters);
   const [moreOpen, setMoreOpen] = useState(false);
   const [resetToken, setResetToken] = useState(0);
+  const [alignRight, setAlignRight] = useState(false);
   const moreRef = useRef<HTMLButtonElement>(null);
+  // Set while a Clear filters press is in progress: the popover closes on
+  // that mousedown, and its inputs must drop their drafts, not commit them.
+  const discardDrafts = useRef(false);
   const fromId = useId();
   const toId = useId();
 
@@ -113,7 +119,11 @@ export function RunsFilterBar({ servers }: RunsFilterBarProps) {
             type="button"
             aria-expanded={moreOpen}
             aria-haspopup="dialog"
-            onClick={() => setMoreOpen((v) => !v)}
+            onClick={() => {
+              const rect = moreRef.current?.getBoundingClientRect();
+              setAlignRight(rect != null && rect.left + POPOVER_WIDTH > window.innerWidth - 8);
+              setMoreOpen((v) => !v);
+            }}
             className={cn(
               'h-6 px-2 text-3xs font-medium rounded border transition-colors flex items-center gap-1',
               hidden.length > 0
@@ -129,7 +139,7 @@ export function RunsFilterBar({ servers }: RunsFilterBarProps) {
             onClose={() => setMoreOpen(false)}
             triggerRef={moreRef}
             aria-label="More filters"
-            className="absolute left-0 top-full mt-1 w-64 p-2 space-y-1.5"
+            className={cn('absolute top-full mt-1 w-64 p-2 space-y-1.5', alignRight ? 'right-0' : 'left-0')}
           >
             {RUN_HIDDEN_FILTERS.map(({ key, label, placeholder }) => (
               <LabeledTextInput
@@ -139,6 +149,7 @@ export function RunsFilterBar({ servers }: RunsFilterBarProps) {
                 value={filters[key]}
                 onCommit={setText(key)}
                 resetToken={resetToken}
+                discardRef={discardDrafts}
               />
             ))}
           </Popover>
@@ -146,8 +157,19 @@ export function RunsFilterBar({ servers }: RunsFilterBarProps) {
         {active && (
           <button
             type="button"
-            onMouseDown={keepFocus}
+            onMouseDown={(e) => {
+              keepFocus(e);
+              discardDrafts.current = true;
+              document.addEventListener(
+                'mouseup',
+                () => {
+                  discardDrafts.current = false;
+                },
+                { once: true, capture: true },
+              );
+            }}
             onClick={() => {
+              discardDrafts.current = false;
               clearFilters();
               setResetToken((t) => t + 1);
             }}
@@ -232,6 +254,8 @@ interface DebouncedTextInputProps {
   onCommit: (value: string) => void;
   /** Bumped by Clear filters to drop drafts and pending timers. */
   resetToken: number;
+  /** When true at unmount, the pending draft is dropped instead of committed. */
+  discardRef?: RefObject<boolean>;
   delayMs?: number;
   id?: string;
   ariaLabel?: string;
@@ -243,6 +267,7 @@ function DebouncedTextInput({
   value,
   onCommit,
   resetToken,
+  discardRef,
   delayMs = 300,
   id,
   ariaLabel,
@@ -282,13 +307,16 @@ function DebouncedTextInput({
   }, [resetToken]);
 
   // An input that unmounts with a pending draft (the More filters popover
-  // closing) commits it rather than dropping what was typed.
+  // closing) commits it rather than dropping what was typed, unless the
+  // popover closed because Clear filters was pressed.
+  const discard = useRef(discardRef);
   useEffect(
     () => () => {
       if (timer.current != null) clearTimeout(timer.current);
       timer.current = null;
       const next = pending.current;
       pending.current = null;
+      if (discard.current?.current) return;
       if (next != null && next.trim() !== latest.current.value) latest.current.onCommit(next.trim());
     },
     [],
