@@ -40,4 +40,54 @@ describe('useFuzzySearch', () => {
     );
     expect(result.current).toEqual([]);
   });
+
+  it('finds a match late in the description', () => {
+    const late: Item[] = [
+      { name: 'notify', description: `${'x'.repeat(120)} webhook` },
+      { name: 'other', description: 'Unrelated tool' },
+    ];
+    const { result } = renderHook(() => useFuzzySearch(late, 'webhook'));
+    expect(result.current.map((i) => i.name)).toEqual(['notify']);
+  });
+
+  it('finds an exact tool name behind a long server prefix', () => {
+    const prefix = 'a'.repeat(45);
+    const prefixed: Item[] = [{ name: `${prefix}__create_issue` }, { name: `${prefix}__list_repos` }];
+    const { result } = renderHook(() => useFuzzySearch(prefixed, 'create_issue'));
+    expect(result.current.map((i) => i.name)).toEqual([`${prefix}__create_issue`]);
+  });
+
+  it('ranks a name hit above a description-only hit', () => {
+    const ranked: Item[] = [
+      { name: 'list_items', description: 'Lists every item on the board' },
+      { name: 'get_board', description: 'Fetch one record' },
+    ];
+    const { result } = renderHook(() => useFuzzySearch(ranked, 'board'));
+    expect(result.current.map((i) => i.name)).toEqual(['get_board', 'list_items']);
+  });
+
+  it('does not match "click" against an item that only contains "slack"', () => {
+    const slack: Item[] = [{ name: 'post_message', description: 'Post to slack' }];
+    const { result } = renderHook(() => useFuzzySearch(slack, 'click'));
+    expect(result.current).toEqual([]);
+  });
+
+  it('searches custom weighted keys', () => {
+    interface Row extends Item {
+      server: string;
+      tool: string;
+    }
+    const prefix = 'b'.repeat(45);
+    const rows: Row[] = [
+      { name: `${prefix}__create_issue`, server: prefix, tool: 'create_issue' },
+      { name: `${prefix}__list_repos`, server: prefix, tool: 'list_repos' },
+    ];
+    const { result } = renderHook(() => useFuzzySearch(rows, 'create_issue', { keys: ROW_KEYS }));
+    expect(result.current.map((r) => r.tool)).toEqual(['create_issue']);
+  });
 });
+
+const ROW_KEYS = [
+  { name: 'tool', weight: 3 },
+  { name: 'server', weight: 1 },
+];

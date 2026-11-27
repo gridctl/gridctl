@@ -32,3 +32,17 @@ export function highlightMatches(text: string, query: string): ReactNode {
   if (cursor < text.length) parts.push(text.slice(cursor));
   return parts;
 }
+
+// Trims the front of `text` so a late first match of `query` stays visible in
+// a one-line truncated row: when the match starts after `startAfter`, the
+// result begins `lead` characters before it with a leading ellipsis. Same
+// exact, case-insensitive rule and lowercase-length guard as highlightMatches.
+export function excerptAround(text: string, query: string, lead = 40, startAfter = 60): string {
+  const q = query.trim().toLowerCase();
+  if (!q) return text;
+  const lower = text.toLowerCase();
+  if (lower.length !== text.length) return text;
+  const idx = lower.indexOf(q);
+  if (idx === -1 || idx <= startAfter) return text;
+  return '…' + text.slice(idx - lead);
+}

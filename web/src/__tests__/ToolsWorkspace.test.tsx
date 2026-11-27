@@ -190,21 +190,25 @@ describe('ToolsWorkspace', () => {
     const input = screen.getByPlaceholderText(/search tools across all/i);
     fireEvent.change(input, { target: { value: 'page' } });
     // The atlassian get_page tool surfaces with a parent-server label.
-    expect(screen.getByText('get_page')).toBeInTheDocument();
-    const result = screen.getByText('get_page').closest('button')!;
+    const result = screen.getByRole('option', { name: /get_page/ });
     expect(within(result).getByText(ATLAS)).toBeInTheDocument();
   });
 
-  it('clicking a global search result selects that server and clears the search', () => {
-    renderAt('/tools?server=atlassian');
+  it('picking a global result opens the tool and offers Back to results', () => {
+    renderWithProbe('/tools?server=atlassian');
+    const loc = () => screen.getByTestId('loc').textContent ?? '';
     const input = screen.getByPlaceholderText(/search tools across all/i);
     fireEvent.change(input, { target: { value: 'issue' } });
     // The github create_issue tool matches across servers.
-    const result = screen.getByText('create_issue').closest('button')!;
-    fireEvent.click(result);
-    // Search clears and the github detail pane is shown with its tools.
-    expect(screen.getByRole('option', { name: /create_issue/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('option', { name: /create_issue/ }));
+    // The query moves to ?back= and the github detail pane is shown.
+    const params = new URLSearchParams(loc().split('?')[1]);
+    expect(params.get('server')).toBe(GITHUB);
+    expect(params.get('tool')).toBe('create_issue');
+    expect(params.get('back')).toBe('issue');
+    expect(params.has('q')).toBe(false);
     expect(screen.getByRole('option', { name: /list_repos/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /back to results for "issue"/i })).toBeInTheDocument();
   });
 
   it('clicking the checkbox toggles exposure without selecting the row', () => {
@@ -1105,5 +1109,207 @@ describe('ToolsWorkspace — Try it gating', () => {
     expect(
       screen.getByText('Unsaved allow-list changes are not applied. Calls use the saved allow-list.'),
     ).toBeInTheDocument();
+  });
+});
+
+describe('ToolsWorkspace — global search navigation', () => {
+  const LATE = `${'Long preamble about the page tool and its behavior. '.repeat(3)}Emits a zephyrine event.`;
+
+  beforeEach(() => {
+    const catalog = [
+      ...useStackStore.getState().toolCatalog!,
+      tool(`${ATLAS}${TOOL_NAME_DELIMITER}watch_page`, LATE),
+    ];
+    useStackStore.setState({
+      mcpServers: [
+        server(GITHUB, ['create_issue', 'list_repos'], ['create_issue']),
+        server(ATLAS, ['get_page', 'watch_page'], []),
+      ],
+      tools: catalog,
+      toolCatalog: catalog,
+    });
+  });
+
+  const params = () =>
+    new URLSearchParams((screen.getByTestId('loc').textContent ?? '').split('?')[1] ?? '');
+  const searchInput = () => screen.getByPlaceholderText(/search (all tools|tools across all)/i);
+  const resultOptions = () =>
+    within(screen.getByRole('listbox', { name: /search results/i })).getAllByRole('option');
+
+  it('finds a term late in a description and highlights it in an excerpt', () => {
+    expect(LATE.indexOf('zephyrine')).toBeGreaterThanOrEqual(120);
+    renderAt('/tools');
+    fireEvent.change(searchInput(), { target: { value: 'zephyrine' } });
+    const row = screen.getByRole('option', { name: /watch_page/ });
+    const mark = row.querySelector('mark');
+    expect(mark).toHaveTextContent('zephyrine');
+    expect(row.textContent).toContain('…');
+  });
+
+  it('highlights exact matches in the server and tool names', () => {
+    renderAt('/tools');
+    fireEvent.change(searchInput(), { target: { value: 'git' } });
+    const row = screen.getByRole('option', { name: /create_issue/ });
+    expect([...row.querySelectorAll('mark')].map((m) => m.textContent)).toContain('git');
+  });
+
+  it('returns to the same results, focused, with the picked row active', () => {
+    renderWithProbe('/tools?server=github');
+    fireEvent.change(searchInput(), { target: { value: 'page' } });
+    const before = resultOptions().map((o) => o.textContent);
+    expect(before.length).toBeGreaterThan(1);
+    fireEvent.click(resultOptions()[1]);
+    expect(params().get('back')).toBe('page');
+    fireEvent.click(screen.getByRole('button', { name: /back to results for "page"/i }));
+    expect(params().get('q')).toBe('page');
+    expect(params().has('back')).toBe(false);
+    expect(resultOptions().map((o) => o.textContent)).toEqual(before);
+    expect(searchInput()).toHaveValue('page');
+    expect(searchInput()).toHaveFocus();
+    const options = resultOptions();
+    expect(options[1]).toHaveAttribute('aria-selected', 'true');
+    expect(searchInput()).toHaveAttribute('aria-activedescendant', options[1].id);
+    expect(screen.queryByRole('button', { name: /back to results/i })).not.toBeInTheDocument();
+  });
+
+  it('moves through results with ArrowDown, ArrowUp, and Enter', () => {
+    renderWithProbe('/tools?server=github');
+    const input = searchInput();
+    fireEvent.change(input, { target: { value: 'page' } });
+    expect(input).toHaveAttribute('role', 'combobox');
+    expect(input).toHaveAttribute('aria-expanded', 'true');
+    const listbox = screen.getByRole('listbox', { name: /search results/i });
+    expect(input).toHaveAttribute('aria-controls', listbox.id);
+    const options = within(listbox).getAllByRole('option');
+    expect(input).toHaveAttribute('aria-activedescendant', options[0].id);
+
+    fireEvent.keyDown(input, { key: 'ArrowUp' });
+    expect(input).toHaveAttribute('aria-activedescendant', options[options.length - 1].id);
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(input).toHaveAttribute('aria-activedescendant', options[0].id);
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    expect(input).toHaveAttribute('aria-activedescendant', options[1].id);
+    expect(options[1]).toHaveAttribute('aria-selected', 'true');
+    expect(document.getElementById(options[1].id)).toBe(options[1]);
+
+    const picked = options[1].textContent ?? '';
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(params().get('server')).toBe(ATLAS);
+    expect(picked).toContain(params().get('tool'));
+    expect(params().get('back')).toBe('page');
+    expect(params().has('q')).toBe(false);
+  });
+
+  it('ignores keys while composing and with no results', () => {
+    renderWithProbe('/tools?server=github');
+    const input = searchInput();
+    fireEvent.change(input, { target: { value: 'page' } });
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    expect(params().get('q')).toBe('page');
+    fireEvent.change(input, { target: { value: 'nothingmatchesthis' } });
+    expect(screen.queryAllByRole('option')).toHaveLength(0);
+    expect(input).not.toHaveAttribute('aria-activedescendant');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(params().get('q')).toBe('nothingmatchesthis');
+  });
+
+  it('a rail click removes back', () => {
+    renderWithProbe('/tools?server=github&tool=create_issue&back=issue');
+    expect(screen.getByRole('button', { name: /back to results for "issue"/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(ATLAS) }));
+    expect(params().has('back')).toBe(false);
+    expect(screen.queryByRole('button', { name: /back to results/i })).not.toBeInTheDocument();
+  });
+
+  it('typing a new query removes back', () => {
+    renderWithProbe('/tools?server=github&tool=create_issue&back=issue');
+    fireEvent.change(searchInput(), { target: { value: 'repo' } });
+    expect(params().has('back')).toBe(false);
+    expect(params().get('q')).toBe('repo');
+  });
+
+  it('dismiss removes back only', () => {
+    renderWithProbe('/tools?server=github&tool=create_issue&back=issue');
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(params().has('back')).toBe(false);
+    expect(params().get('server')).toBe(GITHUB);
+    expect(params().get('tool')).toBe('create_issue');
+  });
+
+  it('renders no chip while a query is active', () => {
+    renderAt('/tools?server=github&q=repo&back=issue');
+    expect(screen.queryByRole('button', { name: /back to results/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /list_repos/ })).toBeInTheDocument();
+  });
+
+  it('keeps back through the discard dialog when picking on another server', () => {
+    renderWithProbe('/tools?server=github');
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+    fireEvent.change(searchInput(), { target: { value: 'get_page' } });
+    fireEvent.click(screen.getByRole('option', { name: /get_page/ }));
+    const dialog = screen.getByRole('alertdialog');
+    expect(params().get('q')).toBe('get_page');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Discard & switch' }));
+    expect(params().get('server')).toBe(ATLAS);
+    expect(params().get('tool')).toBe('get_page');
+    expect(params().get('back')).toBe('get_page');
+    expect(params().has('q')).toBe(false);
+  });
+
+  it('keeps results and q when the discard dialog is cancelled', () => {
+    renderWithProbe('/tools?server=github');
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+    fireEvent.change(searchInput(), { target: { value: 'get_page' } });
+    fireEvent.click(screen.getByRole('option', { name: /get_page/ }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' }));
+    expect(params().get('q')).toBe('get_page');
+    expect(params().has('back')).toBe(false);
+    expect(screen.getByRole('option', { name: /get_page/ })).toBeInTheDocument();
+  });
+
+  it('lists tool-name hits before description-only hits', () => {
+    const catalog = [
+      tool(`${ATLAS}${TOOL_NAME_DELIMITER}list_things`, 'List boards for a project with their columns and owners'),
+      tool(`${GITHUB}${TOOL_NAME_DELIMITER}get_board_items_by_name`, 'Fetch items'),
+      tool(`${GITHUB}${TOOL_NAME_DELIMITER}move_board`, 'Move an item'),
+    ];
+    useStackStore.setState({
+      mcpServers: [
+        server(GITHUB, ['get_board_items_by_name', 'move_board'], []),
+        server(ATLAS, ['list_things'], []),
+      ],
+      tools: catalog,
+      toolCatalog: catalog,
+    });
+    renderAt('/tools');
+    fireEvent.change(searchInput(), { target: { value: 'board' } });
+    const order = resultOptions().map((o) =>
+      ['list_things', 'get_board_items_by_name', 'move_board'].find((t) => o.textContent?.includes(t)),
+    );
+    expect(order).toHaveLength(3);
+    expect(order[2]).toBe('list_things');
+  });
+
+  it('renders the empty message outside the listbox', () => {
+    renderAt('/tools');
+    fireEvent.change(searchInput(), { target: { value: 'nothingmatchesthis' } });
+    const listbox = screen.getByRole('listbox', { name: /search results/i });
+    expect(listbox).toBeEmptyDOMElement();
+    expect(screen.getByText(/no tools match "nothingmatchesthis" across any server/i)).toBeInTheDocument();
+  });
+
+  it('resolves aria-activedescendant for names containing whitespace', () => {
+    const catalog = [tool(`my server${TOOL_NAME_DELIMITER}do thing`, 'Has spaces')];
+    useStackStore.setState({
+      mcpServers: [server('my server', ['do thing'], [])],
+      tools: catalog,
+      toolCatalog: catalog,
+    });
+    renderAt('/tools');
+    const input = searchInput();
+    fireEvent.change(input, { target: { value: 'thing' } });
+    const id = input.getAttribute('aria-activedescendant')!;
+    expect(id).toBeTruthy();
+    expect(document.getElementById(id)).toBe(screen.getByRole('option', { name: /do thing/ }));
   });
 });
