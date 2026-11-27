@@ -257,6 +257,197 @@ describe('useToolsEditor', () => {
     expect(result.current.selected.has('insert')).toBe(true);
   });
 
+  describe('disableTools with other draft edits', () => {
+    function mockRefresh() {
+      vi.spyOn(apiModule, 'fetchStatus').mockResolvedValue({
+        gateway: { name: 'x', version: '1' },
+        'mcp-servers': [],
+      });
+      vi.spyOn(apiModule, 'fetchTools').mockResolvedValue({ tools: [] });
+      vi.spyOn(apiModule, 'fetchToolCatalog').mockResolvedValue({ tools: [] });
+    }
+
+    it('saves only the saved list minus the names and keeps unrelated draft edits', async () => {
+      const setSpy = vi
+        .spyOn(apiModule, 'setServerTools')
+        .mockResolvedValue({ server: SERVER, tools: ['query'], reloaded: true, reloadedAt: 'now' });
+      mockRefresh();
+      const { result, rerender } = renderHook(
+        ({ saved }: { saved: string[] }) => useToolsEditor(SERVER, saved),
+        { initialProps: { saved: ['query', 'insert'] } },
+      );
+      act(() => result.current.toggle('delete_row'));
+
+      await act(async () => {
+        await result.current.disableTools(['insert']);
+      });
+
+      expect(setSpy).toHaveBeenCalledTimes(1);
+      expect(setSpy).toHaveBeenCalledWith(SERVER, ['query']);
+      expect(result.current.selected.has('delete_row')).toBe(true);
+      expect(result.current.selected.has('query')).toBe(true);
+      expect(result.current.selected.has('insert')).toBe(false);
+      expect(result.current.dirty).toBe(true);
+
+      // The poll adopts the new baseline; only the unrelated edit is a diff.
+      rerender({ saved: ['query'] });
+      expect(result.current.dirty).toBe(true);
+      expect(result.current.diffCount).toBe(1);
+      expect([...result.current.selected].sort()).toEqual(['delete_row', 'query']);
+    });
+
+    it('keeps a draft uncheck of another saved tool out of the request', async () => {
+      const setSpy = vi
+        .spyOn(apiModule, 'setServerTools')
+        .mockResolvedValue({ server: SERVER, tools: ['query'], reloaded: true, reloadedAt: 'now' });
+      mockRefresh();
+      const { result } = renderHook(() => useToolsEditor(SERVER, ['query', 'insert']));
+      act(() => result.current.toggle('query'));
+
+      await act(async () => {
+        await result.current.disableTools(['insert']);
+      });
+
+      expect(setSpy).toHaveBeenCalledWith(SERVER, ['query']);
+      expect(result.current.selected.has('query')).toBe(false);
+      expect(result.current.selected.has('insert')).toBe(false);
+    });
+
+    it('sends nothing for names enabled only in the draft and drops them from it', async () => {
+      const setSpy = vi.spyOn(apiModule, 'setServerTools');
+      const { result } = renderHook(() => useToolsEditor(SERVER, ['query', 'insert']));
+      act(() => result.current.toggle('delete_row'));
+
+      await act(async () => {
+        await result.current.disableTools(['delete_row']);
+      });
+
+      expect(setSpy).not.toHaveBeenCalled();
+      expect(result.current.selected.has('delete_row')).toBe(false);
+      expect(result.current.dirty).toBe(false);
+    });
+
+    it('refuses when the saved list would empty even if the draft has other tools', async () => {
+      const setSpy = vi.spyOn(apiModule, 'setServerTools');
+      const { result } = renderHook(() => useToolsEditor(SERVER, ['insert']));
+      act(() => result.current.toggle('query'));
+
+      await act(async () => {
+        await result.current.disableTools(['insert']);
+      });
+
+      expect(setSpy).not.toHaveBeenCalled();
+      expect(showToast).toHaveBeenCalledWith('error', expect.stringContaining("Can't disable every exposed tool"));
+      expect([...result.current.selected].sort()).toEqual(['insert', 'query']);
+    });
+
+    it('restores the pre-call draft on a hidden_tool_reference refusal', async () => {
+      vi.spyOn(apiModule, 'setServerTools').mockRejectedValue(
+        new SetServerToolsError(
+          'hidden_tool_reference',
+          "groups[ops].tools[0]: tool 'db__insert' is hidden",
+          'Keep it exposed.',
+          400,
+          [{ field: 'groups[ops].tools[0]', message: "tool 'db__insert' is hidden" }],
+        ),
+      );
+      const { result } = renderHook(() => useToolsEditor(SERVER, ['query', 'insert']));
+      act(() => result.current.toggle('delete_row'));
+      const before = [...result.current.selected].sort();
+
+      await act(async () => {
+        await result.current.disableTools(['insert']);
+      });
+
+      expect([...result.current.selected].sort()).toEqual(before);
+      expect(result.current.hiddenReference).toContain('groups ops (db__insert)');
+    });
+
+    it('restores the pre-call draft on a stack_modified conflict', async () => {
+      vi.spyOn(apiModule, 'setServerTools').mockRejectedValue(
+        new SetServerToolsError('stack_modified', 'File changed', 'Reload the file.', 409),
+      );
+      const { result } = renderHook(() => useToolsEditor(SERVER, ['query', 'insert']));
+      act(() => result.current.toggle('delete_row'));
+      const before = [...result.current.selected].sort();
+
+      await act(async () => {
+        await result.current.disableTools(['insert']);
+      });
+
+      expect([...result.current.selected].sort()).toEqual(before);
+      expect(result.current.conflict).toBe('Reload the file.');
+    });
+
+    it('restores the pre-call draft on unknown_tool and other server errors', async () => {
+      for (const code of ['unknown_tool', 'invalid_request'] as const) {
+        vi.mocked(showToast).mockClear();
+        vi.spyOn(apiModule, 'setServerTools').mockRejectedValue(
+          new SetServerToolsError(code, 'bad', undefined, 400),
+        );
+        const { result } = renderHook(() => useToolsEditor(SERVER, ['query', 'insert']));
+        act(() => result.current.toggle('delete_row'));
+        const before = [...result.current.selected].sort();
+
+        await act(async () => {
+          await result.current.disableTools(['insert']);
+        });
+
+        expect([...result.current.selected].sort()).toEqual(before);
+        expect(showToast).toHaveBeenCalledWith('error', expect.any(String), expect.anything());
+      }
+    });
+
+    it('restores the pre-call draft on a network failure', async () => {
+      vi.spyOn(apiModule, 'setServerTools').mockRejectedValue(new TypeError('Failed to fetch'));
+      const { result } = renderHook(() => useToolsEditor(SERVER, ['query', 'insert']));
+      act(() => result.current.toggle('delete_row'));
+      const before = [...result.current.selected].sort();
+
+      await act(async () => {
+        await result.current.disableTools(['insert']);
+      });
+
+      expect([...result.current.selected].sort()).toEqual(before);
+      expect(showToast).toHaveBeenCalledWith('error', expect.any(String), expect.anything());
+    });
+
+    it('restores the pre-call draft before an AuthError propagates', async () => {
+      vi.spyOn(apiModule, 'setServerTools').mockRejectedValue(new apiModule.AuthError('denied'));
+      const { result } = renderHook(() => useToolsEditor(SERVER, ['query', 'insert']));
+      act(() => result.current.toggle('delete_row'));
+      const before = [...result.current.selected].sort();
+
+      let thrown: unknown;
+      await act(async () => {
+        try {
+          await result.current.disableTools(['insert']);
+        } catch (err) {
+          thrown = err;
+        }
+      });
+
+      expect(thrown).toBeInstanceOf(apiModule.AuthError);
+      expect([...result.current.selected].sort()).toEqual(before);
+    });
+
+    it('keeps the removals after reload_failed because the write persisted', async () => {
+      vi.spyOn(apiModule, 'setServerTools').mockRejectedValue(
+        new SetServerToolsError('reload_failed', 'reload broke', undefined, 500),
+      );
+      mockRefresh();
+      const { result } = renderHook(() => useToolsEditor(SERVER, ['query', 'insert']));
+      act(() => result.current.toggle('delete_row'));
+
+      await act(async () => {
+        await result.current.disableTools(['insert']);
+      });
+
+      expect(result.current.selected.has('insert')).toBe(false);
+      expect(result.current.selected.has('delete_row')).toBe(true);
+    });
+  });
+
   it('reverts the checkbox and lists the group when a hidden tool reference is refused', async () => {
     vi.spyOn(apiModule, 'setServerTools').mockRejectedValue(
       new SetServerToolsError(
