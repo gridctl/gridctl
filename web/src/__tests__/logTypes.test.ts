@@ -3,8 +3,13 @@ import {
   GATEWAY_LOG_SOURCE,
   filterParsedLogs,
   formatGoDuration,
+  formatLogCount,
+  formatLogCountTitle,
   formatTimestamp,
+  formatTimestampTitle,
+  hiddenQueryMatch,
   inlineLogFields,
+  logsSpanMultipleDays,
   logEntryKeys,
   reuseUnchangedLogs,
   logSourceOf,
@@ -194,6 +199,135 @@ describe('formatTimestamp', () => {
       expect(out).not.toContain('NaN');
     }
     expect(formatTimestamp('')).toBe('');
+  });
+
+  it('renders local midnight with a 00 hour', () => {
+    const ts = new Date(2026, 0, 15, 0, 5, 9, 123).toISOString();
+    expect(formatTimestamp(ts)).toBe('00:05:09.123');
+  });
+
+  it('prefixes MM-DD when showDate is set', () => {
+    const ts = new Date(2026, 0, 15, 0, 5, 9, 123).toISOString();
+    expect(formatTimestamp(ts, true)).toBe('01-15 00:05:09.123');
+  });
+
+  it('keeps invalid and empty handling with showDate', () => {
+    expect(formatTimestamp('', true)).toBe('');
+    expect(formatTimestamp('garbage', true)).not.toContain('NaN');
+  });
+});
+
+describe('formatTimestampTitle', () => {
+  it('shows local date, time, zone, and the original string', () => {
+    const ts = new Date(2026, 10, 22, 0, 5, 9, 123).toISOString();
+    const out = formatTimestampTitle(ts);
+    expect(out).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} \S.* · /);
+    expect(out.startsWith('2026-11-22 00:05:09.123 ')).toBe(true);
+    expect(out.endsWith(ts)).toBe(true);
+  });
+
+  it('returns unparseable input unchanged', () => {
+    expect(formatTimestampTitle('not-a-timestamp')).toBe('not-a-timestamp');
+    expect(formatTimestampTitle('')).toBe('');
+  });
+});
+
+describe('logsSpanMultipleDays', () => {
+  const at = (d: Date) => entry({ timestamp: d.toISOString() });
+
+  it('is false for empty input', () => {
+    expect(logsSpanMultipleDays([])).toBe(false);
+  });
+
+  it('is false for entries a minute apart on one day', () => {
+    expect(
+      logsSpanMultipleDays([at(new Date(2026, 0, 15, 12, 0)), at(new Date(2026, 0, 15, 12, 1))]),
+    ).toBe(false);
+  });
+
+  it('is true for entries 48 hours apart', () => {
+    expect(
+      logsSpanMultipleDays([at(new Date(2026, 0, 15, 12, 0)), at(new Date(2026, 0, 17, 12, 0))]),
+    ).toBe(true);
+  });
+
+  it('ignores unparseable timestamps', () => {
+    expect(
+      logsSpanMultipleDays([
+        at(new Date(2026, 0, 15, 12, 0)),
+        entry({ timestamp: 'garbage' }),
+        entry({ timestamp: '' }),
+      ]),
+    ).toBe(false);
+    expect(logsSpanMultipleDays([entry({ timestamp: 'garbage' })])).toBe(false);
+  });
+});
+
+describe('formatLogCount', () => {
+  it('reads Showing N of M buffered when nothing is filtered out', () => {
+    expect(formatLogCount({ filtered: 500, loaded: 500, bufferTotal: 1000, bufferCapacity: 1000 }))
+      .toBe('Showing 500 of 1,000 buffered');
+  });
+
+  it('reads N of M match when a filter hides entries', () => {
+    expect(formatLogCount({ filtered: 12, loaded: 500, bufferTotal: 1000, bufferCapacity: 1000 }))
+      .toBe('12 of 500 match · 1,000 buffered');
+  });
+
+  it('falls back to entry counts when the buffer is unknown', () => {
+    expect(formatLogCount({ filtered: 1500, loaded: 1500, bufferTotal: 0, bufferCapacity: 0 }))
+      .toBe('1,500 entries');
+    expect(formatLogCount({ filtered: 12, loaded: 500, bufferTotal: 0, bufferCapacity: 0 }))
+      .toBe('12 of 500 entries');
+    expect(formatLogCount({ filtered: 1, loaded: 1, bufferTotal: 0, bufferCapacity: 0 }))
+      .toBe('1 entry');
+  });
+});
+
+describe('formatLogCountTitle', () => {
+  it('names the window size and buffer capacity', () => {
+    const out = formatLogCountTitle({ windowSize: 500, bufferTotal: 900, bufferCapacity: 1000 });
+    expect(out).toContain('most recent 500 entries');
+    expect(out).toContain('newest 1,000 lines');
+    expect(out).toContain('holds 900');
+  });
+
+  it('is empty when neither is known', () => {
+    expect(formatLogCountTitle({ bufferTotal: 0, bufferCapacity: 0 })).toBe('');
+  });
+});
+
+describe('hiddenQueryMatch', () => {
+  const log = entry({
+    message: 'tool call ok',
+    component: 'gateway',
+    traceId: 'abc123def',
+    attrs: { server: 'github', client: 'claude-code' },
+  });
+
+  it('is null for an empty query', () => {
+    expect(hiddenQueryMatch(log, '', [log.message])).toBeNull();
+  });
+
+  it('is null when the message contains the query', () => {
+    expect(hiddenQueryMatch(log, 'TOOL', [log.message, log.component])).toBeNull();
+  });
+
+  it('names the attribute key for an attribute-only match', () => {
+    expect(hiddenQueryMatch(log, 'claude', [log.message, log.component])).toEqual({
+      label: 'attributes',
+      title: 'client=claude-code',
+    });
+  });
+
+  it('reports a trace-only match', () => {
+    const out = hiddenQueryMatch(log, 'abc123', [log.message, log.component]);
+    expect(out?.label).toBe('trace ID');
+    expect(out?.title).toContain('abc123def');
+  });
+
+  it('is null when the caller passes a visible text containing the query', () => {
+    expect(hiddenQueryMatch(log, 'claude', [log.message, 'claude-code'])).toBeNull();
   });
 });
 

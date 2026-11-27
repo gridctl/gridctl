@@ -256,20 +256,138 @@ export function reuseUnchangedLogs(previous: ParsedLog[], next: ParsedLog[]): Pa
   });
 }
 
-export function formatTimestamp(ts: string): string {
+// hourCycle 'h23' pins midnight to 00. hour12: false resolved to h24 (24:05)
+// on older engines that followed the pre-2023 ECMA-402 rule.
+const LOG_TIME_FORMAT = new Intl.DateTimeFormat('en-US', {
+  hourCycle: 'h23',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+});
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+function formatLocalTime(date: Date): string {
+  return LOG_TIME_FORMAT.format(date) + '.' + String(date.getMilliseconds()).padStart(3, '0');
+}
+
+/** HH:MM:SS.mmm in local time, prefixed with MM-DD when showDate is set. */
+export function formatTimestamp(ts: string, showDate = false): string {
   if (!ts) return '';
   const date = new Date(ts);
-  // An unparseable timestamp yields an invalid Date, not an exception —
+  // An unparseable timestamp yields an invalid Date, not an exception;
   // unguarded formatting would render "Invalid Date.NaN".
   if (!Number.isFinite(date.getTime())) {
     return ts.slice(11, 23) || '\u2014';
   }
-  return date.toLocaleTimeString('en-US', {
-    hour12: false,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }) + '.' + String(date.getMilliseconds()).padStart(3, '0');
+  const time = formatLocalTime(date);
+  return showDate ? `${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${time}` : time;
+}
+
+const LOG_ZONE_FORMAT = new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' });
+
+function shortTimeZoneName(date: Date): string {
+  const part = LOG_ZONE_FORMAT.formatToParts(date)
+    .find((p) => p.type === 'timeZoneName');
+  return part?.value ?? '';
+}
+
+/** Tooltip text: full local date, time, and zone, then the original string. */
+export function formatTimestampTitle(ts: string): string {
+  const date = new Date(ts);
+  if (!ts || !Number.isFinite(date.getTime())) return ts;
+  const day = `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+  const zone = shortTimeZoneName(date);
+  return `${day} ${formatLocalTime(date)}${zone ? ` ${zone}` : ''} \u00b7 ${ts}`;
+}
+
+/** True when the parseable timestamps fall on more than one local calendar day. */
+export function logsSpanMultipleDays(logs: ParsedLog[]): boolean {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const log of logs) {
+    const t = Date.parse(log.timestamp);
+    if (!Number.isFinite(t)) continue;
+    if (t < min) min = t;
+    if (t > max) max = t;
+  }
+  if (min === Infinity) return false;
+  return new Date(min).toDateString() !== new Date(max).toDateString();
+}
+
+const formatCount = (n: number) => n.toLocaleString('en-US');
+
+/** Visible count-line text for the filter bar. */
+export function formatLogCount({
+  filtered,
+  loaded,
+  bufferTotal,
+  bufferCapacity,
+}: {
+  filtered: number;
+  loaded: number;
+  bufferTotal: number;
+  bufferCapacity: number;
+}): string {
+  if (bufferCapacity > 0) {
+    if (filtered === loaded) {
+      return `Showing ${formatCount(loaded)} of ${formatCount(bufferTotal)} buffered`;
+    }
+    return `${formatCount(filtered)} of ${formatCount(loaded)} match \u00b7 ${formatCount(bufferTotal)} buffered`;
+  }
+  const noun = loaded === 1 ? 'entry' : 'entries';
+  if (filtered === loaded) return `${formatCount(loaded)} ${noun}`;
+  return `${formatCount(filtered)} of ${formatCount(loaded)} ${noun}`;
+}
+
+/** Tooltip sentence for the count line naming the window size and buffer limit. */
+export function formatLogCountTitle({
+  windowSize,
+  bufferTotal,
+  bufferCapacity,
+}: {
+  windowSize?: number;
+  bufferTotal: number;
+  bufferCapacity: number;
+}): string {
+  const parts: string[] = [];
+  if (windowSize) {
+    parts.push(
+      `Loaded the most recent ${formatCount(windowSize)} entries; change the window under View options.`,
+    );
+  }
+  if (bufferCapacity > 0) {
+    parts.push(
+      `The server keeps the newest ${formatCount(bufferCapacity)} lines and holds ${formatCount(bufferTotal)} now.`,
+    );
+  }
+  return parts.join(' ');
+}
+
+export interface HiddenQueryMatch {
+  label: 'trace ID' | 'attributes';
+  title: string;
+}
+
+// Names the first place the filter matched that the collapsed row does not
+// render, so a kept row always shows why. Normalization matches
+// filterParsedLogs: lowercased, not trimmed.
+export function hiddenQueryMatch(
+  log: ParsedLog,
+  query: string,
+  visibleTexts: readonly (string | undefined)[],
+): HiddenQueryMatch | null {
+  const q = query.toLowerCase();
+  if (!q) return null;
+  if (visibleTexts.some((t) => t?.toLowerCase().includes(q))) return null;
+  if (log.traceId?.toLowerCase().includes(q)) {
+    return { label: 'trace ID', title: `trace_id=${log.traceId}` };
+  }
+  for (const [key, value] of Object.entries(log.attrs ?? {})) {
+    const text = stringifyAttrValue(value);
+    if (text.toLowerCase().includes(q)) return { label: 'attributes', title: `${key}=${text}` };
+  }
+  return null;
 }
 
 // Selectable poll window sizes. 1000 equals the server ring capacity, so the
