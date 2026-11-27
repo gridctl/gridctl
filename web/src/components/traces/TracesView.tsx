@@ -613,14 +613,20 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                 <EmptyState
                   icon={Activity}
                   title="No tool-call traces yet"
-                  description={`${infraHidden} infrastructure ${infraHidden === 1 ? 'trace is' : 'traces are'} hidden.`}
+                  description={
+                    `${infraHidden} infrastructure ${infraHidden === 1 ? 'trace is' : 'traces are'} hidden.` +
+                    (truncated ? ` Only the newest ${traces.length} traces were searched.` : '')
+                  }
                   action={
-                    <button
-                      onClick={() => setSegment('all')}
-                      className="text-3xs text-primary hover:underline"
-                    >
-                      Show all
-                    </button>
+                    <span className="flex items-center gap-3">
+                      <button
+                        onClick={() => setSegment('all')}
+                        className="text-3xs text-primary hover:underline"
+                      >
+                        Show all
+                      </button>
+                      {truncated && loadMoreButton}
+                    </span>
                   }
                 />
               ) : hasFilters ? (

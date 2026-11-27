@@ -828,6 +828,24 @@ describe('TracesWorkspace list window', () => {
     expect(screen.getByRole('button', { name: 'Load more' })).toBeInTheDocument();
   });
 
+  it('discloses the window and offers Load more when every loaded row is infra', async () => {
+    const infraRows = Array.from({ length: 100 }, (_, i) => ({
+      ...infraSummary,
+      traceId: `infra${String(i).padStart(11, '0')}`,
+    }));
+    vi.mocked(fetchTraces).mockResolvedValue(listEnvelope(infraRows, { bufferSize: 742 }));
+    renderAt('/traces');
+    await waitFor(() => {
+      expect(screen.getByText('No tool-call traces yet')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Only the newest 100 traces were searched\./)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show all' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    await waitFor(() => {
+      expect(vi.mocked(fetchTraces)).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 200 }));
+    });
+  });
+
   it('opens a pasted full trace ID that no loaded row has', async () => {
     const id = 'ABCDEF0123456789ABCDEF0123456789';
     renderAt(`/traces?q=${id}`);
