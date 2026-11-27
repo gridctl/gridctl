@@ -321,6 +321,25 @@ describe('session restore', () => {
     expect(restored.getState().secretsRedacted).toBe(false);
   });
 
+  it('carries stored YAML state over when reopened before the yaml module loads', async () => {
+    const record = { resourceType: 'mcp-server', name: 'remote', yaml: 'name: remote\nauth:\n  token: "${var:T}"\n' };
+    sessionStorage.setItem('gridctl-wizard-state', JSON.stringify({
+      currentStep: 'form',
+      selectedType: 'mcp-server',
+      expertMode: true,
+      yamlContent: 'name: x\nauth:\n  token: "${var:T}"\n',
+      appendedResource: record,
+      secretsRedacted: false,
+    }));
+    vi.resetModules();
+    const { useWizardStore: store } = await import('../stores/useWizardStore');
+    store.getState().open();
+    const saved = JSON.parse(sessionStorage.getItem('gridctl-wizard-state') ?? '{}');
+    expect(saved.secretsRedacted).toBe(false);
+    expect(saved.appendedResource).toEqual(record);
+    expect(saved.yamlContent).toBe('name: x\nauth:\n  token: "${var:T}"\n');
+  });
+
   it('ignores a stored isOpen from an earlier release', async () => {
     sessionStorage.setItem('gridctl-wizard-state', JSON.stringify({ isOpen: true, currentStep: 'form' }));
     vi.resetModules();

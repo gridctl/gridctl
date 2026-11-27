@@ -126,12 +126,15 @@ export function isWizardDirty(
 // saveSession persists the wizard for a reload with every literal secret
 // removed. In-memory state keeps the operator's values; only the stored copy
 // is redacted. Form-mode YAML is regenerated from the form after a reload, so
-// it is not stored at all. Expert YAML that does not parse, or that cannot be
-// checked because the yaml module has not loaded, keeps the last stored copy
-// rather than risk writing a literal.
+// it is not stored at all. Expert YAML that does not parse keeps the last
+// stored copy rather than risk writing a literal. Before the yaml module has
+// loaded (a reopen after a reload, ahead of the lazy wizard chunk), YAML cannot
+// be checked, so the stored YAML, appended record, and notice flag are carried
+// over unchanged.
 function saveSession(state: Partial<WizardState>) {
   try {
     let redacted = 0;
+    let carriedRedacted = false;
     const formData = { ...(state.formData ?? defaultFormData) } as Record<string, unknown>;
     for (const type of ['stack', 'mcp-server', 'resource'] as const) {
       if (!(type in formData)) continue;
@@ -139,6 +142,8 @@ function saveSession(state: Partial<WizardState>) {
       formData[type] = result.data;
       redacted += result.redacted;
     }
+    let previous: Partial<WizardState> | null | undefined;
+    const stored = () => (previous === undefined ? (previous = loadSession()) : previous);
     let yamlContent = '';
     if (state.expertMode) {
       const masked = maskLoadedYAMLSecrets(state.yamlContent ?? '', '""');
@@ -146,15 +151,18 @@ function saveSession(state: Partial<WizardState>) {
         yamlContent = masked.yaml;
         redacted += masked.masked;
       } else {
-        const previous = loadSession()?.yamlContent;
-        yamlContent = typeof previous === 'string' ? previous : '';
-        redacted += 1;
+        const prior = stored()?.yamlContent;
+        yamlContent = typeof prior === 'string' ? prior : '';
+        if (masked === null) redacted += 1;
+        else carriedRedacted = (stored() as { secretsRedacted?: unknown } | null)?.secretsRedacted === true;
       }
     }
     let appendedResource = state.appendedResource ?? null;
     if (appendedResource) {
       const masked = maskLoadedYAMLSecrets(appendedResource.yaml, '""');
-      appendedResource = masked ? { ...appendedResource, yaml: masked.yaml } : null;
+      if (masked) appendedResource = { ...appendedResource, yaml: masked.yaml };
+      else if (masked === undefined) appendedResource = toAppendedResource(stored()?.appendedResource);
+      else appendedResource = null;
     }
     const toSave = {
       currentStep: state.currentStep,
@@ -164,7 +172,7 @@ function saveSession(state: Partial<WizardState>) {
       expertMode: state.expertMode,
       yamlContent,
       appendedResource,
-      secretsRedacted: redacted > 0,
+      secretsRedacted: redacted > 0 || carriedRedacted,
     };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(toSave));
   } catch {
