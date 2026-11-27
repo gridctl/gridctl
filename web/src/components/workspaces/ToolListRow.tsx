@@ -58,6 +58,9 @@ export interface ToolListRowProps {
   policyTone: AnnotationChip['tone'] | '';
   /** policyDetailText for the verdict, read into the accessible name. Empty when the chip is absent. */
   policyText: string;
+  /** Virtual mode only: the list length and 1-based position, since most options are unmounted. */
+  setSize?: number;
+  posInSet?: number;
   onSelect: (name: string) => void;
   onToggle: (name: string) => void;
   registerRef: (name: string, el: HTMLDivElement | null) => void;
@@ -81,6 +84,8 @@ export function toolListRowPropsEqual(prev: ToolListRowProps, next: ToolListRowP
     prev.policyTitle === next.policyTitle &&
     prev.policyTone === next.policyTone &&
     prev.policyText === next.policyText &&
+    prev.setSize === next.setSize &&
+    prev.posInSet === next.posInSet &&
     prev.onSelect === next.onSelect &&
     prev.onToggle === next.onToggle &&
     prev.registerRef === next.registerRef
@@ -99,6 +104,8 @@ export const ToolListRow = memo(function ToolListRow({
   policyTitle,
   policyTone,
   policyText,
+  setSize,
+  posInSet,
   onSelect,
   onToggle,
   registerRef,
@@ -144,6 +151,8 @@ export const ToolListRow = memo(function ToolListRow({
         aria-current={isActive}
         aria-label={label}
         aria-describedby={opt.description ? descriptionId : undefined}
+        aria-setsize={setSize}
+        aria-posinset={posInSet}
         tabIndex={isCursor ? 0 : -1}
         onKeyDown={onKeyDown}
         className={cn(

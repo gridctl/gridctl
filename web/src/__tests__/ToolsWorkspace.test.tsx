@@ -1379,6 +1379,22 @@ describe('ToolsWorkspace — row keyboard and labels', () => {
     expect(document.activeElement).toBe(first);
   });
 
+  it('Ctrl+N and Ctrl+P move focus with the cursor; a plain n does not', () => {
+    renderAt('/tools?server=github');
+    const [first, second] = options();
+    first.focus();
+    fireEvent.keyDown(first, { key: 'n' });
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first, { key: 'n', ctrlKey: true });
+    expect(document.activeElement).toBe(second);
+    fireEvent.keyDown(second, { key: 'p', ctrlKey: true });
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first, { key: 'j', ctrlKey: true });
+    expect(document.activeElement).toBe(second);
+    fireEvent.keyDown(second, { key: 'k', ctrlKey: true });
+    expect(document.activeElement).toBe(first);
+  });
+
   it('hovering another row does not move focus off a focused row', () => {
     renderAt('/tools?server=github');
     const [first, second] = options();
@@ -1549,6 +1565,26 @@ describe('ToolsWorkspace — long lists', () => {
     seed(200);
     renderAt('/tools?server=github');
     expect(options()).toHaveLength(200);
+    expect(options()[0]).not.toHaveAttribute('aria-setsize');
+  });
+
+  it('does not scroll back to an unchanged selection when a filter crosses the threshold', () => {
+    seed(300);
+    const intoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: intoView });
+    try {
+      renderAt('/tools?server=github&tool=t001');
+      const input = screen.getByPlaceholderText(/^filter github tools/i);
+      fireEvent.change(input, { target: { value: 't00' } });
+      fireEvent.change(input, { target: { value: '' } });
+      fireEvent.change(input, { target: { value: 't00' } });
+      // cmdk scrolls its cursor into view on filter changes (no behavior);
+      // only the reveal effect asks for smooth scrolling.
+      const reveals = intoView.mock.calls.filter(([arg]) => arg?.behavior === 'smooth');
+      expect(reveals).toHaveLength(0);
+    } finally {
+      delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
   });
 
   it('renders a window above the threshold that keeps the first and last rows', () => {
@@ -1631,5 +1667,45 @@ describe('ToolsWorkspace — long lists keep the focused row', () => {
     });
     expect(option('t005')).toBe(focused);
     expect(document.activeElement).toBe(focused);
+  });
+
+  it('keeps a row mounted when its checkbox holds focus and the list scrolls', () => {
+    const names = Array.from({ length: 300 }, (_, i) => `t${String(i).padStart(3, '0')}`);
+    const catalog = names.map((n) => tool(`${GITHUB}${TOOL_NAME_DELIMITER}${n}`, `Tool ${n}`));
+    useStackStore.setState({
+      isLoading: false,
+      mcpServers: [server(GITHUB, names, [])],
+      tools: catalog,
+      toolCatalog: catalog,
+    });
+    renderAt('/tools?server=github');
+    const option = (n: string) => screen.queryByRole('option', { name: new RegExp(`^${n}, `) });
+    const box = screen.getByRole('checkbox', { name: /^(Enable|Disable) t005$/ });
+    box.focus();
+    fireEvent.pointerMove(option('t000')!);
+    const list = screen.getByPlaceholderText(/^filter github tools/i)
+      .closest('[cmdk-root]')!.querySelector('[cmdk-list]') as HTMLElement;
+    act(() => {
+      list.scrollTop = 6000;
+      fireEvent.scroll(list);
+    });
+    expect(option('t005')).toBeInTheDocument();
+    expect(document.activeElement).toBe(box);
+  });
+
+  it('gives windowed options their list size and position', () => {
+    const names = Array.from({ length: 300 }, (_, i) => `t${String(i).padStart(3, '0')}`);
+    const catalog = names.map((n) => tool(`${GITHUB}${TOOL_NAME_DELIMITER}${n}`, `Tool ${n}`));
+    useStackStore.setState({
+      isLoading: false,
+      mcpServers: [server(GITHUB, names, [])],
+      tools: catalog,
+      toolCatalog: catalog,
+    });
+    renderAt('/tools?server=github');
+    const last = screen.getByRole('option', { name: /^t299, / });
+    expect(last).toHaveAttribute('aria-setsize', '300');
+    expect(last).toHaveAttribute('aria-posinset', '300');
+    expect(screen.getByRole('option', { name: /^t000, / })).toHaveAttribute('aria-posinset', '1');
   });
 });

@@ -90,6 +90,8 @@ describe('toolListRowPropsEqual', () => {
     expect(toolListRowPropsEqual(base, props({ ...stable, policyTitle: 'blocked by policy default' }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, policyTone: 'danger' }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, policyText: 'blocked by policy default' }))).toBe(false);
+    expect(toolListRowPropsEqual(base, props({ ...stable, setSize: 300 }))).toBe(false);
+    expect(toolListRowPropsEqual(base, props({ ...stable, posInSet: 1 }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, onSelect: () => {} }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, onToggle: () => {} }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, registerRef: () => {} }))).toBe(false);

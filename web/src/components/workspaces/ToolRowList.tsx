@@ -78,8 +78,9 @@ export function ToolRowList({
   const [focusedName, setFocusedName] = useState<string | null>(null);
   useEffect(() => {
     if (!listElement) return;
+    // closest(): a click-focused checkbox sits inside its option.
     const itemName = (t: EventTarget | null) =>
-      t instanceof Element && t.hasAttribute('cmdk-item') ? t.getAttribute('data-value') : null;
+      t instanceof Element ? (t.closest('[cmdk-item]')?.getAttribute('data-value') ?? null) : null;
     const onFocusIn = (e: FocusEvent) => setFocusedName(itemName(e.target));
     const onFocusOut = (e: FocusEvent) => setFocusedName(itemName(e.relatedTarget));
     listElement.addEventListener('focusin', onFocusIn);
@@ -133,18 +134,33 @@ export function ToolRowList({
   // `block: 'nearest'` no-ops when the row is already visible, so clicking a
   // visible row to select it never jumps the list. In virtual mode the row may
   // not be mounted, so the virtualizer scrolls to its index instead.
+  // Each selection is revealed once, so a filter that crosses the threshold
+  // does not scroll back to an unchanged selection. The extra dependencies only
+  // let a reveal that could not run yet (no list element in virtual mode) run
+  // once it can.
+  const revealedRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!selectedTool) return;
-    if (virtualize) {
-      const index = indexByNameRef.current.get(selectedTool);
-      if (index !== undefined) virtualizerRef.current.scrollToIndex(index, { align: 'auto' });
+    if (!selectedTool) {
+      revealedRef.current = null;
       return;
     }
+    if (revealedRef.current === selectedTool) return;
+    if (virtualize) {
+      if (!listElement) return;
+      const index = indexByNameRef.current.get(selectedTool);
+      if (index === undefined) return;
+      virtualizerRef.current.scrollToIndex(index, { align: 'auto' });
+      revealedRef.current = selectedTool;
+      return;
+    }
+    const row = rowRefs.current.get(selectedTool);
+    if (!row) return;
     // Optional-chain: scrollIntoView is absent in jsdom and older embeds.
-    rowRefs.current.get(selectedTool)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+    row.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+    revealedRef.current = selectedTool;
   }, [selectedTool, virtualize, listElement]);
 
-  const renderRow = (opt: ToolRow) => {
+  const renderRow = (opt: ToolRow, index?: number) => {
     const auditState = auditByTool.get(opt.name) ?? null;
     const verdict = policyTools?.[`${serverName}${TOOL_NAME_DELIMITER}${opt.name}`];
     const chip = policyChip(verdict);
@@ -166,6 +182,8 @@ export function ToolRowList({
         policyTitle={chip?.title ?? ''}
         policyTone={chip?.tone ?? ''}
         policyText={chip ? (policyDetailText(verdict) ?? '') : ''}
+        setSize={index === undefined ? undefined : shown.length}
+        posInSet={index === undefined ? undefined : index + 1}
         onSelect={onSelect}
         onToggle={onToggle}
         registerRef={registerRef}
@@ -173,7 +191,7 @@ export function ToolRowList({
     );
   };
 
-  if (!virtualize) return <>{shown.map(renderRow)}</>;
+  if (!virtualize) return <>{shown.map((opt) => renderRow(opt))}</>;
 
   // Each row is its wrapper's last child here, so the row's own
   // last:border-b-0 always applies; the divider moves to the wrapper.
@@ -190,7 +208,7 @@ export function ToolRowList({
           )}
           style={{ transform: `translateY(${item.start}px)` }}
         >
-          {renderRow(shown[item.index])}
+          {renderRow(shown[item.index], item.index)}
         </div>
       ))}
     </div>
