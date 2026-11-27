@@ -73,6 +73,18 @@ or Escape in AppShell while `sidebarOpen` is set), `restoreNodeFocus` in `lib/in
 returns focus to the node, but only when focus is inside the inspector or
 on `<body>`.
 
+A connected gateway with no MCP servers and no resources shows
+`graph/StackEmptyState.tsx`, a card in a `NodeToolbar` bound to the gateway
+node, so it adds no node or edge and the fit key is unchanged. `Canvas`
+decides visibility from `useStackStore` (connected, `gatewayInfo` set, not
+loading, no `error`, and empty `mcpServers` and `resources`), never from the
+node count, because the gateway node always exists once a status arrives.
+The card's "Create new" calls `open()` with no argument, like the header.
+The "MCP Server" and "Resource" quick-add links render only when a stack is
+loaded, since the wizard gates those types on `stackName`. The card root
+carries `nopan nowheel nodrag`: the toolbar portals into the pan and zoom
+surface, so without them a gesture on the card moves the canvas.
+
 `StackWorkspace` renders `stack/StackToolbar.tsx` above a body that holds
 either the graph (`Canvas` and `AccessLens`) or `stack/StackTable.tsx`; the
 other view is unmounted, not hidden. The workspace owns the transient filter
