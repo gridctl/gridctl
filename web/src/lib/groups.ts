@@ -38,6 +38,36 @@ export const CHIP_TONE_CLASS: Record<AnnotationChip['tone'], string> = {
   neutral: 'bg-surface-highlight text-text-muted',
 };
 
+export interface AnnotationChipLegendEntry extends AnnotationChip {
+  name: string;
+}
+
+// The single chip table read by annotationChips and the Tools workspace
+// legend, so the two cannot drift.
+const CHIP = {
+  RO: { label: 'RO', name: 'Read-only', title: 'readOnlyHint: true — does not modify state', tone: 'safe' },
+  RW: { label: 'RW', name: 'Read-write', title: 'readOnlyHint: false — may modify state', tone: 'neutral' },
+  DESTR: { label: 'DESTR', name: 'Destructive', title: 'destructiveHint: true — may perform destructive updates', tone: 'danger' },
+  SAFE: { label: 'SAFE', name: 'Non-destructive', title: 'destructiveHint: false — updates are additive', tone: 'safe' },
+  IDEM: { label: 'IDEM', name: 'Idempotent', title: 'idempotentHint: true — repeat calls have no extra effect', tone: 'neutral' },
+  OPEN: { label: 'OPEN', name: 'Open world', title: 'openWorldHint: true — interacts with external entities', tone: 'neutral' },
+  CLOSED: { label: 'CLOSED', name: 'Closed world', title: 'openWorldHint: false — closed domain of interaction', tone: 'neutral' },
+} as const satisfies Record<string, AnnotationChipLegendEntry>;
+
+export const ANNOTATION_CHIP_LEGEND: readonly AnnotationChipLegendEntry[] = [
+  CHIP.RO,
+  CHIP.RW,
+  CHIP.DESTR,
+  CHIP.SAFE,
+  CHIP.IDEM,
+  CHIP.OPEN,
+  CHIP.CLOSED,
+];
+
+function chipOf(entry: AnnotationChipLegendEntry): AnnotationChip {
+  return { label: entry.label, title: entry.title, tone: entry.tone };
+}
+
 export function annotationChips(annotations?: {
   readOnlyHint?: boolean;
   destructiveHint?: boolean;
@@ -47,28 +77,16 @@ export function annotationChips(annotations?: {
   if (!annotations) return [];
   const chips: AnnotationChip[] = [];
   if (annotations.readOnlyHint !== undefined) {
-    chips.push(
-      annotations.readOnlyHint
-        ? { label: 'RO', title: 'readOnlyHint: true — does not modify state', tone: 'safe' }
-        : { label: 'RW', title: 'readOnlyHint: false — may modify state', tone: 'neutral' },
-    );
+    chips.push(chipOf(annotations.readOnlyHint ? CHIP.RO : CHIP.RW));
   }
   if (annotations.destructiveHint !== undefined) {
-    chips.push(
-      annotations.destructiveHint
-        ? { label: 'DESTR', title: 'destructiveHint: true — may perform destructive updates', tone: 'danger' }
-        : { label: 'SAFE', title: 'destructiveHint: false — updates are additive', tone: 'safe' },
-    );
+    chips.push(chipOf(annotations.destructiveHint ? CHIP.DESTR : CHIP.SAFE));
   }
   if (annotations.idempotentHint !== undefined && annotations.idempotentHint) {
-    chips.push({ label: 'IDEM', title: 'idempotentHint: true — repeat calls have no extra effect', tone: 'neutral' });
+    chips.push(chipOf(CHIP.IDEM));
   }
   if (annotations.openWorldHint !== undefined) {
-    chips.push(
-      annotations.openWorldHint
-        ? { label: 'OPEN', title: 'openWorldHint: true — interacts with external entities', tone: 'neutral' }
-        : { label: 'CLOSED', title: 'openWorldHint: false — closed domain of interaction', tone: 'neutral' },
-    );
+    chips.push(chipOf(annotations.openWorldHint ? CHIP.OPEN : CHIP.CLOSED));
   }
   return chips;
 }
