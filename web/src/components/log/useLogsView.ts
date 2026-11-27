@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useLogStream } from '../../hooks/useLogStream';
-import { copyWithToast } from '../ui/Toast';
+import { copyWithToast, showToast } from '../ui/Toast';
 import { useUIStore } from '../../stores/useUIStore';
 import {
   DEFAULT_LOG_WINDOW,
@@ -9,6 +9,7 @@ import {
   LOG_TIME_RANGE_MS,
   filterParsedLogs,
   logSourceOf,
+  logsSpanMultipleDays,
   normalizeLogSourceParam,
   normalizeLogTimeRangeParam,
   normalizeLogWindowParam,
@@ -69,6 +70,8 @@ export interface LogsViewState {
   wrap: boolean;
   /** Relative timestamps instead of absolute (persisted preference). */
   relativeTime: boolean;
+  /** True when the loaded entries fall on more than one local calendar day. */
+  spansDays: boolean;
   /** Anchor of the last completed load; freezes time windows while paused. */
   lastLoadedAt: number;
   /** True once a load has completed (independent of filters and clear). */
@@ -301,8 +304,18 @@ export function useLogsView(): LogsViewState {
     timeRange !== 'all' ||
     enabledLevels.size !== ALL_LEVELS.size;
 
+  // Measured over the loaded window, not the filtered rows, so the time
+  // column does not change width while a filter is typed.
+  const spansDays = useMemo(() => logsSpanMultipleDays(logs), [logs]);
+
   const copyFiltered = useCallback(() => {
-    void copyWithToast(filteredLogs.map((log) => log.raw).join('\n'), 'Filtered view');
+    const n = filteredLogs.length;
+    if (n === 0) {
+      showToast('warning', 'Nothing to copy');
+      return;
+    }
+    const label = n === 1 ? '1 entry' : `${n.toLocaleString('en-US')} entries`;
+    void copyWithToast(filteredLogs.map((log) => log.raw).join('\n'), label);
   }, [filteredLogs]);
 
   const togglePause = useCallback(() => setIsPaused((p) => !p), []);
@@ -338,6 +351,7 @@ export function useLogsView(): LogsViewState {
     bufferCapacity,
     wrap: logsPrefs.wrap,
     relativeTime: logsPrefs.relativeTime,
+    spansDays,
     lastLoadedAt,
     hasLoaded,
     expandedKey,

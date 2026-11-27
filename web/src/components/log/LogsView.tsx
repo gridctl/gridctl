@@ -212,6 +212,7 @@ export function LogsView({
         wrap={view.wrap}
         relativeTime={view.relativeTime}
         timeAnchor={view.relativeTime && view.lastLoadedAt > 0 ? view.lastLoadedAt : undefined}
+        showDate={view.spansDays}
         source={view.source}
         traceFilter={view.traceFilter}
         onShowAllSources={() => view.setSource(null)}

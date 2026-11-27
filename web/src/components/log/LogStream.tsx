@@ -41,6 +41,8 @@ interface LogStreamProps {
   wrap?: boolean;
   relativeTime?: boolean;
   timeAnchor?: number;
+  /** Prefix absolute timestamps with the date (loaded window spans days). */
+  showDate?: boolean;
   /** Empty-state context: active source and trace filters. */
   source?: string | null;
   traceFilter?: string | null;
@@ -76,6 +78,7 @@ export function LogStream({
   wrap = false,
   relativeTime = false,
   timeAnchor,
+  showDate = false,
   source,
   traceFilter,
   onShowAllSources,
@@ -168,6 +171,7 @@ export function LogStream({
       wrap={wrap}
       relativeTime={relativeTime}
       timeAnchor={timeAnchor}
+      showDate={showDate}
     />
   );
 

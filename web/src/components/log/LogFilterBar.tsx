@@ -6,7 +6,14 @@ import { LevelFilter } from './LevelFilter';
 import { ZoomControls } from '../ui/ZoomControls';
 import { IconButton } from '../ui/IconButton';
 import { Popover } from '../ui/Popover';
-import { LOG_TIME_RANGES, LOG_WINDOW_SIZES, type LogLevel, type LogTimeRange } from './logTypes';
+import {
+  LOG_TIME_RANGES,
+  LOG_WINDOW_SIZES,
+  formatLogCount,
+  formatLogCountTitle,
+  type LogLevel,
+  type LogTimeRange,
+} from './logTypes';
 
 interface LogFilterBarProps {
   searchQuery: string;
@@ -27,7 +34,7 @@ interface LogFilterBarProps {
   isDefault: boolean;
   filteredCount: number;
   totalCount: number;
-  /** Poll window size; when set, the count labels the view as "last N". */
+  /** Poll window size; when set, the count tooltip names it. */
   windowSize?: number;
   onWindowSizeChange?: (n: number) => void;
   timeRange?: LogTimeRange;
@@ -84,9 +91,9 @@ export function LogFilterBar({
   const viewOptionsActive = timeRange !== 'all' || wrap || relativeTime;
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 border-b border-border/30 bg-surface-elevated/30 flex-shrink-0">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-4 py-2 border-b border-border/30 bg-surface-elevated/30 flex-shrink-0">
       {/* Search input */}
-      <div className="relative flex-1 max-w-xs">
+      <div className="relative flex-1 min-w-[10rem] max-w-xs">
         <Search
           size={12}
           className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted"
@@ -94,6 +101,7 @@ export function LogFilterBar({
         <input
           ref={searchInputRef}
           type="text"
+          aria-label="Filter logs"
           placeholder="Filter logs..."
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
@@ -219,15 +227,9 @@ export function LogFilterBar({
       {/* Log count, honest against the poll window and the server ring */}
       <span
         className="text-3xs text-text-muted font-mono ml-auto whitespace-nowrap"
-        title={
-          windowSize
-            ? `Showing the most recent ${windowSize} buffer entries${bufferCapacity > 0 ? ` · ring holds ${bufferTotal} of ${bufferCapacity}` : ''}`
-            : undefined
-        }
+        title={formatLogCountTitle({ windowSize, bufferTotal, bufferCapacity }) || undefined}
       >
-        {filteredCount} / {totalCount} entries
-        {windowSize ? ` · last ${windowSize}` : ''}
-        {bufferCapacity > 0 ? ` · buffer ${bufferTotal}/${bufferCapacity}` : ''}
+        {formatLogCount({ filtered: filteredCount, loaded: totalCount, bufferTotal, bufferCapacity })}
       </span>
 
       {trailing}

@@ -199,7 +199,7 @@ describe('LogsWorkspace', () => {
   it('keeps every level disabled through the level=none sentinel', async () => {
     renderAt('/logs?level=none');
     await waitFor(() => {
-      expect(screen.getByText(/0 \/ 3 entries/)).toBeInTheDocument();
+      expect(screen.getByText(/0 of 3 match/)).toBeInTheDocument();
     });
     expect(screen.queryByText('gateway listening')).not.toBeInTheDocument();
     expect(screen.queryByText('tool call failed')).not.toBeInTheDocument();
@@ -233,7 +233,7 @@ describe('LogsWorkspace', () => {
   it('hands the full filter state to the detached window', async () => {
     renderAt('/logs?source=github&level=error&q=fail&trace=abc123def456&n=1000');
     await waitFor(() => {
-      expect(screen.getByText(/entries/)).toBeInTheDocument();
+      expect(screen.getByText(/buffered/)).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole('button', { name: /separate window/i }));
     expect(openDetachedWindowMock).toHaveBeenCalledTimes(1);
