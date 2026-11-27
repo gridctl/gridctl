@@ -190,6 +190,135 @@ export async function fetchToolUsage(): Promise<ToolUsageResponse> {
   return fetchJSON<ToolUsageResponse>('/api/tools/usage');
 }
 
+/** Typed dispatch verdict from POST /api/tools/call (mcp.CallOutcome). */
+export interface ToolCallOutcome {
+  disposition: string;
+  stage: string;
+  reason: string;
+  completion: string;
+  gate?: string;
+  detail?: string;
+}
+
+/** One MCP content block. Only `text` blocks are rendered as content. */
+export interface ToolCallContent {
+  type: string;
+  text?: string;
+  data?: string;
+  mimeType?: string;
+  [key: string]: unknown;
+}
+
+/** The forwarded MCP tools/call result. Tool-controlled; render as text only. */
+export interface ToolCallResult {
+  content?: ToolCallContent[];
+  structuredContent?: unknown;
+  isError?: boolean;
+  [key: string]: unknown;
+}
+
+/** Versioned envelope returned by POST /api/tools/call. */
+export interface ToolCallEnvelope {
+  schema_version: 1;
+  client?: string;
+  name?: string;
+  outcome: ToolCallOutcome;
+  result: ToolCallResult | null;
+  error: { code: string; message: string } | null;
+  /** Root tools/call trace ID; present only when the gateway recorded the trace. */
+  trace_id?: string;
+}
+
+/** Request envelope limit enforced by POST /api/tools/call. */
+export const TOOL_CALL_MAX_BYTES = 2 << 20;
+
+/** The exact request body callTool sends. */
+export function toolCallRequestBody(name: string, args: Record<string, unknown>): string {
+  return JSON.stringify({ name, arguments: args, client: 'ui' });
+}
+
+/** Byte length of a request body as sent (UTF-8). */
+export function toolCallBodyBytes(body: string): number {
+  return new TextEncoder().encode(body).length;
+}
+
+/**
+ * ToolCallError is a call that produced no usable envelope: the body was too
+ * large to send, the gateway was unavailable, the response was not the typed
+ * envelope, or the status was unexpected.
+ */
+export class ToolCallError extends Error {
+  kind: 'too_large' | 'unavailable' | 'malformed' | 'http';
+  status?: number;
+  constructor(kind: ToolCallError['kind'], message: string, status?: number) {
+    super(message);
+    this.name = 'ToolCallError';
+    this.kind = kind;
+    this.status = status;
+  }
+}
+
+function isToolCallEnvelope(data: unknown): data is ToolCallEnvelope {
+  if (!data || typeof data !== 'object') return false;
+  const env = data as { schema_version?: unknown; outcome?: unknown; result?: unknown; error?: unknown; trace_id?: unknown };
+  if (env.schema_version !== 1) return false;
+  const out = env.outcome as Record<string, unknown> | null | undefined;
+  if (!out || typeof out !== 'object') return false;
+  if (!['disposition', 'stage', 'reason', 'completion'].every((k) => typeof out[k] === 'string')) return false;
+  if (env.result !== undefined && env.result !== null && typeof env.result !== 'object') return false;
+  if (env.error !== undefined && env.error !== null) {
+    const err = env.error as Record<string, unknown>;
+    if (typeof err !== 'object' || typeof err.code !== 'string' || typeof err.message !== 'string') return false;
+  }
+  if (env.trace_id !== undefined && typeof env.trace_id !== 'string') return false;
+  return true;
+}
+
+const TOOL_CALL_ENVELOPE_STATUSES = new Set([200, 400, 413, 415]);
+
+/**
+ * Invoke one tool through the gateway's REST dispatch with the fixed `ui`
+ * caller label. Resolves with the envelope for 200 (success, denial, or tool
+ * error) and for 400/413/415 validation envelopes. Rejects with ToolCallError
+ * for an oversized body, a 503 gateway-unavailable envelope, a malformed
+ * response, or another status; AuthError, HTTPError(401), and
+ * GatewayRequestError (abort, connection, stale) propagate unchanged.
+ * POST /api/tools/call
+ */
+export async function callTool(
+  name: string,
+  args: Record<string, unknown>,
+  opts: { signal?: AbortSignal } = {},
+): Promise<ToolCallEnvelope> {
+  const body = toolCallRequestBody(name, args);
+  if (toolCallBodyBytes(body) > TOOL_CALL_MAX_BYTES) {
+    throw new ToolCallError('too_large', 'The request is larger than the 2 MiB limit and was not sent.');
+  }
+  const response = await fetch(`${API_BASE}/api/tools/call`, {
+    method: 'POST',
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+    body,
+    signal: opts.signal,
+  });
+  const status = response.status;
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch (err) {
+    if (err instanceof GatewayRequestError && err.kind !== 'malformed') throw err;
+    if (status === 200) throw new ToolCallError('malformed', 'The gateway returned a response that is not a tool-call envelope.', status);
+    throw new ToolCallError('http', `Tool call failed: HTTP ${status}.`, status);
+  }
+  if (status === 503 && isToolCallEnvelope(data)) {
+    throw new ToolCallError('unavailable', 'Gateway unavailable. The call was not dispatched.', status);
+  }
+  if (TOOL_CALL_ENVELOPE_STATUSES.has(status)) {
+    if (isToolCallEnvelope(data)) return data;
+    if (status === 200) throw new ToolCallError('malformed', 'The gateway returned a response that is not a tool-call envelope.', status);
+  }
+  throw new ToolCallError('http', `Tool call failed: HTTP ${status}.`, status);
+}
+
 /**
  * Fetch detected/linked LLM clients
  * GET /api/clients
