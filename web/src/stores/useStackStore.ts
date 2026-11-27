@@ -24,6 +24,11 @@ import { useUIStore } from './useUIStore';
 import { usePinsStore } from './usePinsStore';
 import { requestInspectorLeave } from './useInspectorToolsGuardStore';
 import { useShellNavStore } from './useShellNavStore';
+import {
+  clearStackPositions,
+  loadStackPositions,
+  saveStackPositions,
+} from '../lib/stackPositions';
 
 // Per-server autoscale sample. Populated every poll cycle; capped at
 // AUTOSCALE_HISTORY_CAP entries so the ring buffer stays O(1) in memory.
@@ -88,6 +93,9 @@ interface StackState {
   nodes: Node[];
   edges: Edge[];
   draggedPositions: Map<string, { x: number; y: number }>;  // User-dragged node positions
+  // Stack name draggedPositions was last loaded from storage for; null before
+  // the first status (the empty string is the stackless stack name).
+  positionsHydratedFor: string | null;
 
   // === Autoscale observability (client-derived from polling) ===
   autoscaleHistory: Record<string, AutoscaleSample[]>;
@@ -184,6 +192,7 @@ export const useStackStore = create<StackState>()(
     nodes: [],
     edges: [],
     draggedPositions: new Map(),
+    positionsHydratedFor: null,
     autoscaleHistory: {},
     autoscaleDecisions: {},
     autoscaleLastSeen: {},
@@ -234,7 +243,17 @@ export const useStackStore = create<StackState>()(
         get().tokenTotalsLastSeen,
         get().activeServers,
       );
+      // Load saved positions once per stack, before the first layout uses them.
+      const stackName = status.stack_name || '';
+      const hydrate =
+        get().positionsHydratedFor !== stackName
+          ? {
+              draggedPositions: loadStackPositions(stackName, useUIStore.getState().compactCards),
+              positionsHydratedFor: stackName,
+            }
+          : {};
       set({
+        ...hydrate,
         gatewayInfo: status.gateway,
         mcpServers,
         resources: status.resources || [],
@@ -242,7 +261,7 @@ export const useStackStore = create<StackState>()(
         codeMode: status.code_mode || null,
         toolDiscovery: status.tool_discovery || null,
         tokenUsage: status.token_usage ?? null,
-        stackName: status.stack_name || '',
+        stackName,
         features: status.features ?? {},
         featureDetails: status.feature_details ?? [],
         autoscaleHistory: folded.history,
@@ -417,6 +436,7 @@ export const useStackStore = create<StackState>()(
         draggedPositions: new Map(),
         layoutEpoch: get().layoutEpoch + 1,
       });
+      clearStackPositions(get().stackName);
     },
 
     setNodes: (nodes) => set({ nodes }),
@@ -428,11 +448,15 @@ export const useStackStore = create<StackState>()(
       let changed = false;
       for (const change of changes) {
         if (change.type === 'position' && change.dragging === false && change.position) {
+          // Delete first so a re-dragged node moves to the newest end.
+          draggedPositions.delete(change.id);
           draggedPositions.set(change.id, change.position);
           changed = true;
         }
       }
-      if (changed) set({ draggedPositions });
+      if (!changed) return;
+      set({ draggedPositions });
+      saveStackPositions(get().stackName, useUIStore.getState().compactCards, draggedPositions);
     },
   }))
 );
