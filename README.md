@@ -337,7 +337,7 @@ gridctl tools search "message"
 gridctl call echo__echo '{"message":"hello"}' --format json
 ```
 
-`gridctl search` remains the install catalog. `--as` is display-only in OAuth mode; in other modes it selects a caller-declared scope label without authenticating as that client. See [Live tools](docs/cli-reference.md#live-tools).
+`gridctl search` remains the install catalog. `--as` is display-only in OAuth mode; in other modes it selects a caller-declared scope label without authenticating as that client. See [Live tools](docs/cli-reference.md#live-tools). The web UI's Tools workspace can call a tool through the same endpoint with [Try it](docs/tools-workspace.md#try-it).
 
 ### Outbound A2A (Experimental)
 

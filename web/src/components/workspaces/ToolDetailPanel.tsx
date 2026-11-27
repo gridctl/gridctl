@@ -15,6 +15,7 @@ import { clampDescription } from '../../lib/toolDescription';
 import { schemaParameters, type SchemaParameter } from '../../lib/toolSchema';
 import type { PolicyToolStatus, ServerPins } from '../../lib/api';
 import { useTextZoom } from '../../hooks/useTextZoom';
+import { ToolTryIt } from './ToolTryIt';
 import { TOOLS_TEXT_ZOOM } from '../../lib/textZoomDefaults';
 import type { ToolRow } from '../../hooks/useToolsEditor';
 import type { ToolUsageStat } from '../../types';
@@ -54,6 +55,11 @@ interface ToolDetailPanelProps {
   // True when the saved allow-list is non-empty and excludes this tool. Such
   // tools are normally absent from the pin set, so the chip stays silent.
   hiddenByAllowList?: boolean;
+  // Whether the saved allow-list exposes the tool (gates Try it). Defaults to
+  // `enabled` for callers that do not distinguish saved from draft.
+  exposed?: boolean;
+  // Whether the unsaved draft differs from the saved allow-list for this tool.
+  draftDiffers?: boolean;
   // Handles an unmodified click on a header link. Without it links behave as
   // plain anchors.
   onNavigate?: (path: string) => void;
@@ -76,6 +82,8 @@ export function ToolDetailPanel({
   policy,
   pin,
   hiddenByAllowList = false,
+  exposed = enabled,
+  draftDiffers = false,
   onNavigate,
   onClose,
 }: ToolDetailPanelProps) {
@@ -171,6 +179,18 @@ export function ToolDetailPanel({
             ref={contentRef}
             className="flex-1 min-h-0 overflow-y-auto scrollbar-dark px-4 py-4 space-y-5"
           >
+            <ToolTryIt
+              key={prefixed}
+              serverName={serverName}
+              tool={tool}
+              schema={schema}
+              exposed={exposed}
+              draftDiffers={draftDiffers}
+              policy={policy}
+              fontSize={fontSize}
+              onNavigate={onNavigate}
+            />
+
             <Section title="Description">
               {tool.description ? (
                 <DescriptionBlock

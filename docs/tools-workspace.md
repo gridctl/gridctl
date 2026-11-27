@@ -1,17 +1,31 @@
 # Tools Workspace
 
-The Tools workspace (`/tools` in the web UI on `:8180`) is the control plane for the tool surface your gateway exposes: what each MCP server advertises, which of those tools upstream clients can call, which exposed tools are actually used, and how to shrink the surface safely. To invoke or search that live surface from the CLI, see [Live tools](cli-reference.md#live-tools).
+The Tools workspace (`/tools` in the web UI on `:8180`) is the control plane for the tool surface your gateway exposes: what each MCP server advertises, which of those tools upstream clients can call, which exposed tools are actually used, and how to shrink the surface safely. You can call a tool from the detail rail with [Try it](#try-it).
 
 ## Layout
 
 - **Server rail (left)**: every MCP server in the stack with an `enabled/total` badge. While you have unsaved edits, the active server's badge shows the draft count with an `unsaved` chip; saving or discarding restores the live count.
 - **Center**: the whitelist editor for the selected server. The checkbox toggles a tool's exposure; clicking the row opens the tool in the detail rail. These are separate gestures on purpose, so inspecting a tool never changes what agents can call.
-- **Detail rail (right)**: description, a parameters table (name, type, required, default, and allowed values) above a collapsible raw schema with a Copy button, server-reported hints, the policy verdict when one applies, and usage stats for the selected tool. The header has Copy name (copies the prefixed `server__tool` name), a pin chip that opens the server in Pins (pin status is per server, and the chip is absent for a tool the saved allow-list hides), and links to Traces and Metrics filtered to the tool. Metrics appears once the tool has recorded calls. Traces keeps a time range chosen on an earlier visit. With unsaved allow-list edits, these links ask before discarding them. Long descriptions are shortened with a count of the hidden characters and a Show more button, and descriptions are never rendered as markdown.
+- **Detail rail (right)**: a collapsed [Try it](#try-it) section for calling the tool, then the description, a parameters table (name, type, required, default, and allowed values) above a collapsible raw schema with a Copy button, server-reported hints, the policy verdict when one applies, and usage stats for the selected tool. The header has Copy name (copies the prefixed `server__tool` name), a pin chip that opens the server in Pins (pin status is per server, and the chip is absent for a tool the saved allow-list hides), and links to Traces and Metrics filtered to the tool. Metrics appears once the tool has recorded calls. Traces keeps a time range chosen on an earlier visit. With unsaved allow-list edits, these links ask before discarding them. Long descriptions are shortened with a count of the hidden characters and a Show more button, and descriptions are never rendered as markdown.
 - **Header**: global search across every server, plus the Groups, Access, Fleet, and Audit entry points.
 
 A failed fetch is not an empty stack. With no servers loaded, the pane says "Tools unavailable" and offers Retry. When servers are already on screen, a banner names the failure and the editor stays mounted, including an unsaved whitelist edit. See [a workspace says a feature is unavailable](troubleshooting.md#a-workspace-says-a-feature-is-unavailable).
 
 Everything an operator would put in a support link lives in the URL: `?server=`, `?q=`, `?tool=`, `?audit=1`, `?window=`, `?filter=`, `?sort=`, `?risk=`, and `?client=<slug>` (the Connections hub's deep link: opens the per-client access editor on that client once, then drops itself from the URL). Defaults are omitted, so a bare `/tools` stays canonical.
+
+## Try it
+
+The detail rail's Try it section calls the selected tool through `POST /api/tools/call`, the same dispatch path as `gridctl call` and MCP `tools/call`. It sends only `name` (`server__tool`), `arguments`, and the caller label `ui`, with the UI's existing gateway credential. Every gate applies: client scope, the allow-list, `policy:` rules, rate limits, routing, and schema pins. When `clients:` scopes callers, the `ui` label must be allowed there (add a `ui` profile), or use `gridctl call --as <client>` to call as another client. The UI has no way to choose another label. To call or search the live surface from the CLI, see [Live tools](cli-reference.md#live-tools).
+
+Arguments come from a form built from the tool's input schema or from raw JSON; both edit the same object, and properties outside the schema are kept. Unset optional fields are not sent, and defaults appear as placeholders until you choose Insert defaults. The browser checks a subset of JSON Schema (types, required, enum, const, numeric and length bounds, pattern, item counts, nested properties, single-schema items, and `additionalProperties: false`) before sending. When a schema uses anything else, such as `$ref`, `oneOf`, or `format`, a note says those parts are not checked in the browser and the server validates the call. Integers beyond 2^53 lose precision in arguments and results.
+
+A confirmation names the tool and shows the arguments before every call unless the server declares the tool `readOnlyHint: true` or `destructiveHint: false`. MCP treats a tool without annotations as potentially destructive, so it also asks.
+
+Run is disabled, with the reason beside it, when the saved allow-list hides the tool, when the policy verdict is anything other than allow, or while the gateway credential awaits re-entry. Calls use the saved allow-list: an unsaved checkbox change shows a note and neither enables nor disables Run.
+
+Results render as plain text only: text blocks in a monospace block (JSON pretty-printed), other blocks as a one-line summary, and never as images, links, HTML, or markdown. A denial or tool error is shown with the gateway's reason. Output beyond 20,000 characters is cut off until you press Show all, and Copy always copies the full result. "View trace" opens the call's trace when the gateway recorded one; otherwise "View traces for this tool" opens Traces filtered to the tool.
+
+Cancel, or Escape inside the section while a call runs, drops the request. The tool may still have run on the server. Selecting another tool or closing the rail also drops an in-flight call. The last five argument sets per tool are kept in memory for the page session only, never in browser storage or the URL, and are cleared when the gateway credential changes.
 
 ## Expose-all semantics
 

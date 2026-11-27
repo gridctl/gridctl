@@ -2610,6 +2610,9 @@ func (g *Gateway) dispatchToolsCall(ctx context.Context, params ToolCallParams, 
 	ctx = attempt.Context()
 	defer attempt.Finish()
 	state := callState{attempt: attempt}
+	if sc := rootSpan.SpanContext(); sc.IsValid() && sc.IsSampled() {
+		state.outcome.TraceID = sc.TraceID().String()
+	}
 	// Strip the server prefix for the tool attribute so early-exit paths
 	// (denials, routing failures) still surface the bare tool name; the
 	// post-routing re-stamp below uses the resolved name.

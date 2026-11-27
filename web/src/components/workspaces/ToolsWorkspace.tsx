@@ -511,6 +511,8 @@ export function ToolsWorkspace() {
   const savedAllowList = activeServer?.toolWhitelist ?? [];
   const selectedHiddenByAllowList =
     selectedTool !== null && savedAllowList.length > 0 && !savedAllowList.includes(selectedTool);
+  // Try it gates on the saved allow-list; the draft only adds a note.
+  const selectedExposed = selectedTool !== null && !selectedHiddenByAllowList;
   // Detail-rail links leave the workspace, so they go through the shared
   // unsaved-edits guard registered above.
   const guardedNavigate = useGuardedNavigate();
@@ -547,6 +549,8 @@ export function ToolsWorkspace() {
       policy={selectedTool ? policyReport?.tools?.[`${activeServerName}${TOOL_NAME_DELIMITER}${selectedTool}`] : undefined}
       pin={selectedPin}
       hiddenByAllowList={selectedHiddenByAllowList}
+      exposed={selectedExposed}
+      draftDiffers={selectedExposed !== selectedEnabled}
       onNavigate={(path) => guardedNavigate(path)}
       onClose={() => applyTool(null)}
     />
