@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { useSpecStore } from '../stores/useSpecStore';
@@ -13,6 +16,7 @@ describe('useSpecStore', () => {
       specLoading: false,
       specError: null,
       validation: null,
+      validationError: null,
       health: null,
       plan: null,
       planLoading: false,
@@ -55,6 +59,16 @@ describe('useSpecStore', () => {
     };
     useSpecStore.getState().setValidation(validation);
     expect(useSpecStore.getState().validation).toEqual(validation);
+  });
+
+  it('keeps the last validation on a validation error and clears the error on the next result', () => {
+    const validation: ValidationResult = { valid: true, errorCount: 0, warningCount: 0, issues: [] };
+    useSpecStore.getState().setValidation(validation);
+    useSpecStore.getState().setValidationError('boom');
+    expect(useSpecStore.getState().validationError).toBe('boom');
+    expect(useSpecStore.getState().validation).toEqual(validation);
+    useSpecStore.getState().setValidation(validation);
+    expect(useSpecStore.getState().validationError).toBeNull();
   });
 
   it('sets health', () => {
@@ -492,7 +506,8 @@ describe('SpecPane', () => {
 
   it('renders the spec content inside the pane', () => {
     render(<SpecPane onClose={vi.fn()} />);
-    expect(screen.getByRole('dialog', { name: 'Spec' })).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Stack spec' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Spec' })).toBeInTheDocument();
     expect(screen.getByText('/tmp/stack.yaml')).toBeInTheDocument();
     expect(screen.getByText('Compare to running')).toBeInTheDocument();
   });
@@ -509,5 +524,35 @@ describe('SpecPane', () => {
     render(<SpecPane onClose={onClose} />);
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('blurs a focused field on Escape without closing', () => {
+    const onClose = vi.fn();
+    render(<SpecPane onClose={onClose} />);
+    const pane = screen.getByRole('complementary', { name: 'Stack spec' });
+    const input = document.createElement('input');
+    pane.appendChild(input);
+    input.focus();
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(document.activeElement).not.toBe(input);
+  });
+
+  it('leaves Escape to the open diff modal', () => {
+    const onClose = vi.fn();
+    useSpecStore.setState({ diffModalOpen: true });
+    render(<SpecPane onClose={onClose} />);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('moves focus into the pane on mount', () => {
+    render(<SpecPane onClose={vi.fn()} />);
+    expect(document.activeElement).toBe(screen.getByRole('complementary', { name: 'Stack spec' }));
+  });
+
+  it('does not import SlideOver', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../components/spec/SpecPane.tsx'), 'utf8');
+    expect(source).not.toMatch(/SlideOver/);
   });
 });

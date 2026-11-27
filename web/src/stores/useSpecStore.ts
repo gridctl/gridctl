@@ -13,8 +13,10 @@ interface SpecState {
   specLoading: boolean;
   specError: string | null;
 
-  // Validation
+  // Validation. validationError is a failed validation request; the last
+  // result stays in place.
   validation: ValidationResult | null;
+  validationError: string | null;
 
   // Health
   health: SpecHealth | null;
@@ -37,6 +39,7 @@ interface SpecState {
   setSpecLoading: (loading: boolean) => void;
   setSpecError: (error: string | null) => void;
   setValidation: (result: ValidationResult) => void;
+  setValidationError: (error: string | null) => void;
   setHealth: (health: SpecHealth) => void;
   setPlan: (plan: PlanDiff) => void;
   setPlanLoading: () => void;
@@ -55,6 +58,7 @@ export const useSpecStore = create<SpecState>()(
     specLoading: false,
     specError: null,
     validation: null,
+    validationError: null,
     health: null,
     plan: null,
     planLoading: false,
@@ -66,7 +70,8 @@ export const useSpecStore = create<SpecState>()(
     setSpec: (spec) => set({ spec, specError: null }),
     setSpecLoading: (specLoading) => set({ specLoading }),
     setSpecError: (specError) => set({ specError }),
-    setValidation: (validation) => set({ validation }),
+    setValidation: (validation) => set({ validation, validationError: null }),
+    setValidationError: (validationError) => set({ validationError }),
     setHealth: (health) => set({ health }),
     setPlan: (plan) => set({ plan, planLoading: false, planError: null }),
     setPlanLoading: () => set({ plan: null, planLoading: true, planError: null }),

@@ -241,9 +241,12 @@ describe('useGlobalCommands navigation guard', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/connections');
   });
 
-  it('lets Open Spec Editor through a guard that only blocks leaving /stack', async () => {
+  it('lets Open spec through a guard that only blocks leaving /stack', async () => {
     renderGuarded('/stack');
     await waitFor(() => expect(registry?.commands.some((c) => c.id === 'navigate:spec')).toBe(true));
+    const spec = registry?.commands.find((c) => c.id === 'navigate:spec');
+    expect(spec?.label).toBe('Open spec');
+    expect(spec?.keywords).toContain('editor');
     useNavigationGuardStore.getState().register({
       id: 'lens',
       label: 'Access Lens',
