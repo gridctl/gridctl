@@ -317,7 +317,7 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
     onSelectSpan(null);
   };
   const onDrawerKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'Escape' || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+    if (e.key !== 'Escape' || e.metaKey || e.ctrlKey || e.altKey) return;
     // One press closes one layer: stop the ladder from also closing the
     // waterfall.
     e.preventDefault();

@@ -1159,6 +1159,48 @@ describe('TraceWaterfall keyboard access', () => {
     expect(useTracesStore.getState().selectedTraceId).toBe(OPEN_TRACE);
   });
 
+  it('returns focus to the span row on Shift+Escape inside span detail', async () => {
+    await openTree();
+    fireEvent.click(screen.getByText('child.a'));
+    const close = await screen.findByRole('button', { name: 'Close span detail' });
+    close.focus();
+    fireEvent.keyDown(close, { key: 'Escape', shiftKey: true });
+    await waitFor(() => expect(screen.queryByTestId('span-detail')).toBeNull());
+    expect(document.activeElement).toBe(row('child.a'));
+    expect(useTracesStore.getState().selectedTraceId).toBe(OPEN_TRACE);
+  });
+
+  it('returns focus to the grid on Escape from the list|waterfall separator', async () => {
+    const { grid } = await openTree();
+    const sep = document.getElementById('sep-trace-list')!;
+    expect(sep).toHaveAttribute('tabindex', '0');
+    sep.focus();
+    fireEvent.keyDown(sep, { key: 'Escape' });
+    await waitFor(() => expect(useTracesStore.getState().selectedTraceId).toBeNull());
+    expect(document.activeElement).toBe(grid);
+  });
+
+  it('stops handled tree and splitter keys from reaching document listeners', async () => {
+    await openTree();
+    const spy = vi.fn();
+    document.addEventListener('keydown', spy);
+    try {
+      const root = row('root.op');
+      root.focus();
+      fireEvent.keyDown(root, { key: 'ArrowDown' });
+      fireEvent.keyDown(row('child.a'), { key: 'Enter' });
+      await screen.findByTestId('span-detail');
+      const splitter = screen.getByRole('separator', { name: 'Resize span name column' });
+      fireEvent.keyDown(splitter, { key: 'ArrowRight' });
+      expect(spy).not.toHaveBeenCalled();
+      // Escape on a row is left to the ladder.
+      fireEvent.keyDown(row('child.a'), { key: 'Escape' });
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      document.removeEventListener('keydown', spy);
+    }
+  });
+
   it('returns focus to the grid when Close waterfall is activated from inside it', async () => {
     const { grid } = await openTree();
     const close = screen.getByRole('button', { name: 'Close waterfall' });

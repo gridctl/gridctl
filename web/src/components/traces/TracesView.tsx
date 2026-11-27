@@ -237,12 +237,16 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
   const activeNavId = navIndex >= 0 ? navId : null;
 
   // Closing the waterfall with focus inside it would drop focus to <body>, so
-  // the Traces grid takes it first. Focus elsewhere is left alone.
+  // the Traces grid takes it first. The list|waterfall separator unmounts with
+  // the waterfall, so it counts as inside. Focus elsewhere is left alone.
   const waterfallPanelRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLTableElement>(null);
   const returnFocusFromWaterfall = () => {
     const active = document.activeElement;
-    if (active && waterfallPanelRef.current?.contains(active)) gridRef.current?.focus();
+    if (!active) return;
+    if (waterfallPanelRef.current?.contains(active) || active.closest('#sep-trace-list')) {
+      gridRef.current?.focus();
+    }
   };
 
   useListNav({
