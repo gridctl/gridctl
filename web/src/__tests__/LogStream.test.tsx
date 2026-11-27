@@ -223,6 +223,10 @@ describe('LogStream', () => {
     expect(within(run).queryByText('github')).not.toBeInTheDocument();
     expect(chips[0]).toHaveAttribute('title', 'tool=create_issue');
     expect(chips[1]).toHaveAttribute('title', 'duration=1.234567ms');
+    // Wrap off: the run and chips clip on one line instead of growing the row.
+    expect(run).toHaveClass('overflow-hidden', 'whitespace-nowrap');
+    expect(run.parentElement).toHaveClass('overflow-hidden');
+    expect(chips[0]).toHaveClass('truncate');
     // Chips are plain text: no buttons or tab stops inside the run.
     expect(within(run).queryAllByRole('button')).toHaveLength(0);
     expect(run.querySelectorAll('[tabindex]')).toHaveLength(0);
