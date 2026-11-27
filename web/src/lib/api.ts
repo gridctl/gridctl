@@ -2409,6 +2409,23 @@ function mapRunRecord(r: SnakeRunRecord): RunRecord {
   };
 }
 
+/** The response body's `error` string, or the fallback when there is none. */
+function bodyError(data: unknown, fallback: string): string {
+  const error = (data as { error?: unknown } | null)?.error;
+  return typeof error === 'string' && error !== '' ? error : fallback;
+}
+
+/** GET for the runs endpoints that keeps the server's error message. */
+async function fetchRunsJSON<T>(endpoint: string): Promise<T> {
+  const response = await fetch(`${API_BASE}${endpoint}`, { headers: buildHeaders() });
+  if (response.status === 401) throw new AuthError('Authentication required');
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new HTTPError(response.status, bodyError(data, `API error: ${response.status} ${response.statusText}`));
+  }
+  return response.json();
+}
+
 export async function fetchRuns(params?: {
   server?: string;
   tool?: string;
@@ -2443,7 +2460,7 @@ export async function fetchRuns(params?: {
   if (params?.cursor) query.set('cursor', params.cursor);
   if (params?.limit != null) query.set('limit', String(params.limit));
   const qs = query.toString();
-  const raw = await fetchJSON<{
+  const raw = await fetchRunsJSON<{
     records?: SnakeRunRecord[];
     warnings?: RunWarning[];
     partial?: boolean;
@@ -2462,7 +2479,7 @@ export async function fetchRuns(params?: {
 }
 
 export async function fetchRunsStatus(): Promise<RunStatusResponse> {
-  return fetchJSON<RunStatusResponse>('/api/runs/status');
+  return fetchRunsJSON<RunStatusResponse>('/api/runs/status');
 }
 
 export async function exportRuns(params?: Parameters<typeof fetchRuns>[0]): Promise<Blob> {
@@ -2492,7 +2509,13 @@ export async function exportRuns(params?: Parameters<typeof fetchRuns>[0]): Prom
   return response.blob();
 }
 
-export async function wipeRuns(): Promise<{ success: boolean; partial: boolean; recordingEnabled: boolean; scope: string }> {
+export async function wipeRuns(): Promise<{
+  success: boolean;
+  partial: boolean;
+  recordingEnabled: boolean;
+  scope: string;
+  error?: string;
+}> {
   const response = await fetch(`${API_BASE}/api/runs/wipe`, {
     method: 'POST',
     headers: buildHeaders({ 'Content-Type': 'application/json' }),
@@ -2500,13 +2523,14 @@ export async function wipeRuns(): Promise<{ success: boolean; partial: boolean; 
   if (response.status === 401) throw new AuthError('Authentication required');
   const data = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new HTTPError(response.status, 'Failed to wipe run history');
+    throw new HTTPError(response.status, bodyError(data, 'Failed to wipe run history'));
   }
   return {
     success: Boolean(data?.success),
     partial: Boolean(data?.partial),
     recordingEnabled: Boolean(data?.recording_enabled ?? data?.recordingEnabled),
     scope: String(data?.scope ?? ''),
+    ...(typeof data?.error === 'string' && data.error !== '' ? { error: data.error } : {}),
   };
 }
 
@@ -2523,7 +2547,7 @@ export async function updateStackRuns(body: {
   if (response.status === 401) throw new AuthError('Authentication required');
   const data = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new HTTPError(response.status, 'Failed to update runs configuration');
+    throw new HTTPError(response.status, bodyError(data, 'Failed to update runs configuration'));
   }
   return data;
 }

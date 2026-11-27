@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import {
+  HTTPError,
   fetchRuns,
   fetchRunsStatus,
   type RunCursor,
@@ -31,6 +32,10 @@ interface RunsState {
   /** Filters of the last successful non-append load. */
   loadedFilters: RunsFilters | null;
   error: string | null;
+  /** HTTP status of the failed list load, when the server returned one. */
+  errorStatus: number | null;
+  /** The failed list load was a Load older request. */
+  appendFailed: boolean;
   statusError: string | null;
   mutationError: string | null;
   selectedId: string | null;
@@ -47,6 +52,11 @@ interface RunsState {
   select: (id: string | null) => void;
   setMutationError: (error: string | null) => void;
   load: (opts?: { append?: boolean }) => Promise<void>;
+  /**
+   * Repeats the failed load. A failed Load older is repeated, except after a
+   * 409: a wipe invalidated the cursor, so the first page is reloaded.
+   */
+  retry: () => Promise<void>;
 }
 
 export const useRunsStore = create<RunsState>()((set, get) => ({
@@ -59,6 +69,8 @@ export const useRunsStore = create<RunsState>()((set, get) => ({
   hasLoaded: false,
   loadedFilters: null,
   error: null,
+  errorStatus: null,
+  appendFailed: false,
   statusError: null,
   mutationError: null,
   selectedId: null,
@@ -94,10 +106,12 @@ export const useRunsStore = create<RunsState>()((set, get) => ({
     const query = append ? (lastQuery ?? resolveRunsQuery(filters, Date.now())) : resolveRunsQuery(filters, Date.now());
     let list: RunListResponse | null = null;
     let listError: string | null = null;
+    let listErrorStatus: number | null = null;
     try {
       list = await fetchRuns({ ...query, cursor: append && nextCursor ? JSON.stringify(nextCursor) : undefined });
     } catch (err) {
       listError = err instanceof Error ? err.message : 'Failed to load run history';
+      listErrorStatus = err instanceof HTTPError ? err.status : null;
     }
     let status = get().status;
     let statusError: string | null = null;
@@ -116,6 +130,8 @@ export const useRunsStore = create<RunsState>()((set, get) => ({
       set({
         isLoading: false,
         error: listError,
+        errorStatus: listErrorStatus,
+        appendFailed: append,
         statusError,
         status: status ?? get().status,
         ...(keep
@@ -136,6 +152,12 @@ export const useRunsStore = create<RunsState>()((set, get) => ({
       hasLoaded: true,
       ...(append ? {} : { loadedFilters: { ...filters }, lastQuery: query }),
       error: null,
+      errorStatus: null,
+      appendFailed: false,
     });
+  },
+  retry: () => {
+    const { appendFailed, errorStatus, nextCursor, load } = get();
+    return load({ append: appendFailed && errorStatus !== 409 && nextCursor !== null });
   },
 }));
