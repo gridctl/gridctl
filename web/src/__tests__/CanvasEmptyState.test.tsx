@@ -13,8 +13,28 @@ vi.mock('@xyflow/react', () => ({
   BackgroundVariant: { Dots: 'dots', Lines: 'lines', Cross: 'cross' },
   Panel: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Handle: () => null,
-  NodeToolbar: ({ children, nodeId }: { children?: ReactNode; nodeId?: string }) => (
-    <div data-testid="node-toolbar" data-node-id={nodeId}>{children}</div>
+  NodeToolbar: ({
+    children,
+    nodeId,
+    isVisible,
+    position,
+    offset,
+  }: {
+    children?: ReactNode;
+    nodeId?: string;
+    isVisible?: boolean;
+    position?: string;
+    offset?: number;
+  }) => (
+    <div
+      data-testid="node-toolbar"
+      data-node-id={nodeId}
+      data-visible={String(isVisible)}
+      data-position={position}
+      data-offset={String(offset)}
+    >
+      {children}
+    </div>
   ),
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
   MarkerType: { Arrow: 'arrow', ArrowClosed: 'arrowclosed' },
@@ -91,7 +111,11 @@ describe('Canvas empty-stack call to action', () => {
     applyStatus(emptyStatus());
 
     expect(screen.getByRole('button', { name: 'Create new' })).toBeInTheDocument();
-    expect(screen.getByTestId('node-toolbar')).toHaveAttribute('data-node-id', 'gateway');
+    const toolbar = screen.getByTestId('node-toolbar');
+    expect(toolbar).toHaveAttribute('data-node-id', 'gateway');
+    expect(toolbar).toHaveAttribute('data-visible', 'true');
+    expect(toolbar).toHaveAttribute('data-position', 'right');
+    expect(toolbar).toHaveAttribute('data-offset', '24');
     expect(screen.getByRole('heading', { level: 2, name: 'No stack loaded' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'MCP Server' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Resource' })).toBeNull();
