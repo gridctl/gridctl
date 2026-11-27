@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { X, AlertCircle, Copy, Link2, Download } from 'lucide-react';
 import { cn } from '../../lib/cn';
@@ -7,7 +7,7 @@ import { SeparatorBody } from '../ui/SeparatorBody';
 import { copyWithToast, showToast } from '../ui/Toast';
 import { fetchTraceOTLP } from '../../lib/api';
 import { formatDuration, formatTotalDuration } from '../../lib/duration';
-import { computeSelfTimes, computeCriticalPath } from '../../lib/traceMath';
+import { computeSelfTimes, computeCriticalPath, preorderSpanRows } from '../../lib/traceMath';
 import { useWorkspaceLayout } from '../../hooks/useWorkspaceLayout';
 import { releasePointerCapture } from '../../lib/pointerCapture';
 import {
@@ -83,34 +83,6 @@ function displaySpanName(span: Span): string {
   if (span.name !== 'tools/call') return span.name;
   const tool = getSpanTool(span);
   return tool ? `tools/call ${tool}` : span.name;
-}
-
-function buildDepthMap(spans: Span[]): Map<string, number> {
-  const depthMap = new Map<string, number>();
-  const byId = new Map(spans.map((s) => [s.spanId, s]));
-
-  function depth(spanId: string, visited = new Set<string>()): number {
-    if (depthMap.has(spanId)) return depthMap.get(spanId)!;
-    if (visited.has(spanId)) return 0;
-    const span = byId.get(spanId);
-    if (!span?.parentSpanId) {
-      depthMap.set(spanId, 0);
-      return 0;
-    }
-    visited.add(spanId);
-    const d = depth(span.parentSpanId, visited) + 1;
-    depthMap.set(spanId, d);
-    return d;
-  }
-
-  spans.forEach((s) => depth(s.spanId));
-  return depthMap;
-}
-
-function sortSpansByStartTime(spans: Span[]): Span[] {
-  return [...spans].sort(
-    (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
-  );
 }
 
 function computeP95(spans: Span[]): number {
@@ -193,9 +165,11 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
     window.addEventListener('blur', cleanup);
   };
 
-  const { sorted, depthMap, traceStart, totalDuration, p95, selfTimes, criticalPath, childCounts } = useMemo(() => {
-    const sorted = sortSpansByStartTime(trace.spans);
-    const depthMap = buildDepthMap(trace.spans);
+  const { rows, rowIndex, traceStart, totalDuration, p95, selfTimes, criticalPath, childCounts } = useMemo(() => {
+    // Pre-order rows are the single source for order, depth, sibling
+    // position, and parent and child lookup.
+    const rows = preorderSpanRows(trace.spans);
+    const rowIndex = new Map(rows.map((r, i) => [r.span.spanId, i]));
     const p95 = computeP95(trace.spans);
 
     // Only finite timestamps participate; a single bad span must not poison
@@ -221,13 +195,11 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
       trace.spans.length >= CRITICAL_PATH_MIN_SPANS ? computeCriticalPath(intervals) : new Set<string>();
 
     const childCounts = new Map<string, number>();
-    for (const s of trace.spans) {
-      if (s.parentSpanId) {
-        childCounts.set(s.parentSpanId, (childCounts.get(s.parentSpanId) ?? 0) + 1);
-      }
+    for (const r of rows) {
+      if (r.parentId) childCounts.set(r.parentId, (childCounts.get(r.parentId) ?? 0) + 1);
     }
 
-    return { sorted, depthMap, traceStart, totalDuration, p95, selfTimes, criticalPath, childCounts };
+    return { rows, rowIndex, traceStart, totalDuration, p95, selfTimes, criticalPath, childCounts };
   }, [trace]);
 
   const selectedSpan = trace.spans.find((s) => s.spanId === selectedSpanId) ?? null;
@@ -243,11 +215,115 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
 
   // Build unique server list for legend
   const servers = useMemo(() => {
-    const set = new Set(sorted.map(getSpanServer));
+    const set = new Set(rows.map((r) => getSpanServer(r.span)));
     return Array.from(set);
-  }, [sorted]);
+  }, [rows]);
 
   const hasError = trace.spans.some((s) => s.status === 'error');
+
+  // Roving tab stop: the last focused row while it is still in the trace,
+  // else the selected span, else the first row.
+  const [focusedSpanId, setFocusedSpanId] = useState<string | null>(null);
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  const tabStopId =
+    focusedSpanId && rowIndex.has(focusedSpanId)
+      ? focusedSpanId
+      : selectedSpanId && rowIndex.has(selectedSpanId)
+        ? selectedSpanId
+        : (rows[0]?.span.spanId ?? null);
+
+  const focusRow = useCallback((spanId: string | null | undefined) => {
+    if (spanId) rowRefs.current.get(spanId)?.focus();
+  }, []);
+
+  // Handled keys are stopped so the document-level trace list navigation
+  // never sees them. Escape is left alone for the TracesView ladder.
+  const onTreeKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const target = e.target as HTMLElement;
+    if (target.getAttribute('role') !== 'treeitem') return;
+    const id = target.dataset.spanId;
+    const index = id ? rowIndex.get(id) : undefined;
+    if (id == null || index == null) return;
+    let next: string | null | undefined;
+    switch (e.key) {
+      case 'ArrowDown':
+      case 'j':
+        next = rows[index + 1]?.span.spanId;
+        break;
+      case 'ArrowUp':
+      case 'k':
+        next = rows[index - 1]?.span.spanId;
+        break;
+      case 'Home':
+        next = rows[0]?.span.spanId;
+        break;
+      case 'End':
+        next = rows[rows.length - 1]?.span.spanId;
+        break;
+      case 'ArrowLeft':
+        next = rows[index].parentId;
+        break;
+      case 'ArrowRight': {
+        const child = rows[index + 1];
+        next = child?.parentId === id ? child.span.spanId : null;
+        break;
+      }
+      case 'Enter':
+      case ' ':
+        e.preventDefault();
+        e.stopPropagation();
+        onSelectSpan(selectedSpanId === id ? null : id);
+        return;
+      default:
+        return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    focusRow(next);
+  };
+
+  const currentNameColPct = liveNameColPct ?? storedNameColPct;
+  const onNameColKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    let pct: number;
+    switch (e.key) {
+      case 'ArrowLeft':
+        pct = currentNameColPct - 1;
+        break;
+      case 'ArrowRight':
+        pct = currentNameColPct + 1;
+        break;
+      case 'Home':
+        pct = TRACES_NAME_COL_MIN_PCT;
+        break;
+      case 'End':
+        pct = TRACES_NAME_COL_MAX_PCT;
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    setTracesPrefs({
+      nameColPct: Math.min(TRACES_NAME_COL_MAX_PCT, Math.max(TRACES_NAME_COL_MIN_PCT, pct)),
+    });
+  };
+
+  // Closing the drawer from inside it would drop focus to <body> when the
+  // drawer unmounts, so the selected row takes focus first.
+  const closeDrawer = () => {
+    focusRow(selectedSpanId);
+    onSelectSpan(null);
+  };
+  const onDrawerKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Escape' || e.metaKey || e.ctrlKey || e.altKey) return;
+    // One press closes one layer: stop the ladder from also closing the
+    // waterfall.
+    e.preventDefault();
+    e.stopPropagation();
+    closeDrawer();
+  };
 
   const downloadOTLP = async () => {
     try {
@@ -268,7 +344,7 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Header */}
-      <div className="h-9 flex items-center justify-between px-3 flex-shrink-0 border-b border-border/30 bg-surface-elevated/20">
+      <div className="@container h-9 flex items-center justify-between px-3 flex-shrink-0 border-b border-border/30 bg-surface-elevated/20">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-3xs font-medium text-text-muted uppercase tracking-wider flex-shrink-0">Trace</span>
           <span className="text-xs font-mono text-text-primary truncate" title={trace.traceId}>
@@ -294,7 +370,7 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
             onClick={() => copyWithToast(trace.traceId, 'Trace ID')}
             title="Copy trace ID"
             aria-label="Copy trace ID"
-            className="p-1 rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
+            className="size-6 inline-flex items-center justify-center rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
           >
             <Copy size={11} />
           </button>
@@ -305,7 +381,7 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
             }
             title="Copy deep link"
             aria-label="Copy deep link"
-            className="p-1 rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
+            className="size-6 inline-flex items-center justify-center rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
           >
             <Link2 size={11} />
           </button>
@@ -314,7 +390,7 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
             onClick={downloadOTLP}
             title="Export trace as OTLP JSON"
             aria-label="Export trace as OTLP JSON"
-            className="p-1 rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
+            className="size-6 inline-flex items-center justify-center rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
           >
             <Download size={11} />
           </button>
@@ -322,8 +398,9 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
           {actions}
           {onClose && (
             <button
+              type="button"
               onClick={onClose}
-              className="p-1 rounded-md hover:bg-surface-highlight transition-colors flex-shrink-0"
+              className="size-6 inline-flex items-center justify-center rounded-md hover:bg-surface-highlight transition-colors flex-shrink-0"
               aria-label="Close waterfall"
             >
               <X size={12} className="text-text-muted" />
@@ -349,10 +426,19 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
             <div className="flex items-center h-7 px-3 flex-shrink-0 border-b border-border/20 bg-surface-elevated/10">
               <div style={{ width: nameColWidth }} className="min-w-0 overflow-hidden text-3xs text-text-muted uppercase tracking-wider whitespace-nowrap">Span</div>
               <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize span name column"
+                aria-valuemin={TRACES_NAME_COL_MIN_PCT}
+                aria-valuemax={TRACES_NAME_COL_MAX_PCT}
+                aria-valuenow={Math.round(currentNameColPct)}
+                tabIndex={0}
                 onPointerDown={onNameColDrag}
+                onKeyDown={onNameColKeyDown}
                 title="Drag to resize the span column"
                 className={cn(
                   'w-1 -ml-1 self-stretch cursor-col-resize flex-shrink-0 rounded transition-colors touch-none',
+                  'focus-visible:-outline-offset-2',
                   isNameColDragging ? 'bg-primary/50' : 'hover:bg-primary/30',
                 )}
               />
@@ -369,9 +455,13 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
             </div>
 
             {/* Span rows */}
-            <div className="flex-1 overflow-y-auto scrollbar-dark min-h-0">
-              {sorted.map((span) => {
-                const depth = depthMap.get(span.spanId) ?? 0;
+            <div
+              role="tree"
+              aria-label="Spans"
+              onKeyDown={onTreeKeyDown}
+              className="flex-1 overflow-y-auto scrollbar-dark min-h-0"
+            >
+              {rows.map(({ span, depth, posInSet, setSize }) => {
                 const spanStart = new Date(span.startTime).getTime();
                 const leftPct = Number.isFinite(spanStart)
                   ? ((spanStart - traceStart) / totalDuration) * 100
@@ -391,9 +481,22 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
                 return (
                   <div
                     key={span.spanId}
+                    ref={(el) => {
+                      if (el) rowRefs.current.set(span.spanId, el);
+                      else rowRefs.current.delete(span.spanId);
+                    }}
+                    role="treeitem"
+                    data-span-id={span.spanId}
+                    aria-level={depth + 1}
+                    aria-posinset={posInSet}
+                    aria-setsize={setSize}
+                    aria-selected={isSelected}
+                    aria-label={`${name}, ${formatDuration(span.duration)}, ${span.status}${isSlow ? ', slow' : ''}`}
+                    tabIndex={span.spanId === tabStopId ? 0 : -1}
+                    onFocus={() => setFocusedSpanId(span.spanId)}
                     onClick={() => onSelectSpan(isSelected ? null : span.spanId)}
                     className={cn(
-                      'flex items-center h-7 px-3 cursor-pointer transition-colors border-b border-border/10',
+                      'flex items-center h-7 px-3 cursor-pointer transition-colors border-b border-border/10 focus-visible:-outline-offset-2',
                       isSelected
                         ? 'bg-surface-highlight/50'
                         : 'hover:bg-surface-highlight/20'
@@ -465,13 +568,13 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
                     <span className="text-3xs text-text-muted font-mono">{srv || 'gateway'}</span>
                   </div>
                 ))}
-                {sorted.some((s) => s.status === 'error') && (
+                {trace.spans.some((s) => s.status === 'error') && (
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <div className="w-2 h-2 rounded-sm bg-status-error" />
                     <span className="text-3xs text-text-muted">error</span>
                   </div>
                 )}
-                {sorted.some((s) => s.duration > p95 && s.status !== 'error') && (
+                {trace.spans.some((s) => s.duration > p95 && s.status !== 'error') && (
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <div className="w-2 h-2 rounded-sm bg-status-pending" />
                     <span className="text-3xs text-text-muted">slow (&gt;p95)</span>
@@ -495,15 +598,17 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
               <SeparatorBody orientation="horizontal" />
             </Separator>
             <Panel id="span-drawer" defaultSize="35" minSize={160} maxSize="60">
-              <SpanDetail
-                span={selectedSpan}
-                selfTimeMs={
-                  (childCounts.get(selectedSpan.spanId) ?? 0) > 0
-                    ? selfTimes.get(selectedSpan.spanId)
-                    : undefined
-                }
-                onClose={() => onSelectSpan(null)}
-              />
+              <div className="h-full" onKeyDown={onDrawerKeyDown}>
+                <SpanDetail
+                  span={selectedSpan}
+                  selfTimeMs={
+                    (childCounts.get(selectedSpan.spanId) ?? 0) > 0
+                      ? selfTimes.get(selectedSpan.spanId)
+                      : undefined
+                  }
+                  onClose={closeDrawer}
+                />
+              </div>
             </Panel>
           </>
         )}

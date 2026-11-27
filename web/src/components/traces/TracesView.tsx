@@ -235,6 +235,20 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
     [displayTraces, navId]
   );
   const activeNavId = navIndex >= 0 ? navId : null;
+
+  // Closing the waterfall with focus inside it would drop focus to <body>, so
+  // the Traces grid takes it first. The list|waterfall separator unmounts with
+  // the waterfall, so it counts as inside. Focus elsewhere is left alone.
+  const waterfallPanelRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLTableElement>(null);
+  const returnFocusFromWaterfall = () => {
+    const active = document.activeElement;
+    if (!active) return;
+    if (waterfallPanelRef.current?.contains(active) || active.closest('#sep-trace-list')) {
+      gridRef.current?.focus();
+    }
+  };
+
   useListNav({
     itemCount: displayTraces.length,
     selectedIndex: navIndex < 0 ? 0 : navIndex,
@@ -251,8 +265,20 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
       // Ladder: span detail closes first, then the waterfall. An Escape with
       // nothing selected is left to the browser (e.g. exiting fullscreen in
       // the detached window).
-      if (selectedSpanId) setSpanSel(null);
-      else if (selectedTraceId) selectTrace(null);
+      if (selectedSpanId) {
+        // The drawer separator unmounts with the drawer; hand focus back to
+        // the span row first. Other focus targets stay mounted.
+        const active = document.activeElement;
+        if (active instanceof Element && active.closest('#sep-span-drawer')) {
+          waterfallPanelRef.current
+            ?.querySelector<HTMLElement>('[role="treeitem"][aria-selected="true"]')
+            ?.focus();
+        }
+        setSpanSel(null);
+      } else if (selectedTraceId) {
+        returnFocusFromWaterfall();
+        selectTrace(null);
+      }
     },
     enabled: active,
   });
@@ -674,6 +700,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                       has traces persistence enabled with files on disk. */}
                   <PersistedFromMarker serverName={null} signal="traces" />
                   <table
+                    ref={gridRef}
                     role="grid"
                     aria-label="Traces"
                     tabIndex={0}
@@ -750,7 +777,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
               <SeparatorBody orientation="vertical" />
             </Separator>
             <Panel id="trace-waterfall" defaultSize="66" minSize={280}>
-              <div className="h-full min-h-0 min-w-0">
+              <div ref={waterfallPanelRef} className="h-full min-h-0 min-w-0">
                 {isLoadingDetail && !traceDetail && (
                   <div className="flex items-center justify-center h-full">
                     <div className="w-6 h-6 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
@@ -786,6 +813,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                     onClose={() => {
                       // The header X means "close everything": drop the span too so
                       // re-selecting this trace does not resurrect the drawer.
+                      returnFocusFromWaterfall();
                       setSpanSel(null);
                       selectTrace(null);
                     }}
@@ -793,22 +821,24 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                       <>
                         {onViewLogs && (
                           <button
+                            type="button"
                             onClick={() => onViewLogs(traceDetail.traceId)}
                             title="View logs for this trace"
-                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-3xs font-medium text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
+                            className="flex items-center justify-center gap-1 min-h-6 min-w-6 px-1.5 py-0.5 rounded text-3xs font-medium text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
                           >
-                            <ScrollText size={11} />
-                            View logs
+                            <ScrollText size={11} className="flex-shrink-0" />
+                            <span className="@max-[30rem]:sr-only">View logs</span>
                           </button>
                         )}
                         {onViewMetrics && selectedSummary?.server && (
                           <button
+                            type="button"
                             onClick={() => onViewMetrics(selectedSummary.server)}
                             title={`View metrics for ${selectedSummary.server}`}
-                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-3xs font-medium text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
+                            className="flex items-center justify-center gap-1 min-h-6 min-w-6 px-1.5 py-0.5 rounded text-3xs font-medium text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
                           >
-                            <Activity size={11} />
-                            View metrics
+                            <Activity size={11} className="flex-shrink-0" />
+                            <span className="@max-[30rem]:sr-only">View metrics</span>
                           </button>
                         )}
                       </>

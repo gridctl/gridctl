@@ -1,6 +1,82 @@
 import { describe, it, expect } from 'vitest';
-import { computeSelfTimes, computeCriticalPath } from '../lib/traceMath';
-import type { SpanInterval } from '../lib/traceMath';
+import { computeSelfTimes, computeCriticalPath, preorderSpanRows } from '../lib/traceMath';
+import type { SpanInterval, TreeRowInput } from '../lib/traceMath';
+
+function at(ms: number): string {
+  return new Date(Date.UTC(2026, 6, 23, 10, 0, 0, ms)).toISOString();
+}
+
+describe('preorderSpanRows', () => {
+  // Start-time order would be root, A, B, C.
+  const tree: TreeRowInput[] = [
+    { spanId: 'root', parentSpanId: '', startTime: at(0) },
+    { spanId: 'B', parentSpanId: 'root', startTime: at(1) },
+    { spanId: 'C', parentSpanId: 'A', startTime: at(2) },
+    { spanId: 'A', parentSpanId: 'root', startTime: at(0) },
+  ];
+
+  it('emits each parent followed by its subtree', () => {
+    const rows = preorderSpanRows(tree);
+    expect(rows.map((r) => r.span.spanId)).toEqual(['root', 'A', 'C', 'B']);
+    expect(rows.map((r) => r.depth)).toEqual([0, 1, 2, 1]);
+  });
+
+  it('reports sibling positions and effective parents', () => {
+    const byId = new Map(preorderSpanRows(tree).map((r) => [r.span.spanId, r]));
+    expect(byId.get('root')).toMatchObject({ parentId: null, posInSet: 1, setSize: 1 });
+    expect(byId.get('A')).toMatchObject({ parentId: 'root', posInSet: 1, setSize: 2 });
+    expect(byId.get('B')).toMatchObject({ parentId: 'root', posInSet: 2, setSize: 2 });
+    expect(byId.get('C')).toMatchObject({ parentId: 'A', posInSet: 1, setSize: 1 });
+  });
+
+  it('puts a child listed before its parent after the parent', () => {
+    const rows = preorderSpanRows([
+      { spanId: 'kid', parentSpanId: 'p', startTime: at(0) },
+      { spanId: 'p', parentSpanId: '', startTime: at(0) },
+    ]);
+    expect(rows.map((r) => r.span.spanId)).toEqual(['p', 'kid']);
+  });
+
+  it('breaks start-time ties by input order and sorts unparseable starts last', () => {
+    const rows = preorderSpanRows([
+      { spanId: 'root', parentSpanId: '', startTime: at(0) },
+      { spanId: 'bad', parentSpanId: 'root', startTime: 'not a time' },
+      { spanId: 'x', parentSpanId: 'root', startTime: at(5) },
+      { spanId: 'y', parentSpanId: 'root', startTime: at(5) },
+    ]);
+    expect(rows.map((r) => r.span.spanId)).toEqual(['root', 'x', 'y', 'bad']);
+  });
+
+  it('treats an orphan as a depth-0 root in the shared root group', () => {
+    const rows = preorderSpanRows([
+      { spanId: 'root', parentSpanId: '', startTime: at(0) },
+      { spanId: 'orphan', parentSpanId: 'missing', startTime: at(1) },
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ depth: 0, parentId: null, posInSet: 1, setSize: 2 });
+    expect(rows[1]).toMatchObject({ depth: 0, parentId: null, posInSet: 2, setSize: 2 });
+    expect(rows[1].span.spanId).toBe('orphan');
+  });
+
+  it('returns every span of a parent cycle once, with the broken root at depth 0', () => {
+    const rows = preorderSpanRows([
+      { spanId: 'a', parentSpanId: 'b', startTime: at(0) },
+      { spanId: 'b', parentSpanId: 'a', startTime: at(1) },
+    ]);
+    expect(rows.map((r) => r.span.spanId)).toEqual(['a', 'b']);
+    expect(rows[0]).toMatchObject({ depth: 0, parentId: null, posInSet: 1, setSize: 1 });
+    expect(rows[1]).toMatchObject({ depth: 1, parentId: 'a', posInSet: 1, setSize: 1 });
+  });
+
+  it('treats a self-parented span as a root', () => {
+    const rows = preorderSpanRows([{ spanId: 'a', parentSpanId: 'a', startTime: at(0) }]);
+    expect(rows).toEqual([expect.objectContaining({ depth: 0, parentId: null, posInSet: 1, setSize: 1 })]);
+  });
+
+  it('returns nothing for no spans', () => {
+    expect(preorderSpanRows([])).toEqual([]);
+  });
+});
 
 // Sequential tool-call shape: root > routing, client call, format conversion.
 const sequential: SpanInterval[] = [

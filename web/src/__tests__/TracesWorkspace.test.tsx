@@ -510,7 +510,7 @@ describe('TracesWorkspace', () => {
     });
   });
 
-  it('adds one resize separator per stage: none, list|waterfall, +detail drawer', async () => {
+  it('adds resize separators per stage: none, list|waterfall plus span column, +detail drawer', async () => {
     renderAt('/traces');
     await waitFor(() => {
       expect(screen.getByText('create_issue')).toBeInTheDocument();
@@ -518,19 +518,19 @@ describe('TracesWorkspace', () => {
     // Stage A: list only, no separators.
     expect(screen.queryAllByRole('separator')).toHaveLength(0);
 
-    // Stage B: list | waterfall.
+    // Stage B: list | waterfall, plus the span-name column splitter.
     fireEvent.click(screen.getByText('create_issue'));
     await waitFor(() => {
       expect(screen.getByText('mcp.client.call_tool')).toBeInTheDocument();
     });
-    expect(screen.getAllByRole('separator')).toHaveLength(1);
+    expect(screen.getAllByRole('separator')).toHaveLength(2);
 
     // Stage C: waterfall over the span-detail bottom drawer.
     fireEvent.click(screen.getByText('mcp.client.call_tool'));
     await waitFor(() => {
       expect(screen.getByTestId('span-detail')).toBeInTheDocument();
     });
-    expect(screen.getAllByRole('separator')).toHaveLength(2);
+    expect(screen.getAllByRole('separator')).toHaveLength(3);
   });
 
   it('closes span detail on the first Escape and the waterfall on the second', async () => {
@@ -952,5 +952,307 @@ describe('TracesWorkspace labels and markers', () => {
     renderAt('/traces?trace=abc123def4567890');
     fireEvent.click(await screen.findByText('mcp.client.call_tool'));
     expect(await screen.findByRole('button', { name: 'Copy span ID' })).toBeInTheDocument();
+  });
+});
+
+const otherSummary: TraceSummary = {
+  ...summary,
+  traceId: 'bbbb2222cccc3333',
+  rootSpanId: 'x1',
+  tool: 'list_issues',
+  operation: 'github › list_issues',
+};
+
+// Root with two children and a grandchild. Start-time order would put B
+// before C; tree order puts C under A.
+const treeDetail: TraceDetail = {
+  traceId: 'abc123def4567890',
+  spans: [
+    span({ spanId: 'r', name: 'root.op', startTime: '2026-07-23T10:00:00.000Z', duration: 40 }),
+    span({ spanId: 'b', parentSpanId: 'r', name: 'child.b', startTime: '2026-07-23T10:00:00.003Z', duration: 5 }),
+    span({ spanId: 'a', parentSpanId: 'r', name: 'child.a', startTime: '2026-07-23T10:00:00.001Z', duration: 35 }),
+    span({ spanId: 'c', parentSpanId: 'a', name: 'grandchild.c', startTime: '2026-07-23T10:00:00.004Z', duration: 2 }),
+  ],
+};
+
+const OPEN_TRACE = 'abc123def4567890';
+
+// Opens the tree trace and moves the list highlight onto the other trace, so
+// a key leaking to the list would change aria-activedescendant or, for
+// Enter, open a different trace.
+async function openTree() {
+  vi.mocked(fetchTraces).mockResolvedValue(listEnvelope([summary, otherSummary]));
+  vi.mocked(fetchTraceDetail).mockResolvedValue(treeDetail);
+  renderAt(`/traces?trace=${OPEN_TRACE}`);
+  const tree = await screen.findByRole('tree', { name: 'Spans' });
+  await waitFor(() => {
+    expect(document.getElementById(`trace-row-${otherSummary.traceId}`)).toBeInTheDocument();
+  });
+  const grid = screen.getByRole('grid', { name: 'Traces' });
+  fireEvent.keyDown(document.body, { key: 'j' });
+  expect(grid).toHaveAttribute('aria-activedescendant', `trace-row-${otherSummary.traceId}`);
+  return { tree, grid };
+}
+
+function row(name: string): HTMLElement {
+  return screen.getByRole('treeitem', { name: new RegExp(`^${name.replace('.', '\\.')},`) });
+}
+
+function expectNoLeak(grid: HTMLElement) {
+  expect(useTracesStore.getState().selectedTraceId).toBe(OPEN_TRACE);
+  expect(grid).toHaveAttribute('aria-activedescendant', `trace-row-${otherSummary.traceId}`);
+}
+
+describe('TraceWaterfall keyboard access', () => {
+  it('exposes the spans as a tree with one tab stop, levels, positions, and names', async () => {
+    const { tree } = await openTree();
+    const items = within(tree).getAllByRole('treeitem');
+    expect(items).toHaveLength(4);
+    expect(items.filter((el) => el.getAttribute('tabindex') === '0')).toHaveLength(1);
+    expect(items.filter((el) => el.getAttribute('tabindex') === '-1')).toHaveLength(3);
+    expect(items[0]).toHaveAttribute('tabindex', '0');
+    // Parent-first order, not start-time order.
+    expect(items.map((el) => el.dataset.spanId)).toEqual(['r', 'a', 'c', 'b']);
+    expect(row('child.a')).toHaveAttribute('aria-level', '2');
+    expect(row('grandchild.c')).toHaveAttribute('aria-level', '3');
+    expect(row('child.a')).toHaveAttribute('aria-posinset', '1');
+    expect(row('child.a')).toHaveAttribute('aria-setsize', '2');
+    expect(row('child.b')).toHaveAttribute('aria-posinset', '2');
+    expect(row('grandchild.c')).toHaveAttribute('aria-setsize', '1');
+    for (const el of items) expect(el).toHaveAttribute('aria-selected', 'false');
+    expect(items[1]).toHaveAccessibleName('child.a, 35.0ms, ok');
+    expect(items[0]).not.toHaveAttribute('aria-expanded');
+    // Inset focus ring, never suppressed.
+    expect(items[0].className).toContain('focus-visible:-outline-offset-2');
+    expect(items[0].className).not.toContain('outline-none');
+    // The existing indentation contract holds.
+    expect(screen.getByText('grandchild.c').parentElement).toHaveStyle({ paddingLeft: '24px' });
+  });
+
+  it('appends slow to the name of a span above the p95', async () => {
+    const spans = Array.from({ length: 21 }, (_, i) =>
+      span({ spanId: `s${i}`, parentSpanId: i === 0 ? '' : 's0', name: i === 20 ? 'slowpoke' : `span${i}`, duration: i === 20 ? 500 : 10 }),
+    );
+    vi.mocked(fetchTraceDetail).mockResolvedValue({ traceId: OPEN_TRACE, spans });
+    renderAt(`/traces?trace=${OPEN_TRACE}`);
+    await screen.findByText('slowpoke');
+    expect(screen.getByRole('treeitem', { name: 'slowpoke, 500.0ms, ok, slow' })).toBeInTheDocument();
+  });
+
+  it('moves focus with arrows, j, Home, End, Left, and Right without touching the trace list', async () => {
+    const { grid } = await openTree();
+    const press = (from: HTMLElement, key: string, to: HTMLElement) => {
+      fireEvent.keyDown(from, { key });
+      expect(document.activeElement).toBe(to);
+      expect(to).toHaveAttribute('tabindex', '0');
+      expect(from === to || from.getAttribute('tabindex') === '-1').toBe(true);
+      expectNoLeak(grid);
+    };
+    const root = row('root.op');
+    root.focus();
+    press(root, 'ArrowDown', row('child.a'));
+    press(row('child.a'), 'j', row('grandchild.c'));
+    press(row('grandchild.c'), 'k', row('child.a'));
+    press(row('child.a'), 'ArrowUp', root);
+    // No wrap at the edges, and the key is still consumed.
+    press(root, 'ArrowUp', root);
+    press(root, 'End', row('child.b'));
+    press(row('child.b'), 'ArrowDown', row('child.b'));
+    press(row('child.b'), 'Home', root);
+    press(root, 'ArrowRight', row('child.a'));
+    press(row('child.a'), 'ArrowRight', row('grandchild.c'));
+    // A leaf has no first child.
+    press(row('grandchild.c'), 'ArrowRight', row('grandchild.c'));
+    press(row('grandchild.c'), 'ArrowLeft', row('child.a'));
+    press(row('child.a'), 'ArrowLeft', root);
+    press(root, 'ArrowLeft', root);
+    // Selection never follows focus.
+    expect(screen.queryByTestId('span-detail')).toBeNull();
+  });
+
+  it('leaves keys with Ctrl, Meta, or Alt to the page', async () => {
+    await openTree();
+    const root = row('root.op');
+    root.focus();
+    expect(fireEvent.keyDown(root, { key: 'ArrowDown', ctrlKey: true })).toBe(true);
+    expect(document.activeElement).toBe(root);
+  });
+
+  it('opens and closes span detail with Enter or Space and keeps focus on the row', async () => {
+    const { grid } = await openTree();
+    const a = row('child.a');
+    a.focus();
+    fireEvent.keyDown(a, { key: 'Enter' });
+    expect(await screen.findByTestId('span-detail')).toBeInTheDocument();
+    expect(a).toHaveAttribute('aria-selected', 'true');
+    expect(document.activeElement).toBe(a);
+    expectNoLeak(grid);
+
+    fireEvent.keyDown(a, { key: 'Enter' });
+    await waitFor(() => expect(screen.queryByTestId('span-detail')).toBeNull());
+    expect(a).toHaveAttribute('aria-selected', 'false');
+
+    fireEvent.keyDown(a, { key: ' ' });
+    expect(await screen.findByTestId('span-detail')).toBeInTheDocument();
+    expect(a).toHaveAttribute('aria-selected', 'true');
+    expectNoLeak(grid);
+  });
+
+  it('keeps the selected row as the tab stop after a click', async () => {
+    await openTree();
+    fireEvent.click(screen.getByText('child.b'));
+    await screen.findByTestId('span-detail');
+    expect(row('child.b')).toHaveAttribute('tabindex', '0');
+    expect(row('root.op')).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('closes the drawer then the waterfall with Escape on a row, returning focus to the grid', async () => {
+    const { grid } = await openTree();
+    const a = row('child.a');
+    a.focus();
+    fireEvent.keyDown(a, { key: 'Enter' });
+    await screen.findByTestId('span-detail');
+
+    fireEvent.keyDown(a, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('span-detail')).toBeNull());
+    expect(document.activeElement).toBe(a);
+    expect(useTracesStore.getState().selectedTraceId).toBe(OPEN_TRACE);
+
+    fireEvent.keyDown(a, { key: 'Escape' });
+    await waitFor(() => expect(useTracesStore.getState().selectedTraceId).toBeNull());
+    expect(document.activeElement).toBe(grid);
+  });
+
+  it('returns focus to the span row on Escape inside span detail, one step per press', async () => {
+    await openTree();
+    const a = row('child.a');
+    a.focus();
+    fireEvent.keyDown(a, { key: 'Enter' });
+    const close = await screen.findByRole('button', { name: 'Close span detail' });
+    close.focus();
+    fireEvent.keyDown(close, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('span-detail')).toBeNull());
+    expect(document.activeElement).toBe(row('child.a'));
+    expect(useTracesStore.getState().selectedTraceId).toBe(OPEN_TRACE);
+  });
+
+  it('returns focus to the span row when Close span detail is activated', async () => {
+    await openTree();
+    fireEvent.click(screen.getByText('child.b'));
+    const close = await screen.findByRole('button', { name: 'Close span detail' });
+    close.focus();
+    fireEvent.click(close);
+    await waitFor(() => expect(screen.queryByTestId('span-detail')).toBeNull());
+    expect(document.activeElement).toBe(row('child.b'));
+  });
+
+  it('returns focus to the span row on Escape from the drawer separator', async () => {
+    await openTree();
+    fireEvent.click(screen.getByText('child.a'));
+    await screen.findByTestId('span-detail');
+    const sep = document.getElementById('sep-span-drawer')!;
+    expect(sep).toHaveAttribute('tabindex', '0');
+    sep.focus();
+    fireEvent.keyDown(sep, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('span-detail')).toBeNull());
+    expect(document.activeElement).toBe(row('child.a'));
+    expect(useTracesStore.getState().selectedTraceId).toBe(OPEN_TRACE);
+  });
+
+  it('returns focus to the span row on Shift+Escape inside span detail', async () => {
+    await openTree();
+    fireEvent.click(screen.getByText('child.a'));
+    const close = await screen.findByRole('button', { name: 'Close span detail' });
+    close.focus();
+    fireEvent.keyDown(close, { key: 'Escape', shiftKey: true });
+    await waitFor(() => expect(screen.queryByTestId('span-detail')).toBeNull());
+    expect(document.activeElement).toBe(row('child.a'));
+    expect(useTracesStore.getState().selectedTraceId).toBe(OPEN_TRACE);
+  });
+
+  it('returns focus to the grid on Escape from the list|waterfall separator', async () => {
+    const { grid } = await openTree();
+    const sep = document.getElementById('sep-trace-list')!;
+    expect(sep).toHaveAttribute('tabindex', '0');
+    sep.focus();
+    fireEvent.keyDown(sep, { key: 'Escape' });
+    await waitFor(() => expect(useTracesStore.getState().selectedTraceId).toBeNull());
+    expect(document.activeElement).toBe(grid);
+  });
+
+  it('stops handled tree and splitter keys from reaching document listeners', async () => {
+    await openTree();
+    const spy = vi.fn();
+    document.addEventListener('keydown', spy);
+    try {
+      const root = row('root.op');
+      root.focus();
+      fireEvent.keyDown(root, { key: 'ArrowDown' });
+      fireEvent.keyDown(row('child.a'), { key: 'Enter' });
+      await screen.findByTestId('span-detail');
+      const splitter = screen.getByRole('separator', { name: 'Resize span name column' });
+      fireEvent.keyDown(splitter, { key: 'ArrowRight' });
+      expect(spy).not.toHaveBeenCalled();
+      // Escape on a row is left to the ladder.
+      fireEvent.keyDown(row('child.a'), { key: 'Escape' });
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      document.removeEventListener('keydown', spy);
+    }
+  });
+
+  it('returns focus to the grid when Close waterfall is activated from inside it', async () => {
+    const { grid } = await openTree();
+    const close = screen.getByRole('button', { name: 'Close waterfall' });
+    close.focus();
+    fireEvent.click(close);
+    await waitFor(() => expect(useTracesStore.getState().selectedTraceId).toBeNull());
+    expect(document.activeElement).toBe(grid);
+  });
+
+  it('moves no focus when the waterfall closes with focus elsewhere', async () => {
+    await openTree();
+    const search = screen.getByPlaceholderText('Search traces…');
+    search.focus();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    await waitFor(() => expect(useTracesStore.getState().selectedTraceId).toBeNull());
+    expect(document.activeElement).toBe(search);
+  });
+
+  it('makes span detail a focusable region', async () => {
+    await openTree();
+    fireEvent.click(screen.getByText('child.a'));
+    const region = await screen.findByRole('region', { name: 'Span detail' });
+    expect(region).toHaveAttribute('tabindex', '0');
+    expect(region.className).toContain('focus-visible:-outline-offset-2');
+  });
+
+  it('resizes the span name column with arrows, Home, and End within its bounds', async () => {
+    const { grid } = await openTree();
+    const splitter = screen.getByRole('separator', { name: 'Resize span name column' });
+    expect(splitter).toHaveAttribute('tabindex', '0');
+    expect(splitter).toHaveAttribute('aria-orientation', 'vertical');
+    expect(splitter).toHaveAttribute('aria-valuemin', '18');
+    expect(splitter).toHaveAttribute('aria-valuemax', '45');
+    expect(splitter).toHaveAttribute('aria-valuenow', '30');
+    splitter.focus();
+    const pct = () => useUIStore.getState().tracesPrefs.nameColPct;
+
+    fireEvent.keyDown(splitter, { key: 'ArrowRight' });
+    expect(pct()).toBe(31);
+    expect(splitter).toHaveAttribute('aria-valuenow', '31');
+    fireEvent.keyDown(splitter, { key: 'ArrowLeft' });
+    expect(pct()).toBe(30);
+    fireEvent.keyDown(splitter, { key: 'End' });
+    expect(pct()).toBe(45);
+    fireEvent.keyDown(splitter, { key: 'ArrowRight' });
+    expect(pct()).toBe(45);
+    fireEvent.keyDown(splitter, { key: 'Home' });
+    expect(pct()).toBe(18);
+    fireEvent.keyDown(splitter, { key: 'ArrowLeft' });
+    expect(pct()).toBe(18);
+    fireEvent.keyDown(splitter, { key: 'ArrowRight', metaKey: true });
+    expect(pct()).toBe(18);
+    expectNoLeak(grid);
   });
 });

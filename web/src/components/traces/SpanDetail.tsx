@@ -95,8 +95,9 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
       <div className="h-9 flex items-center justify-between px-3 flex-shrink-0 border-b border-border/30 bg-surface-elevated/20">
         <span className="text-xs font-medium text-text-primary truncate font-mono" title={span.name}>{span.name}</span>
         <button
+          type="button"
           onClick={onClose}
-          className="p-1 rounded-md hover:bg-surface-highlight transition-colors flex-shrink-0 ml-2"
+          className="size-6 inline-flex items-center justify-center rounded-md hover:bg-surface-highlight transition-colors flex-shrink-0 ml-2"
           aria-label="Close span detail"
         >
           <X size={12} className="text-text-muted" />
@@ -106,7 +107,12 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
       {/* Content. As a bottom drawer the panel is wide and short, so the
           sections reflow into columns via container queries instead of
           stacking into a narrow ribbon with a long scroll. */}
-      <div className="flex-1 overflow-y-auto scrollbar-dark min-h-0 p-3 space-y-4 @container">
+      <div
+        tabIndex={0}
+        role="region"
+        aria-label="Span detail"
+        className="flex-1 overflow-y-auto scrollbar-dark min-h-0 p-3 space-y-4 @container focus-visible:-outline-offset-2"
+      >
 
         {/* Status badge + span ID */}
         <div className="flex items-center gap-2 min-w-0">
@@ -124,10 +130,11 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
             {span.spanId.slice(0, 16)}
           </span>
           <button
+            type="button"
             onClick={() => copyWithToast(span.spanId, 'Span ID')}
             title="Copy span ID"
             aria-label="Copy span ID"
-            className="p-1 rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors flex-shrink-0"
+            className="size-6 inline-flex items-center justify-center rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors flex-shrink-0"
           >
             <Copy size={10} />
           </button>
@@ -177,9 +184,10 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
           {otherEntries.length > 0 && (
             <section>
               <button
+                type="button"
                 onClick={() => setShowOther((v) => !v)}
                 aria-expanded={showOther}
-                className="flex items-center gap-1.5 mb-2 text-text-muted hover:text-text-secondary transition-colors"
+                className="flex items-center gap-1.5 min-h-6 mb-2 text-text-muted hover:text-text-secondary transition-colors"
               >
                 {showOther ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
                 <span className="text-3xs font-medium uppercase tracking-wider">
