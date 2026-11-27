@@ -1,16 +1,23 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { History } from 'lucide-react';
 import { useSearchParams } from 'react-router';
-import { useRunsStore } from '../../stores/useRunsStore';
-import { exportRuns, updateStackRuns, wipeRuns, type RunRecord } from '../../lib/api';
+import { emptyFilters, useRunsStore } from '../../stores/useRunsStore';
+import { exportRuns, updateStackRuns, wipeRuns, type RunRecord, type RunStatusResponse } from '../../lib/api';
 import { formatBytes } from '../../lib/format-bytes';
 import { cn } from '../../lib/cn';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
-import { FailedState, FailureBanner } from '../ui/EmptyState';
+import { Button } from '../ui/Button';
+import { EmptyState, FailedState, FailureBanner } from '../ui/EmptyState';
 import { refreshPhase } from '../../lib/refreshPhase';
 import { parseRunsSearch, resolveRunsQuery, writeRunsSearch } from '../../lib/runsFilters';
 import { RunsFilterBar } from './RunsFilterBar';
 import { listNavProps, useListNav } from '../../hooks/useListNav';
 import { showToast } from '../ui/Toast';
+import { formatTotalDuration } from '../../lib/duration';
+import { formatLocalDateTime } from '../../lib/time';
+import { DispositionBadge } from './DispositionBadge';
+import { RunDetail, runTarget } from './RunDetail';
+import { RunsHeader } from './RunsHeader';
 
 const MAX_RETENTION_DAYS = 3650;
 const MAX_RETENTION_MIB = 1048576;
@@ -22,9 +29,13 @@ const RECORDING_BLURB =
 
 interface RunsViewProps {
   servers: string[];
+  /** When set, a run with a trace ID gets a "View trace" link. */
+  onViewTrace?: (traceId: string) => void;
+  /** When set, a run with a trace ID gets a "View logs" link. */
+  onViewLogs?: (traceId: string) => void;
 }
 
-export function RunsView({ servers }: RunsViewProps) {
+export function RunsView({ servers, onViewTrace, onViewLogs }: RunsViewProps) {
   const records = useRunsStore((s) => s.records);
   const warnings = useRunsStore((s) => s.warnings);
   const partial = useRunsStore((s) => s.partial);
@@ -36,6 +47,7 @@ export function RunsView({ servers }: RunsViewProps) {
   const selectedId = useRunsStore((s) => s.selectedId);
   const filters = useRunsStore((s) => s.filters);
   const replaceFilters = useRunsStore((s) => s.replaceFilters);
+  const clearFilters = useRunsStore((s) => s.clearFilters);
   const select = useRunsStore((s) => s.select);
   const load = useRunsStore((s) => s.load);
   const retry = useRunsStore((s) => s.retry);
@@ -55,6 +67,7 @@ export function RunsView({ servers }: RunsViewProps) {
   const [ageError, setAgeError] = useState<string | null>(null);
   const [sizeError, setSizeError] = useState<string | null>(null);
   const [navId, setNavId] = useState<string | null>(null);
+  const gridRef = useRef<HTMLTableElement>(null);
 
   // URL to store, once on mount and before the first load: a deep link with
   // any filter key replaces the filters wholesale. The load and mirror
@@ -137,65 +150,120 @@ export function RunsView({ servers }: RunsViewProps) {
     onEnter: () => {
       if (activeNavId) select(activeNavId);
     },
-    onEscape: selectedId ? () => select(null) : undefined,
+    onEscape: selectedId
+      ? () => {
+          // Closing unmounts the detail; keep focus in the list if it was inside.
+          const inDetail = document.activeElement?.closest('[data-run-detail]') != null;
+          select(null);
+          if (inDetail) gridRef.current?.focus();
+        }
+      : undefined,
   });
 
   const selected = useMemo(
     () => records.find((r) => r.attemptId === selectedId) ?? null,
     [records, selectedId],
   );
-  const children = useMemo(
-    () => records.filter((r) => selected && r.parentAttemptId === selected.attemptId),
-    [records, selected],
-  );
+
+  const retentionSettings =
+    status && showRetention ? (
+      <div className="flex flex-col items-start gap-2 text-xs">
+        <label className="flex items-center gap-1">
+          <span className="text-text-muted">Max age (days)</span>
+          <input
+            className="bg-surface border border-border rounded px-1 py-0.5 w-16"
+            value={ageDays}
+            onChange={(e) => {
+              setAgeDraft(e.target.value);
+              setAgeError(null);
+            }}
+            aria-label="Retention max age days"
+            aria-invalid={ageError ? true : undefined}
+            aria-describedby={ageError ? 'runs-retention-age-error' : undefined}
+          />
+        </label>
+        <label className="flex items-center gap-1">
+          <span className="text-text-muted">Max size (MiB)</span>
+          <input
+            className="bg-surface border border-border rounded px-1 py-0.5 w-20"
+            value={sizeMb}
+            onChange={(e) => {
+              setSizeDraft(e.target.value);
+              setSizeError(null);
+            }}
+            aria-label="Retention max size mebibytes"
+            aria-invalid={sizeError ? true : undefined}
+            aria-describedby={sizeError ? 'runs-retention-size-error' : undefined}
+          />
+        </label>
+        <button
+          type="button"
+          className="px-2 py-1 rounded border border-border"
+          disabled={busy}
+          onClick={() => void saveRetention()}
+        >
+          Save retention
+        </button>
+        {status.enabled ? (
+          <label className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={Boolean(status.omit_labels)}
+              onChange={async (e) => {
+                setBusy(true);
+                setMutationError(null);
+                try {
+                  await updateStackRuns({ omit_labels: e.target.checked });
+                  await load();
+                } catch (err) {
+                  setMutationError(err instanceof Error ? err.message : 'Failed to update labels');
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              disabled={busy}
+            />
+            <span className="text-text-muted">Omit caller labels</span>
+          </label>
+        ) : (
+          <span className="text-text-muted">
+            Applies when recording is enabled. Retained records are not pruned while recording is off.
+          </span>
+        )}
+        {ageError && (
+          <p id="runs-retention-age-error" className="w-full text-status-error" role="alert">
+            {ageError}
+          </p>
+        )}
+        {sizeError && (
+          <p id="runs-retention-size-error" className="w-full text-status-error" role="alert">
+            {sizeError}
+          </p>
+        )}
+      </div>
+    ) : null;
 
   const phase = refreshPhase({ error, hasLoaded });
   const firstLoadPending = phase === 'loading' && isLoading;
-  const emptyReason = emptyState(status, records.length, firstLoadPending);
-  const dropSummary = dropText(status);
+  const filtersActive = useMemo(() => {
+    const defaults = emptyFilters();
+    return (Object.keys(defaults) as (keyof typeof defaults)[]).some((k) => filters[k] !== defaults[k]);
+  }, [filters]);
   const missingSelection =
     selectedId != null && hasLoaded && !isLoading && !records.some((r) => r.attemptId === selectedId);
 
   return (
     <div className="h-full flex flex-col min-h-0">
       <div className="flex-shrink-0 px-6 py-3 border-b border-border-subtle space-y-2">
-        <p className="text-xs text-text-muted max-w-3xl">{status?.recordingNote ?? RECORDING_BLURB}</p>
-        <div className="flex flex-wrap items-center gap-3 text-xs">
-          <span className="text-text-muted">
-            Writer: <Health value={status?.writer_health} />
-          </span>
-          <span className="text-text-muted">
-            History:{' '}
-            {phase === 'failed'
-              ? 'unreadable'
-              : phase === 'stale'
-                ? 'refresh failed'
-                : partial
-                  ? 'partial'
-                  : 'readable'}
-          </span>
-          {statusError && (
-            <span className="text-status-pending" role="status">
-              Status unavailable
-            </span>
-          )}
-          {dropSummary && (
-            <span className="text-status-pending" role="status">
-              {dropSummary}
-            </span>
-          )}
-          <button
-            type="button"
-            className="px-2 py-1 rounded border border-border text-text-primary hover:bg-surface-highlight"
-            onClick={() => void load()}
-            aria-label="Refresh run records"
-          >
-            Refresh
-          </button>
-          <button
-            type="button"
-            className="px-2 py-1 rounded border border-border text-text-primary hover:bg-surface-highlight"
-            onClick={async () => {
+        <RunsHeader
+          status={status}
+          statusError={statusError}
+          partial={partial}
+          recordingBlurb={RECORDING_BLURB}
+          busy={busy}
+          onRefresh={() => void load()}
+          onExport={() => {
+            void (async () => {
               setBusy(true);
               setMutationError(null);
               try {
@@ -212,120 +280,15 @@ export function RunsView({ servers }: RunsViewProps) {
               } finally {
                 setBusy(false);
               }
-            }}
-            disabled={busy}
-          >
-            Export
-          </button>
-          {status && !status.enabled && (
-            <button
-              type="button"
-              className="px-2 py-1 rounded border border-border text-text-primary hover:bg-surface-highlight"
-              onClick={() => setConfirmEnable(true)}
-            >
-              Enable recording
-            </button>
-          )}
-          {status?.enabled && (
-            <button
-              type="button"
-              className="px-2 py-1 rounded border border-border text-text-primary hover:bg-surface-highlight"
-              onClick={() => setConfirmDisable(true)}
-            >
-              Disable recording
-            </button>
-          )}
-          {status && historyExists && (
-            <button
-              type="button"
-              className={cn(
-                'px-2 py-1 rounded border',
-                'border-status-error/40 text-status-error hover:bg-status-error/10',
-              )}
-              onClick={() => setConfirmWipe(true)}
-              disabled={busy}
-            >
-              Wipe history
-            </button>
-          )}
-        </div>
+            })();
+          }}
+          onEnable={() => setConfirmEnable(true)}
+          onDisable={() => setConfirmDisable(true)}
+          settings={retentionSettings}
+          showWipe={Boolean(status) && historyExists}
+          onWipe={() => setConfirmWipe(true)}
+        />
         <RunsFilterBar servers={servers} />
-        {status && showRetention && (
-          <div className="flex flex-wrap items-center gap-3 text-xs">
-            <label className="flex items-center gap-1">
-              <span className="text-text-muted">Max age (days)</span>
-              <input
-                className="bg-surface border border-border rounded px-1 py-0.5 w-16"
-                value={ageDays}
-                onChange={(e) => {
-                  setAgeDraft(e.target.value);
-                  setAgeError(null);
-                }}
-                aria-label="Retention max age days"
-                aria-invalid={ageError ? true : undefined}
-                aria-describedby={ageError ? 'runs-retention-age-error' : undefined}
-              />
-            </label>
-            <label className="flex items-center gap-1">
-              <span className="text-text-muted">Max size (MiB)</span>
-              <input
-                className="bg-surface border border-border rounded px-1 py-0.5 w-20"
-                value={sizeMb}
-                onChange={(e) => {
-                  setSizeDraft(e.target.value);
-                  setSizeError(null);
-                }}
-                aria-label="Retention max size mebibytes"
-                aria-invalid={sizeError ? true : undefined}
-                aria-describedby={sizeError ? 'runs-retention-size-error' : undefined}
-              />
-            </label>
-            <button
-              type="button"
-              className="px-2 py-1 rounded border border-border"
-              disabled={busy}
-              onClick={() => void saveRetention()}
-            >
-              Save retention
-            </button>
-            {status.enabled ? (
-              <label className="flex items-center gap-1">
-                <input
-                  type="checkbox"
-                  checked={Boolean(status.omit_labels)}
-                  onChange={async (e) => {
-                    setBusy(true);
-                    setMutationError(null);
-                    try {
-                      await updateStackRuns({ omit_labels: e.target.checked });
-                      await load();
-                    } catch (err) {
-                      setMutationError(err instanceof Error ? err.message : 'Failed to update labels');
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                  disabled={busy}
-                />
-                <span className="text-text-muted">Omit caller labels</span>
-              </label>
-            ) : (
-              <span className="text-text-muted">
-                Applies when recording is enabled. Retained records are not pruned while recording is off.
-              </span>
-            )}
-            {ageError && (
-              <p id="runs-retention-age-error" className="w-full text-status-error" role="alert">
-                {ageError}
-              </p>
-            )}
-            {sizeError && (
-              <p id="runs-retention-size-error" className="w-full text-status-error" role="alert">
-                {sizeError}
-              </p>
-            )}
-          </div>
-        )}
         {warnings.map((w) => (
           <p key={w.code} className="text-xs text-status-pending" role="status">
             {w.message} ({w.count})
@@ -463,12 +426,17 @@ export function RunsView({ servers }: RunsViewProps) {
             </div>
           ) : error && records.length === 0 ? (
             <FailedState feature="Run history" message={error} onRetry={() => void retry()} inline />
-          ) : emptyReason ? (
-            <p className="px-6 py-8 text-sm text-text-muted" role="status">
-              {emptyReason}
-            </p>
+          ) : records.length === 0 ? (
+            <RunsEmptyState
+              status={status}
+              filtersActive={filtersActive}
+              onEnable={() => setConfirmEnable(true)}
+              onClearFilters={clearFilters}
+              onRefresh={() => void load()}
+            />
           ) : (
             <table
+              ref={gridRef}
               className="group/grid w-full text-sm focus-visible:-outline-offset-2"
               role="grid"
               aria-label="Run records"
@@ -481,7 +449,7 @@ export function RunsView({ servers }: RunsViewProps) {
                   <th className="px-6 py-2">Returned</th>
                   <th className="px-2 py-2">Target</th>
                   <th className="px-2 py-2">Disposition</th>
-                  <th className="px-2 py-2">Duration</th>
+                  <th className="px-2 py-2 text-right">Duration</th>
                 </tr>
               </thead>
               <tbody>
@@ -514,41 +482,22 @@ export function RunsView({ servers }: RunsViewProps) {
           )}
         </div>
         {selected && (
-          <aside
-            className={cn(
-              'border-border p-4 overflow-auto',
-              narrow ? 'w-full border-t' : 'w-80 flex-shrink-0 border-l',
-            )}
-            aria-label="Run detail"
-          >
-            <h2 className="text-xs uppercase tracking-wider text-text-muted">Detail</h2>
-            <dl className="mt-2 space-y-1 text-xs font-mono">
-              <Detail label="Attempt" value={selected.attemptId} />
-              <Detail label="Parent" value={selected.parentAttemptId || 'unavailable'} />
-              <Detail label="Root" value={selected.rootAttemptId || selected.attemptId} />
-              <Detail label="Previous" value={selected.previousAttemptId || 'none'} />
-              <Detail label="Stage" value={selected.stage} />
-              <Detail label="Reason" value={selected.reason} />
-              <Detail label="Labels" value={[selected.clientLabel, selected.accessLabel].filter(Boolean).join(' / ') || 'omitted'} />
-            </dl>
-            {children.length > 0 && (
-              <div className="mt-3">
-                <h3 className="text-xs text-text-muted">Nested attempts</h3>
-                <ul className="text-xs font-mono">
-                  {children.map((c) => (
-                    <li key={c.attemptId}>
-                      <button type="button" className="underline" onClick={() => select(c.attemptId)}>
-                        {c.requestedName || c.attemptId} ({c.disposition})
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {selected.parentAttemptId && !records.some((r) => r.attemptId === selected.parentAttemptId) && (
-              <p className="mt-2 text-xs text-text-muted">Parent record is unavailable, not still running.</p>
-            )}
-          </aside>
+          <RunDetail
+            record={selected}
+            records={records}
+            narrow={narrow}
+            onSelect={(id) => {
+              setNavId(id);
+              select(id);
+            }}
+            onClose={() => {
+              select(null);
+              // Keep focus in the list instead of dropping it to <body>.
+              gridRef.current?.focus();
+            }}
+            onViewTrace={onViewTrace}
+            onViewLogs={onViewLogs}
+          />
         )}
       </div>
     </div>
@@ -566,9 +515,7 @@ function RunRow({
   highlighted: boolean;
   onSelect: () => void;
 }) {
-  const target = record.resolvedServer
-    ? `${record.resolvedServer} › ${record.resolvedTool ?? ''}`
-    : record.requestedName || 'unresolved';
+  const target = runTarget(record);
   return (
     <tr
       id={`run-row-${record.attemptId}`}
@@ -581,39 +528,21 @@ function RunRow({
       )}
       onClick={onSelect}
     >
-      <td className="px-6 py-2 font-mono text-xs">{record.returnedAt}</td>
-      <td className="px-2 py-2 font-mono text-xs">{target}</td>
-      <td className="px-2 py-2 text-xs">{record.disposition}</td>
-      <td className="px-2 py-2 font-mono text-xs">{record.durationMs}ms</td>
+      <td className="px-6 py-2 font-mono text-xs whitespace-nowrap" title={record.returnedAt}>
+        {formatLocalDateTime(record.returnedAt)}
+      </td>
+      <td
+        className="px-2 py-2 font-mono text-xs"
+        title={record.requestedName && record.requestedName !== target ? record.requestedName : undefined}
+      >
+        {target}
+      </td>
+      <td className="px-2 py-2 text-xs">
+        <DispositionBadge value={record.disposition} />
+      </td>
+      <td className="px-2 py-2 font-mono text-xs text-right tabular-nums">{formatTotalDuration(record.durationMs)}</td>
     </tr>
   );
-}
-
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-text-muted">{label}</dt>
-      <dd className="text-text-primary break-all">{value}</dd>
-    </div>
-  );
-}
-
-function Health({ value }: { value?: string }) {
-  const label = value || 'unknown';
-  return <span className="text-text-primary">{label}</span>;
-}
-
-function dropText(status: { drops?: Record<string, number>; failures?: Record<string, number>; writer_health?: string } | null): string | null {
-  if (!status) return null;
-  const parts: string[] = [];
-  for (const [key, n] of Object.entries(status.drops ?? {})) {
-    if (n > 0) parts.push(`${key}: ${n}`);
-  }
-  for (const [key, n] of Object.entries(status.failures ?? {})) {
-    if (n > 0 && !(status.drops && key in status.drops)) parts.push(`${key}: ${n}`);
-  }
-  if (parts.length === 0) return null;
-  return `Loss ${parts.join(', ')}`;
 }
 
 /** A whole number within [min, max], or null for anything else. */
@@ -624,22 +553,88 @@ function parseWholeNumber(raw: string, min: number, max: number): number | null 
   return n >= min && n <= max ? n : null;
 }
 
-function emptyState(
-  status: { enabled?: boolean; logical_bytes?: number; inventory?: { fileCount: number; sizeBytes: number } } | null,
-  count: number,
-  loading: boolean,
-): string | null {
-  if (loading) return null;
-  if (count > 0) return null;
-  const retained = (status?.logical_bytes ?? status?.inventory?.sizeBytes ?? 0) > 0;
-  if (status && status.enabled === false && retained) {
-    return 'Recording is disabled. Retained records may still exist; none match the current filters.';
+function RunsEmptyState({
+  status,
+  filtersActive,
+  onEnable,
+  onClearFilters,
+  onRefresh,
+}: {
+  status: RunStatusResponse | null;
+  filtersActive: boolean;
+  onEnable: () => void;
+  onClearFilters: () => void;
+  onRefresh: () => void;
+}) {
+  const retained = status
+    ? (status.logical_bytes ?? status.inventory?.sizeBytes ?? 0) > 0 || (status.inventory?.fileCount ?? 0) > 0
+    : false;
+  const enable = (
+    <Button variant="primary" size="sm" onClick={onEnable}>
+      Enable recording
+    </Button>
+  );
+  if (filtersActive) {
+    return (
+      <EmptyState
+        inline
+        role="status"
+        icon={History}
+        title="No run records match your filters"
+        action={
+          <button type="button" onClick={onClearFilters} className="text-3xs text-primary hover:underline">
+            Clear filters
+          </button>
+        }
+      />
+    );
   }
-  if (status && status.enabled && !retained) {
-    return 'Recording is enabled. No records have been retained yet.';
+  if (status && !status.enabled && !retained) {
+    return (
+      <EmptyState
+        inline
+        role="status"
+        icon={History}
+        title="Run recording is off"
+        description="A run record is one saved line for each tool call that returns through the gateway: what was called, when, how long it took, and how it ended. Arguments and results are never stored. Metrics are aggregate counts and traces are sampled timing held in memory; run records stay on disk so you can look up a specific call later."
+        action={
+          <div className="flex flex-col items-center gap-2">
+            {enable}
+            <span className="text-xs text-text-muted">
+              Or set <code className="font-mono">runs.enabled: true</code> in the stack file.
+            </span>
+          </div>
+        }
+      />
+    );
   }
   if (status && !status.enabled) {
-    return 'Recording is disabled. Metrics remain aggregate usage; traces remain timing detail.';
+    return (
+      <EmptyState
+        inline
+        role="status"
+        icon={History}
+        title="No run records to show"
+        description="Recording is off. Earlier records are still on disk."
+        action={enable}
+      />
+    );
   }
-  return 'No matching run records.';
+  if (status?.enabled && !retained) {
+    return (
+      <EmptyState
+        inline
+        role="status"
+        icon={History}
+        title="No run records yet"
+        description="Recording is on. A record appears here after the next tool call returns through the gateway."
+        action={
+          <Button variant="secondary" size="sm" onClick={onRefresh}>
+            Refresh
+          </Button>
+        }
+      />
+    );
+  }
+  return <EmptyState inline role="status" icon={History} title="No run records to show" />;
 }

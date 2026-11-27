@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { formatRelativeTime, formatRelativeTimeFine, formatStampOrUnknown } from '../lib/time';
+import { formatLocalDateTime, formatRelativeTime, formatRelativeTimeFine, formatStampOrUnknown } from '../lib/time';
 
 const NOW = new Date('2026-07-25T12:00:00Z').getTime();
 
@@ -62,5 +62,26 @@ describe('formatStampOrUnknown', () => {
   it('renders a recent stamp as a relative age', () => {
     const justNow = new Date(Date.now() - 30_000).toISOString();
     expect(formatStampOrUnknown(justNow)).toMatch(/ago|just now/);
+  });
+});
+
+describe('formatLocalDateTime', () => {
+  it('returns an unparseable input unchanged', () => {
+    expect(formatLocalDateTime('not-a-date')).toBe('not-a-date');
+    expect(formatLocalDateTime('')).toBe('');
+  });
+
+  it('omits the year within the current year', () => {
+    const iso = '2026-03-04T05:06:07Z';
+    const out = formatLocalDateTime(iso, new Date('2026-07-01T12:00:00Z'));
+    expect(out).not.toContain('2026');
+    expect(out).not.toBe(iso);
+    expect(out).toMatch(/\d{2}:\d{2}:\d{2}/);
+  });
+
+  it('adds the year when it differs from the current year', () => {
+    const out = formatLocalDateTime('2024-03-04T05:06:07Z', new Date('2026-07-01T12:00:00Z'));
+    expect(out).toContain('2024');
+    expect(out).toMatch(/\d{2}:\d{2}:\d{2}/);
   });
 });

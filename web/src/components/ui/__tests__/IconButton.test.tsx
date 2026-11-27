@@ -93,6 +93,17 @@ describe('IconButton', () => {
     expect(screen.getByRole('button', { name: 'More actions' })).not.toHaveAttribute('aria-expanded');
   });
 
+  it('renders aria-expanded from expanded alone and omits it by default', () => {
+    const { rerender } = render(<IconButton icon={Trash2} tooltip="Settings" />);
+    expect(screen.getByRole('button', { name: 'Settings' })).not.toHaveAttribute('aria-expanded');
+
+    rerender(<IconButton icon={Trash2} tooltip="Settings" expanded />);
+    expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute('aria-expanded', 'true');
+
+    rerender(<IconButton icon={Trash2} tooltip="Settings" expanded={false} />);
+    expect(screen.getByRole('button', { name: 'Settings' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
   it('forwards a ref to the button element', () => {
     const ref = createRef<HTMLButtonElement>();
     render(<IconButton ref={ref} icon={Trash2} tooltip="More actions" hasPopup="menu" />);
