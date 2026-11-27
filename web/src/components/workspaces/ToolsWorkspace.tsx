@@ -21,6 +21,8 @@ import { WORKSPACE_LABELS } from '../../types/workspace';
 import { useStackStore } from '../../stores/useStackStore';
 import { leavesWorkspace, useNavigationGuardStore } from '../../stores/useNavigationGuardStore';
 import { useNavigationGuard } from '../../hooks/useNavigationGuard';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
+import { usePinsStore } from '../../stores/usePinsStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useToolsEditor } from '../../hooks/useToolsEditor';
 import { useToolUsage } from '../../hooks/useToolUsage';
@@ -61,7 +63,9 @@ import { ClientAccessEditor } from './ClientAccessEditor';
 import { GroupsPanel } from './GroupsPanel';
 import { useGroups } from '../../hooks/useGroups';
 import { usePolicy } from '../../hooks/usePolicy';
-import { groupsForTool, policyChip } from '../../lib/groups';
+import { ANNOTATION_CHIP_LEGEND, CHIP_TONE_CLASS, groupsForTool, policyChip } from '../../lib/groups';
+import { toolExposureSummary } from '../../lib/toolExposure';
+import { Popover } from '../ui/Popover';
 import { joinToolGroups, ToolListRow } from './ToolListRow';
 import type { PolicyToolStatus } from '../../lib/api';
 import { ToolDetailPanel } from './ToolDetailPanel';
@@ -500,6 +504,16 @@ export function ToolsWorkspace() {
   }, [selectedTool, selectedRow, editor.allTools.length, applyTool]);
 
   const selectedEnabled = selectedTool ? editor.selected.has(selectedTool) : false;
+  // Pin chip inputs. Hidden-by-allow-list reads the saved list, never the
+  // draft, so toggling a checkbox does not change the chip.
+  const pins = usePinsStore((s) => s.pins);
+  const selectedPin = activeServerName ? pins?.[activeServerName] : undefined;
+  const savedAllowList = activeServer?.toolWhitelist ?? [];
+  const selectedHiddenByAllowList =
+    selectedTool !== null && savedAllowList.length > 0 && !savedAllowList.includes(selectedTool);
+  // Detail-rail links leave the workspace, so they go through the shared
+  // unsaved-edits guard registered above.
+  const guardedNavigate = useGuardedNavigate();
   const selectedUsage = selectedTool ? usageByServer?.[activeServerName]?.[selectedTool] : undefined;
   const selectedLastCalled = selectedUsage?.lastCalledAt;
   const selectedAuditState = useMemo(() => {
@@ -531,6 +545,9 @@ export function ToolsWorkspace() {
       usage={selectedUsage}
       lastCalledAt={selectedLastCalled}
       policy={selectedTool ? policyReport?.tools?.[`${activeServerName}${TOOL_NAME_DELIMITER}${selectedTool}`] : undefined}
+      pin={selectedPin}
+      hiddenByAllowList={selectedHiddenByAllowList}
+      onNavigate={(path) => guardedNavigate(path)}
       onClose={() => applyTool(null)}
     />
   );
@@ -1239,21 +1256,23 @@ function ServerDetail({
 
   return (
     <div className="px-6 py-4 max-w-4xl space-y-3" aria-busy={isSaving}>
-      {/* Count + quick actions. The neutral "empty means all" help text must
-          never sit next to a zero draft count — there it would describe the
-          re-expose-all footgun as expected behavior. */}
+      {/* Count + quick actions. A zero draft count shows the blocking alert
+          instead of the summary, since saving it would expose every tool. */}
       <div className="flex items-center gap-2 text-2xs text-text-muted">
         {saveBlocked ? (
           <span role="alert" className="text-status-error">
             <span className="font-medium">0</span> of{' '}
             <span className="font-medium">{rows.length}</span> selected — cannot save an
-            empty selection (an empty whitelist would expose all tools)
+            empty selection (an empty allow-list would expose all tools)
           </span>
         ) : (
-          <span>
-            <span className="text-text-secondary font-medium">{selected.size}</span> of{' '}
-            <span className="text-text-secondary font-medium">{rows.length}</span> enabled —
-            empty means all tools exposed
+          <span className="text-text-secondary">
+            {toolExposureSummary({
+              selected: selected.size,
+              total: rows.length,
+              hasAllowList: (server.toolWhitelist?.length ?? 0) > 0,
+              dirty,
+            })}
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
@@ -1355,6 +1374,7 @@ function ServerDetail({
               ))}
             </select>
           </label>
+          <ChipLegend />
         </span>
       </div>
 
@@ -1651,3 +1671,67 @@ function splitTool(t: Tool): GlobalResult | null {
 }
 
 export default ToolsWorkspace;
+
+// Legend for the list's abbreviation chips. The annotation rows come from the
+// same table annotationChips reads, so the two cannot drift.
+function ChipLegend() {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  return (
+    <span className="relative inline-flex">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        className="text-secondary hover:text-secondary-light transition-colors rounded"
+      >
+        Legend
+      </button>
+      <Popover
+        open={open}
+        onClose={() => setOpen(false)}
+        triggerRef={triggerRef}
+        aria-label="Chip legend"
+        className="absolute right-0 top-full mt-1 w-72 p-3 space-y-2"
+      >
+        <ul className="space-y-1.5">
+          {ANNOTATION_CHIP_LEGEND.map((entry) => (
+            <li key={entry.label} className="flex items-start gap-2">
+              <span
+                className={cn(
+                  'flex-shrink-0 px-1.5 py-px rounded text-3xs font-medium mt-px',
+                  CHIP_TONE_CLASS[entry.tone],
+                )}
+              >
+                {entry.label}
+              </span>
+              <span className="text-3xs leading-relaxed">
+                <span className="text-text-primary font-medium">{entry.name}</span>
+                <span className="block text-text-muted">{entry.title}</span>
+              </span>
+            </li>
+          ))}
+          <li className="flex items-start gap-2">
+            <span className={cn('flex-shrink-0 px-1.5 py-px rounded text-3xs font-medium mt-px', CHIP_TONE_CLASS.danger)}>
+              BLOCKED
+            </span>
+            <span className="text-3xs text-text-muted leading-relaxed">Denied by the policy block</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className={cn('flex-shrink-0 px-1.5 py-px rounded text-3xs font-medium mt-px', CHIP_TONE_CLASS.danger)}>
+              APPROVAL
+            </span>
+            <span className="text-3xs text-text-muted leading-relaxed">
+              Policy requires approval; enforced as a block
+            </span>
+          </li>
+        </ul>
+        <p className="text-3xs text-text-muted italic">
+          Hints are reported by the server, not verified by gridctl.
+        </p>
+      </Popover>
+    </span>
+  );
+}

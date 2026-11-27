@@ -1,14 +1,19 @@
-import { useRef, type ReactNode } from 'react';
-import { Wrench } from 'lucide-react';
+import { useId, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { ArrowUpRight, ChevronDown, ChevronRight, Copy, Wrench } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { formatCompactNumber } from '../../lib/format';
 import { CodeViewer } from '../ui/CodeViewer';
+import { copyWithToast } from '../ui/Toast';
 import { ZoomControls } from '../ui/ZoomControls';
 import { InspectorHeader, PaneAnchor } from '../inspector';
 import { InspectorStat } from '../metrics/metricsShared';
+import { pinStatusMeta } from '../pins/pinStatus';
 import { formatLastUsed, type AuditState } from '../../lib/toolAudit';
 import { CHIP_TONE_CLASS, annotationChips, policyChip, policyDetailText } from '../../lib/groups';
-import type { PolicyToolStatus } from '../../lib/api';
+import { TOOL_NAME_DELIMITER } from '../../lib/constants';
+import { clampDescription } from '../../lib/toolDescription';
+import { schemaParameters, type SchemaParameter } from '../../lib/toolSchema';
+import type { PolicyToolStatus, ServerPins } from '../../lib/api';
 import { useTextZoom } from '../../hooks/useTextZoom';
 import { TOOLS_TEXT_ZOOM } from '../../lib/textZoomDefaults';
 import type { ToolRow } from '../../hooks/useToolsEditor';
@@ -21,6 +26,12 @@ const AUDIT_LABEL: Record<AuditState, { text: string; dot: string; label: string
   disabled: { text: 'text-text-muted', dot: 'bg-text-muted/50', label: 'disabled' },
 };
 
+const MAX_ENUM_VALUES = 8;
+const MAX_DEFAULT_CHARS = 80;
+
+const HEADER_ACTION_CLASS =
+  'inline-flex items-center gap-1 text-3xs text-secondary hover:text-secondary-light transition-colors rounded';
+
 interface ToolDetailPanelProps {
   serverName: string;
   // The selected tool (name + description), or null when nothing is selected.
@@ -32,18 +43,27 @@ interface ToolDetailPanelProps {
   auditMode: boolean;
   auditState: AuditState | null;
   // The tool's observed usage (calls/tokens), when any call has been
-  // recorded. Shown whenever present — not gated on Audit Mode.
+  // recorded. Shown whenever present — not gated on Audit Mode. Also gates
+  // the Metrics link, since Metrics only has rows for tools with usage.
   usage?: ToolUsageStat;
   lastCalledAt?: string;
   // Verdict from GET /api/policy for this prefixed tool, when a block is configured.
   policy?: PolicyToolStatus;
+  // The server's entry from GET /api/pins. Pin status is per server.
+  pin?: ServerPins;
+  // True when the saved allow-list is non-empty and excludes this tool. Such
+  // tools are normally absent from the pin set, so the chip stays silent.
+  hiddenByAllowList?: boolean;
+  // Handles an unmodified click on a header link. Without it links behave as
+  // plain anchors.
+  onNavigate?: (path: string) => void;
   onClose: () => void;
 }
 
 // ToolDetailPanel fills the Tools workspace right rail with the selected tool's
-// description, input schema, and metadata. Schema is rendered with the shared
-// CodeViewer so it matches the Spec tab's tokenized treatment. When no tool is
-// selected it shows an explicit prompt rather than a blank gap.
+// description, parameters, raw input schema, and metadata. Schema is rendered
+// with the shared CodeViewer so it matches the Spec tab's tokenized treatment.
+// When no tool is selected it shows an explicit prompt rather than a blank gap.
 export function ToolDetailPanel({
   serverName,
   tool,
@@ -54,6 +74,9 @@ export function ToolDetailPanel({
   usage,
   lastCalledAt,
   policy,
+  pin,
+  hiddenByAllowList = false,
+  onNavigate,
   onClose,
 }: ToolDetailPanelProps) {
   // Content text-size control for the description + JSON schema, scoped to this
@@ -67,6 +90,18 @@ export function ToolDetailPanel({
     step: TOOLS_TEXT_ZOOM.step,
     containerRef: contentRef,
   });
+
+  // The user's raw-schema choice, once made, holds across tool selections.
+  const [rawOpenChoice, setRawOpenChoice] = useState<boolean | null>(null);
+
+  const parameters = useMemo(() => schemaParameters(schema), [schema]);
+  const schemaText = useMemo(() => (schema ? JSON.stringify(schema, null, 2) : ''), [schema]);
+
+  const prefixed = tool ? `${serverName}${TOOL_NAME_DELIMITER}${tool.name}` : '';
+  const tracesPath = tool
+    ? `/traces?q=${encodeURIComponent(tool.name)}&server=${encodeURIComponent(serverName)}&errors=0`
+    : '';
+  const metricsPath = `/metrics?scope=tools&selected=${encodeURIComponent(prefixed)}`;
 
   return (
     <aside aria-label="Tool details" className="relative h-full flex flex-col bg-surface-elevated border-l border-border">
@@ -102,6 +137,32 @@ export function ToolDetailPanel({
                 >
                   {enabled ? 'enabled' : 'disabled'}
                 </span>
+                <PinChip
+                  serverName={serverName}
+                  toolName={tool.name}
+                  pin={pin}
+                  hiddenByAllowList={hiddenByAllowList}
+                  onNavigate={onNavigate}
+                />
+                <button
+                  type="button"
+                  onClick={() => void copyWithToast(prefixed, 'Tool name')}
+                  aria-label={`Copy prefixed name ${prefixed}`}
+                  className={HEADER_ACTION_CLASS}
+                >
+                  <Copy size={10} aria-hidden="true" />
+                  Copy name
+                </button>
+                <NavLink path={tracesPath} onNavigate={onNavigate} className={HEADER_ACTION_CLASS}>
+                  <ArrowUpRight size={10} aria-hidden="true" />
+                  Traces
+                </NavLink>
+                {usage && (
+                  <NavLink path={metricsPath} onNavigate={onNavigate} className={HEADER_ACTION_CLASS}>
+                    <ArrowUpRight size={10} aria-hidden="true" />
+                    Metrics
+                  </NavLink>
+                )}
               </div>
             }
           />
@@ -112,26 +173,34 @@ export function ToolDetailPanel({
           >
             <Section title="Description">
               {tool.description ? (
-                <p
-                  className="text-text-secondary leading-relaxed whitespace-pre-wrap break-words"
-                  style={{ fontSize }}
-                >
-                  {tool.description}
-                </p>
+                <DescriptionBlock
+                  key={`${serverName}/${tool.name}`}
+                  text={tool.description}
+                  fontSize={fontSize}
+                />
               ) : (
                 <p className="text-2xs text-text-muted italic">No description available.</p>
               )}
             </Section>
 
-            <Section title="Input schema">
+            <Section title="Parameters">
               {schema ? (
-                <CodeViewer
-                  language="json"
-                  content={JSON.stringify(schema, null, 2)}
-                  fontSize={fontSize}
-                  ariaLabel={`${tool.name} input schema`}
-                  className="rounded-md border border-border/30 bg-background/80 max-h-[45vh]"
-                />
+                <div className="space-y-3">
+                  <ParametersTable
+                    toolName={tool.name}
+                    rows={parameters.rows}
+                    notes={parameters.notes}
+                    empty={parameters.empty}
+                    fontSize={fontSize}
+                  />
+                  <RawSchema
+                    toolName={tool.name}
+                    content={schemaText}
+                    fontSize={fontSize}
+                    open={rawOpenChoice ?? !(parameters.rows.length > 0 || parameters.empty)}
+                    onToggle={(next) => setRawOpenChoice(next)}
+                  />
+                </div>
               ) : (
                 <p className="text-2xs text-text-muted italic">No input schema available.</p>
               )}
@@ -180,6 +249,242 @@ export function ToolDetailPanel({
         <ToolDetailEmpty />
       )}
     </aside>
+  );
+}
+
+// A real anchor so modified clicks open a new tab; an unmodified primary
+// click is handed to onNavigate, which applies the unsaved-edits guard.
+function NavLink({
+  path,
+  onNavigate,
+  className,
+  'aria-label': ariaLabel,
+  children,
+}: {
+  path: string;
+  onNavigate?: (path: string) => void;
+  className?: string;
+  'aria-label'?: string;
+  children: ReactNode;
+}) {
+  const handleClick = (e: MouseEvent<HTMLAnchorElement>) => {
+    if (!onNavigate) return;
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    onNavigate(path);
+  };
+  return (
+    <a href={path} onClick={handleClick} aria-label={ariaLabel} className={className}>
+      {children}
+    </a>
+  );
+}
+
+function PinChip({
+  serverName,
+  toolName,
+  pin,
+  hiddenByAllowList,
+  onNavigate,
+}: {
+  serverName: string;
+  toolName: string;
+  pin?: ServerPins;
+  hiddenByAllowList: boolean;
+  onNavigate?: (path: string) => void;
+}) {
+  if (!pin) return null;
+  const inPinSet = Object.prototype.hasOwnProperty.call(pin.tools ?? {}, toolName);
+  if (!inPinSet && hiddenByAllowList) return null;
+
+  let label: string;
+  let colorClass: string;
+  if (inPinSet) {
+    const meta = pinStatusMeta(pin.status);
+    label = pin.status === 'drift' ? 'Server drift' : meta.label;
+    colorClass = meta.colorClass;
+  } else {
+    label = 'Not in pin set';
+    colorClass = 'text-text-muted';
+  }
+  const drift = inPinSet && pin.status === 'drift';
+  const path = `/pins?server=${encodeURIComponent(serverName)}${drift ? '&view=drift' : ''}`;
+
+  return (
+    <NavLink
+      path={path}
+      onNavigate={onNavigate}
+      aria-label={`Pin status: ${label}. Open in Pins`}
+      className={cn(
+        'text-3xs font-mono px-1.5 py-0.5 rounded bg-surface-highlight hover:bg-surface-highlight/70 transition-colors',
+        colorClass,
+      )}
+    >
+      {label}
+    </NavLink>
+  );
+}
+
+function DescriptionBlock({ text, fontSize }: { text: string; fontSize: number }) {
+  const id = useId();
+  const [expanded, setExpanded] = useState(false);
+  // Descriptions are attacker-controlled instructions to the model, so they
+  // stay plain text and a shortened view always says how much it hides.
+  const { visible, hiddenChars } = useMemo(() => clampDescription(text), [text]);
+  const clamped = hiddenChars > 0;
+  return (
+    <div className="space-y-1">
+      <p
+        id={id}
+        className="text-text-secondary leading-relaxed whitespace-pre-wrap break-words"
+        style={{ fontSize }}
+      >
+        {clamped && !expanded ? `${visible}…` : text}
+      </p>
+      {clamped && (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={id}
+          onClick={() => setExpanded((v) => !v)}
+          className="text-3xs text-secondary hover:text-secondary-light transition-colors rounded"
+        >
+          {expanded ? 'Show less' : `Show more (${hiddenChars.toLocaleString('en-US')} more characters)`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function truncateDefault(text: string): string {
+  return text.length > MAX_DEFAULT_CHARS ? `${text.slice(0, MAX_DEFAULT_CHARS)}…` : text;
+}
+
+function enumText(values: string[]): string {
+  const shown = values.slice(0, MAX_ENUM_VALUES).join(', ');
+  const rest = values.length - MAX_ENUM_VALUES;
+  return rest > 0 ? `${shown} +${rest} more` : shown;
+}
+
+function ParametersTable({
+  toolName,
+  rows,
+  notes,
+  empty,
+  fontSize,
+}: {
+  toolName: string;
+  rows: SchemaParameter[];
+  notes: string[];
+  empty: boolean;
+  fontSize: number;
+}) {
+  return (
+    <div className="space-y-2">
+      {rows.length > 0 ? (
+        <div className="rounded-md border border-border/30 overflow-x-auto">
+          <table
+            aria-label={`${toolName} parameters`}
+            className="w-full border-collapse text-left"
+            style={{ fontSize }}
+          >
+            <thead>
+              <tr className="border-b border-border/30 text-3xs uppercase tracking-[0.12em] text-text-muted">
+                <th scope="col" className="px-2 py-1.5 font-medium">Parameter</th>
+                <th scope="col" className="px-2 py-1.5 font-medium">Type</th>
+                <th scope="col" className="px-2 py-1.5 font-medium">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.name} className="border-b border-border/20 last:border-b-0 align-top">
+                  <td className="px-2 py-1.5">
+                    <span className="font-mono text-text-primary break-all">{row.name}</span>
+                    {row.required && (
+                      <span className="block text-3xs text-status-pending">required</span>
+                    )}
+                  </td>
+                  <td className="px-2 py-1.5 font-mono text-text-muted break-all">{row.type}</td>
+                  <td className="px-2 py-1.5 text-text-secondary">
+                    {row.description && (
+                      <p className="whitespace-pre-wrap break-words">{row.description}</p>
+                    )}
+                    {row.defaultText !== undefined && (
+                      <p className="text-text-muted break-words">Default: {truncateDefault(row.defaultText)}</p>
+                    )}
+                    {row.enumValues && row.enumValues.length > 0 && (
+                      <p className="text-text-muted break-words">One of: {enumText(row.enumValues)}</p>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-2xs text-text-muted italic">
+          {empty ? 'No parameters.' : 'Parameters cannot be summarized; see the raw schema.'}
+        </p>
+      )}
+      {notes.map((note) => (
+        <p key={note} className="text-3xs text-text-muted leading-relaxed">
+          {note}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function RawSchema({
+  toolName,
+  content,
+  fontSize,
+  open,
+  onToggle,
+}: {
+  toolName: string;
+  content: string;
+  fontSize: number;
+  open: boolean;
+  onToggle: (open: boolean) => void;
+}) {
+  const regionId = useId();
+  const Chevron = open ? ChevronDown : ChevronRight;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={regionId}
+          onClick={() => onToggle(!open)}
+          className="inline-flex items-center gap-1 text-3xs uppercase tracking-[0.18em] text-text-muted hover:text-text-secondary transition-colors rounded"
+        >
+          <Chevron size={12} aria-hidden="true" />
+          Raw schema
+        </button>
+        <button
+          type="button"
+          onClick={() => void copyWithToast(content, 'Input schema')}
+          aria-label="Copy input schema"
+          className={cn(HEADER_ACTION_CLASS, 'ml-auto')}
+        >
+          <Copy size={10} aria-hidden="true" />
+          Copy
+        </button>
+      </div>
+      <div id={regionId}>
+        {open && (
+          <CodeViewer
+            language="json"
+            content={content}
+            fontSize={fontSize}
+            ariaLabel={`${toolName} input schema`}
+            className="rounded-md border border-border/30 bg-background/80 max-h-[45vh]"
+          />
+        )}
+      </div>
+    </div>
   );
 }
 
