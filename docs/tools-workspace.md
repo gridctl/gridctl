@@ -6,7 +6,7 @@ The Tools workspace (`/tools` in the web UI on `:8180`) is the control plane for
 
 - **Server rail (left)**: every MCP server in the stack with an `enabled/total` badge. While you have unsaved edits, the active server's badge shows the draft count with an `unsaved` chip; saving or discarding restores the live count.
 - **Center**: the whitelist editor for the selected server. The checkbox toggles a tool's exposure; clicking the row opens the tool in the detail rail. These are separate gestures on purpose, so inspecting a tool never changes what agents can call.
-- **Detail rail (right)**: description, input schema, server-reported hints, the policy verdict when one applies, and usage stats for the selected tool.
+- **Detail rail (right)**: description, a parameters table (name, type, required, default, and allowed values) above a collapsible raw schema with a Copy button, server-reported hints, the policy verdict when one applies, and usage stats for the selected tool. The header has Copy name (copies the prefixed `server__tool` name), a pin chip that opens the server in Pins (pin status is per server, and the chip is absent for a tool the saved allow-list hides), and links to Traces and Metrics filtered to the tool. Metrics appears once the tool has recorded calls. Traces keeps a time range chosen on an earlier visit. With unsaved allow-list edits, these links ask before discarding them. Long descriptions are shortened with a count of the hidden characters and a Show more button, and descriptions are never rendered as markdown.
 - **Header**: global search across every server, plus the Groups, Access, Fleet, and Audit entry points.
 
 A failed fetch is not an empty stack. With no servers loaded, the pane says "Tools unavailable" and offers Retry. When servers are already on screen, a banner names the failure and the editor stays mounted, including an unsaved whitelist edit. See [a workspace says a feature is unavailable](troubleshooting.md#a-workspace-says-a-feature-is-unavailable).
@@ -56,7 +56,7 @@ Both paths refuse to empty a server's whitelist. A server whose every exposed to
 
 ## Tool hints (annotations)
 
-MCP servers may annotate tools with `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint`. The list shows compact chips (RO, RW, DESTR, SAFE, IDEM, OPEN, CLOSED) for declared hints, and the detail rail spells them out under Hints.
+MCP servers may annotate tools with `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint`. The list shows compact chips (RO, RW, DESTR, SAFE, IDEM, OPEN, CLOSED) for declared hints, and the detail rail spells them out under Hints. The Legend button at the end of the list's filter row lists every chip with its full name and meaning, including the policy `BLOCKED` and `APPROVAL` chips.
 
 Treat these as claims, not guarantees: they are reported by the server and not verified by gridctl. Per the MCP spec, a tool that declares nothing should be treated as potentially destructive and open-world; the Hints section says so explicitly for unannotated tools.
 
