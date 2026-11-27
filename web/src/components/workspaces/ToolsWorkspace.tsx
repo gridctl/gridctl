@@ -27,8 +27,10 @@ import { useUIStore } from '../../stores/useUIStore';
 import { useToolsEditor } from '../../hooks/useToolsEditor';
 import { useToolUsage } from '../../hooks/useToolUsage';
 import { useOptimize } from '../../hooks/useOptimize';
+import type { FuseOptionKey } from 'fuse.js';
 import { useFuzzySearch } from '../../hooks/useFuzzySearch';
 import { TOOL_NAME_DELIMITER } from '../../lib/constants';
+import { excerptAround, highlightMatches } from '../../lib/highlight';
 import { formatRelativeTime } from '../../lib/time';
 import {
   AUDIT_WINDOWS,
@@ -113,6 +115,9 @@ export function ToolsWorkspace() {
   // Defaults are omitted so bare links stay canonical (Metrics idiom).
   const serverParam = searchParams.get('server') ?? '';
   const globalQuery = searchParams.get('q') ?? '';
+  // The query a result pick left behind, offered as "Back to results". A
+  // non-blank ?q= wins: no chip renders during an active search.
+  const backQuery = searchParams.get('back') ?? '';
   // The tool whose detail is shown in the right rail. Distinct from the
   // whitelist selection (the checkboxes) — this is the "active" tool. Picking
   // a global-search result sets it so that tool is revealed on arrival.
@@ -150,14 +155,19 @@ export function ToolsWorkspace() {
   // Selecting a server also exits any active global search and re-targets the
   // detail tool — done in one params update so the changes compose (two
   // separate setSearchParams calls in a handler both observe the same stale
-  // snapshot and the last wins).
+  // snapshot and the last wins). Revealing a tool from search keeps the query
+  // in ?back= (read from prev, so the discard-confirm path keeps it too); a
+  // plain server switch drops it.
   const applyServer = useCallback(
     (name: string, tool: string | null = null) => {
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
+          const prevQuery = prev.get('q') ?? '';
           next.set('server', name);
           next.delete('q');
+          if (tool && prevQuery.trim()) next.set('back', prevQuery);
+          else next.delete('back');
           if (tool) next.set('tool', tool);
           else next.delete('tool');
           return next;
@@ -294,6 +304,7 @@ export function ToolsWorkspace() {
           const next = new URLSearchParams(prev);
           if (q.trim()) next.set('q', q);
           else next.delete('q');
+          next.delete('back');
           return next;
         },
         { replace: true },
@@ -453,11 +464,77 @@ export function ToolsWorkspace() {
 
   // ---- Global search ------------------------------------------------------
   const searchActive = globalQuery.trim().length > 0;
-  const globalMatches = useFuzzySearch(toolCatalog, globalQuery);
-  const globalResults = useMemo(
-    () => globalMatches.map(splitTool).filter((r): r is GlobalResult => r !== null),
-    [globalMatches],
+  // Split before searching so the tool name is matched without its server
+  // prefix. The catalog is null in stackless mode, and this memo runs before
+  // the hook's own coalescing.
+  const globalRows = useMemo(
+    () => (toolCatalog ?? []).map(splitTool).filter((r): r is GlobalResult => r !== null),
+    [toolCatalog],
   );
+  const globalResults = useFuzzySearch(globalRows, globalQuery, { keys: GLOBAL_SEARCH_KEYS });
+
+  // The keyboard-active result. Reset only when the operator types, so
+  // returning through "Back to results" lands on the row that was picked.
+  const resultsListId = useId();
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [activeResult, setActiveResult] = useState(0);
+  const activeResultIndex =
+    globalResults.length > 0 ? Math.min(activeResult, globalResults.length - 1) : -1;
+
+  const onSearchChange = (q: string) => {
+    setActiveResult(0);
+    setGlobalQuery(q);
+  };
+
+  const pickResult = (index: number) => {
+    const r = globalResults[index];
+    if (!r) return;
+    setActiveResult(index);
+    requestServer(r.server, r.tool);
+  };
+
+  const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing || !searchActive) return;
+    const n = globalResults.length;
+    if (n === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveResult((activeResultIndex + 1) % n);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveResult((activeResultIndex - 1 + n) % n);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      pickResult(activeResultIndex);
+    }
+  };
+
+  const showBackChip = !searchActive && backQuery.trim().length > 0;
+
+  const returnToResults = () => {
+    const q = backQuery;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('q', q);
+        next.delete('back');
+        return next;
+      },
+      { replace: true },
+    );
+    searchInputRef.current?.focus();
+  };
+
+  const dismissBack = () => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('back');
+        return next;
+      },
+      { replace: true },
+    );
+  };
 
   // Audit classification for search results, which span every server. The
   // active server classifies against the draft selection so search rows agree
@@ -573,7 +650,15 @@ export function ToolsWorkspace() {
             compact={compact}
             serverCount={servers.length}
             query={globalQuery}
-            onQueryChange={setGlobalQuery}
+            onQueryChange={onSearchChange}
+            onQueryKeyDown={onSearchKeyDown}
+            inputRef={searchInputRef}
+            resultsListId={resultsListId}
+            activeDescendant={
+              searchActive && activeResultIndex >= 0
+                ? resultOptionId(resultsListId, activeResultIndex)
+                : undefined
+            }
             auditMode={auditMode}
             onToggleAudit={toggleAudit}
             auditWindow={auditWindow}
@@ -622,13 +707,37 @@ export function ToolsWorkspace() {
                 )}
                 {searchActive ? (
                   <GlobalResults
+                    listId={resultsListId}
                     results={globalResults}
                     query={globalQuery}
                     serverCount={servers.length}
-                    onPick={(server, tool) => requestServer(server, tool)}
+                    activeIndex={activeResultIndex}
+                    onPick={pickResult}
                     auditFor={auditForResult}
                   />
                 ) : activeServer ? (
+                  <>
+                  {showBackChip && (
+                    <div className="px-6 pt-3 flex items-center gap-1 text-3xs">
+                      <button
+                        type="button"
+                        onClick={returnToResults}
+                        title={`Back to results for "${backQuery}"`}
+                        className="inline-flex items-center gap-1 min-w-0 max-w-md rounded-full border px-2 py-0.5 font-medium transition-colors bg-background/40 text-text-muted border-border/40 hover:text-text-secondary hover:border-border"
+                      >
+                        <Undo2 size={11} aria-hidden="true" className="flex-shrink-0" />
+                        <span className="truncate">Back to results for &quot;{backQuery}&quot;</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={dismissBack}
+                        aria-label="Dismiss"
+                        className="p-0.5 rounded text-text-muted hover:text-text-secondary hover:bg-surface-highlight transition-colors"
+                      >
+                        <X size={11} aria-hidden="true" />
+                      </button>
+                    </div>
+                  )}
                   <ServerDetail
                     key={activeServer.name}
                     server={activeServer}
@@ -651,6 +760,7 @@ export function ToolsWorkspace() {
                     }
                     policyTools={policyReport?.tools}
                   />
+                  </>
                 ) : null}
               </>
             )}
@@ -750,6 +860,12 @@ interface ToolsHeaderProps {
   serverCount: number;
   query: string;
   onQueryChange: (q: string) => void;
+  onQueryKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  // Id of the global results listbox and of its active option, for the
+  // input's combobox semantics.
+  resultsListId: string;
+  activeDescendant?: string;
   auditMode: boolean;
   onToggleAudit: () => void;
   auditWindow: AuditWindow;
@@ -778,6 +894,10 @@ function ToolsHeader({
   serverCount,
   query,
   onQueryChange,
+  onQueryKeyDown,
+  inputRef,
+  resultsListId,
+  activeDescendant,
   auditMode,
   onToggleAudit,
   auditWindow,
@@ -935,8 +1055,15 @@ function ToolsHeader({
           className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none"
         />
         <input
+          ref={inputRef}
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
+          onKeyDown={onQueryKeyDown}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={searching}
+          aria-controls={resultsListId}
+          aria-activedescendant={activeDescendant}
           placeholder={
             serverCount === 1
               ? 'Search all tools…'
@@ -1569,50 +1696,104 @@ function FacetChip({
 // ---------------------------------------------------------------------------
 
 interface GlobalResult {
+  // The prefixed server__tool name.
+  name: string;
   server: string;
   tool: string;
   description?: string;
 }
 
+// Tool-name hits rank first; the prefixed name stays searchable so a
+// server__tool paste still matches.
+const GLOBAL_SEARCH_KEYS: FuseOptionKey<GlobalResult>[] = [
+  { name: 'tool', weight: 3 },
+  { name: 'server', weight: 1 },
+  { name: 'name', weight: 1 },
+  { name: 'description', weight: 1 },
+];
+
+// Option ids derive from the useId() list id and the row index, never from
+// server or tool names, which can hold whitespace and break the reference.
+function resultOptionId(listId: string, index: number): string {
+  return `${listId}-opt-${index}`;
+}
+
 interface GlobalResultsProps {
+  listId: string;
   results: GlobalResult[];
   query: string;
   serverCount: number;
-  onPick: (server: string, tool: string) => void;
+  // Index of the keyboard-active row, or -1 when there are no results.
+  activeIndex: number;
+  onPick: (index: number) => void;
   // Audit classification for a result row (null when Audit Mode is off or
   // usage hasn't loaded), so cross-server unused hunting works from search.
   auditFor: (server: string, tool: string) => AuditState | null;
 }
 
-function GlobalResults({ results, query, serverCount, onPick, auditFor }: GlobalResultsProps) {
+function GlobalResults({
+  listId,
+  results,
+  query,
+  serverCount,
+  activeIndex,
+  onPick,
+  auditFor,
+}: GlobalResultsProps) {
+  const listRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (activeIndex < 0) return;
+    const row = listRef.current?.querySelector<HTMLElement>(
+      `[id="${CSS.escape(resultOptionId(listId, activeIndex))}"]`,
+    );
+    row?.scrollIntoView({ block: 'nearest' });
+  }, [listId, activeIndex]);
+
   return (
     <div className="px-6 py-4 max-w-4xl space-y-2">
-      <p className="text-3xs uppercase tracking-[0.18em] text-text-muted">
+      <p role="status" className="text-3xs uppercase tracking-[0.18em] text-text-muted">
         Searching all {serverCount} {serverCount === 1 ? 'server' : 'servers'} ·{' '}
         {results.length} {results.length === 1 ? 'match' : 'matches'}
       </p>
-      {results.length === 0 ? (
-        <div className="py-10 text-center text-xs text-text-secondary">
-          No tools match "{query}" across any server.
-        </div>
-      ) : (
-        <div className="space-y-1">
-          {results.map((r) => {
+      <div
+        ref={listRef}
+        id={listId}
+        role="listbox"
+        aria-label="Search results"
+        className="space-y-1"
+      >
+        {results.length === 0 ? (
+          <div className="py-10 text-center text-xs text-text-secondary">
+            No tools match "{query}" across any server.
+          </div>
+        ) : (
+          results.map((r, index) => {
             const auditState = auditFor(r.server, r.tool);
+            const active = index === activeIndex;
             return (
               <button
                 key={`${r.server}${TOOL_NAME_DELIMITER}${r.tool}`}
-                onClick={() => onPick(r.server, r.tool)}
-                className="w-full flex items-start gap-2 px-3 py-2 rounded-md text-left bg-background/40 border border-border/30 hover:border-primary/40 hover:bg-surface-highlight/40 transition-colors"
+                type="button"
+                id={resultOptionId(listId, index)}
+                role="option"
+                aria-selected={active}
+                tabIndex={-1}
+                onClick={() => onPick(index)}
+                className={cn(
+                  'w-full flex items-start gap-2 px-3 py-2 rounded-md text-left bg-background/40 border border-border/30 hover:border-primary/40 hover:bg-surface-highlight/40 transition-colors',
+                  active && 'border-primary/40 bg-surface-highlight/40',
+                )}
               >
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-mono truncate">
-                    <span className="text-primary">{r.server}</span>
+                    <span className="text-primary">{highlightMatches(r.server, query)}</span>
                     <span className="text-text-muted mx-1">›</span>
-                    <span className="text-text-primary">{r.tool}</span>
+                    <span className="text-text-primary">{highlightMatches(r.tool, query)}</span>
                   </div>
                   {r.description && (
-                    <div className="text-3xs text-text-muted truncate mt-0.5">{r.description}</div>
+                    <div className="text-3xs text-text-muted truncate mt-0.5">
+                      {highlightMatches(excerptAround(r.description, query), query)}
+                    </div>
                   )}
                   {auditState && (
                     <div
@@ -1635,9 +1816,9 @@ function GlobalResults({ results, query, serverCount, onPick, auditFor }: Global
                 <ChevronRight size={13} className="text-text-muted flex-shrink-0 mt-0.5" />
               </button>
             );
-          })}
-        </div>
-      )}
+          })
+        )}
+      </div>
     </div>
   );
 }
@@ -1668,6 +1849,7 @@ function splitTool(t: Tool): GlobalResult | null {
   const idx = t.name.indexOf(TOOL_NAME_DELIMITER);
   if (idx <= 0) return null;
   return {
+    name: t.name,
     server: t.name.slice(0, idx),
     tool: t.name.slice(idx + TOOL_NAME_DELIMITER.length),
     description: t.description,
