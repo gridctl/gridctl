@@ -27,6 +27,94 @@ function childrenByParent(spans: SpanInterval[]): Map<string, SpanInterval[]> {
   return map;
 }
 
+export interface TreeRowInput {
+  spanId: string;
+  /** Empty string for root spans. */
+  parentSpanId: string;
+  startTime: string;
+}
+
+export interface TreeRow<T extends TreeRowInput> {
+  span: T;
+  depth: number;
+  /** Span ID of the row this one was emitted under; null for every root. */
+  parentId: string | null;
+  /** 1-based position among rows sharing the same effective parent. */
+  posInSet: number;
+  setSize: number;
+}
+
+/**
+ * Pre-order (depth-first) rows for the waterfall: each parent is followed by
+ * its subtree, siblings sort by start time with input order as the tiebreak,
+ * and unparseable start times sort last. Spans whose parent is missing are
+ * roots; spans unreachable from a root (a parent cycle) are emitted as roots.
+ */
+export function preorderSpanRows<T extends TreeRowInput>(spans: T[]): TreeRow<T>[] {
+  const ids = new Set(spans.map((s) => s.spanId));
+  const order = new Map<T, number>();
+  spans.forEach((s, i) => order.set(s, i));
+  const startMs = (s: T) => {
+    const t = new Date(s.startTime).getTime();
+    return Number.isFinite(t) ? t : Infinity;
+  };
+  const bySibling = (a: T, b: T) => {
+    const sa = startMs(a);
+    const sb = startMs(b);
+    if (sa !== sb) return sa < sb ? -1 : 1;
+    return order.get(a)! - order.get(b)!;
+  };
+
+  const children = new Map<string, T[]>();
+  const roots: T[] = [];
+  for (const span of spans) {
+    if (span.parentSpanId && ids.has(span.parentSpanId) && span.parentSpanId !== span.spanId) {
+      const list = children.get(span.parentSpanId);
+      if (list) list.push(span);
+      else children.set(span.parentSpanId, [span]);
+    } else {
+      roots.push(span);
+    }
+  }
+  for (const list of children.values()) list.sort(bySibling);
+  roots.sort(bySibling);
+
+  const emitted = new Set<T>();
+  const subtrees: TreeRow<T>[][] = [];
+  const emit = (span: T, depth: number, parentId: string | null, out: TreeRow<T>[]) => {
+    emitted.add(span);
+    out.push({ span, depth, parentId, posInSet: 0, setSize: 0 });
+    const kids = (children.get(span.spanId) ?? []).filter((c) => !emitted.has(c));
+    kids.forEach((child, i) => {
+      const before = out.length;
+      emit(child, depth + 1, span.spanId, out);
+      out[before].posInSet = i + 1;
+      out[before].setSize = kids.length;
+    });
+  };
+  for (const root of roots) {
+    const out: TreeRow<T>[] = [];
+    emit(root, 0, null, out);
+    subtrees.push(out);
+  }
+  // Cycle members are unreachable from any root; break each cycle at its
+  // earliest unemitted span in sibling order.
+  const leftovers = spans.filter((s) => !emitted.has(s)).sort(bySibling);
+  for (const span of leftovers) {
+    if (emitted.has(span)) continue;
+    const out: TreeRow<T>[] = [];
+    emit(span, 0, null, out);
+    subtrees.push(out);
+  }
+
+  // Roots, including cycle-broken ones, form one sibling group in emit order.
+  subtrees.forEach((rows, i) => {
+    rows[0].posInSet = i + 1;
+    rows[0].setSize = subtrees.length;
+  });
+  return subtrees.flat();
+}
+
 /**
  * Self-time per span: its duration minus the union of its children's
  * intervals (merged, clipped to the parent), floored at zero. Matches the
