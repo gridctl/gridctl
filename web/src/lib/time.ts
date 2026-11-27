@@ -32,6 +32,24 @@ export function formatStampOrUnknown(stamp: string | undefined): string {
   return formatRelativeTime(new Date(ms));
 }
 
+// Local month, day, and 24-hour time for list cells and detail tables, with
+// the year only when it is not the current one. An unparseable input is
+// returned unchanged so the cell never claims a date it does not have.
+export function formatLocalDateTime(iso: string, now: Date = new Date()): string {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return iso;
+  const date = new Date(ms);
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(date.getFullYear() !== now.getFullYear() ? { year: 'numeric' as const } : {}),
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  });
+}
+
 // Finer-grained variant for log tails: sub-minute ages read as seconds
 // ("3s ago") instead of collapsing to "just now", which is too coarse when
 // entries arrive every few seconds. `now` is injectable for pure rendering
