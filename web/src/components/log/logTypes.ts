@@ -354,12 +354,14 @@ export function parseGoDurationMs(value: string): number | null {
 }
 
 // Go duration strings render compactly; anything else, including a numeric
-// value, is shown as it arrived.
+// value, is shown as it arrived. Negative and sub-microsecond values also
+// stay raw, since the compact form would misstate them.
 export function formatGoDuration(value: unknown): string {
   const raw = stringifyAttrValue(value);
   if (typeof value !== 'string') return raw;
   const ms = parseGoDurationMs(value);
-  return ms === null ? raw : formatDuration(ms);
+  if (ms === null || ms < 0 || (ms !== 0 && ms < 0.0005)) return raw;
+  return formatDuration(ms);
 }
 
 export interface InlineLogField {

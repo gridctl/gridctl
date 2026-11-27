@@ -288,6 +288,15 @@ describe('formatGoDuration', () => {
     expect(formatGoDuration('about a second')).toBe('about a second');
     expect(formatGoDuration(1500)).toBe('1500');
   });
+
+  it('shows negative durations as they arrived', () => {
+    expect(formatGoDuration('-1.5s')).toBe('-1.5s');
+  });
+
+  it('shows sub-microsecond durations as they arrived', () => {
+    expect(formatGoDuration('42ns')).toBe('42ns');
+    expect(formatGoDuration('0s')).toBe('0µs');
+  });
 });
 
 describe('inlineLogFields', () => {
