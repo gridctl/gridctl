@@ -15,6 +15,7 @@ import { useUIStore } from '../../stores/useUIStore';
 import { useAccessLensStore } from '../../stores/useAccessLensStore';
 import { STACK_TABLE_AUTO_THRESHOLD, type StackFacet, type StackFilter } from '../../lib/stackRows';
 import { usePollingRefresh } from '../../hooks/usePolling';
+import { useNodeParamSync } from '../../hooks/useNodeParamSync';
 import { WORKSPACE_LABELS } from '../../types/workspace';
 import { cn } from '../../lib/cn';
 import { refreshPhase } from '../../lib/refreshPhase';
@@ -46,8 +47,10 @@ export function StackWorkspace() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // ?spec=1 opens the spec slide-over; the status-bar chip and the palette's
-  // "Open Spec Editor" deep-link it. Closing clears the flag.
+  // ?node=<id> mirrors the selected node (useNodeParamSync). ?spec=1 opens
+  // the spec slide-over; the status-bar chip and the palette's "Open Spec
+  // Editor" deep-link it. Closing clears the flag.
+  useNodeParamSync();
   const specOpen = searchParams.get('spec') === '1';
   const closeSpec = useCallback(() => {
     setSearchParams(

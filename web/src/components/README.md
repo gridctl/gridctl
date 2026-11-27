@@ -30,7 +30,7 @@ Creation wizard entry points use "Create new". The header's primary button (its 
 ├── <Header>           web/src/components/layout/Header.tsx
 │   └── <WorkspaceSwitcher>   <nav aria-label="Workspaces"> of NavLinks
 ├── <Outlet />         renders the active workspace body
-│   ├── <StackWorkspace>      /stack  (toolbar over a graph or table body; hosts the ?spec=1 slide-over)
+│   ├── <StackWorkspace>      /stack  (toolbar over a graph or table body; hosts the ?spec=1 slide-over; ?node=<id> selects a node)
 │   ├── <LibraryWorkspace>    /library  (also /library/:skillName)
 │   ├── <VaultWorkspace>      /vault
 │   ├── <ToolsWorkspace>      /tools
