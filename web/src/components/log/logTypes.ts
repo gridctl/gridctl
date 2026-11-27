@@ -1,4 +1,5 @@
 import type { LogEntry } from '../../lib/api';
+import { formatDuration } from '../../lib/duration';
 
 // Log level configuration
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
@@ -317,6 +318,116 @@ export const PROMOTED_LOG_FIELDS: { label: string; key: string }[] = [
 ];
 
 export const PROMOTED_LOG_KEYS = new Set(PROMOTED_LOG_FIELDS.map((f) => f.key));
+
+const GO_DURATION_UNIT_MS: Record<string, number> = {
+  h: 3_600_000,
+  m: 60_000,
+  s: 1000,
+  ms: 1,
+  'µs': 0.001,
+  'μs': 0.001,
+  us: 0.001,
+  ns: 0.000001,
+};
+
+const GO_DURATION_PART_RE = /(\d+(?:\.\d*)?|\.\d+)(ns|us|µs|μs|ms|s|m|h)/y;
+
+// Parses a Go time.Duration string ("1.234567ms", "850µs", "1m2.5s") into
+// milliseconds. Returns null when the string is not a Go duration.
+export function parseGoDurationMs(value: string): number | null {
+  let rest = value.trim();
+  let sign = 1;
+  if (rest.startsWith('-') || rest.startsWith('+')) {
+    if (rest[0] === '-') sign = -1;
+    rest = rest.slice(1);
+  }
+  if (rest === '0') return 0;
+  if (rest === '') return null;
+  GO_DURATION_PART_RE.lastIndex = 0;
+  let total = 0;
+  while (GO_DURATION_PART_RE.lastIndex < rest.length) {
+    const match = GO_DURATION_PART_RE.exec(rest);
+    if (!match) return null;
+    total += Number(match[1]) * GO_DURATION_UNIT_MS[match[2]];
+  }
+  return Number.isFinite(total) ? sign * total : null;
+}
+
+// Go duration strings render compactly; anything else, including a numeric
+// value, is shown as it arrived. Negative and sub-microsecond values also
+// stay raw, since the compact form would misstate them.
+export function formatGoDuration(value: unknown): string {
+  const raw = stringifyAttrValue(value);
+  if (typeof value !== 'string') return raw;
+  const ms = parseGoDurationMs(value);
+  if (ms === null || ms < 0 || (ms !== 0 && ms < 0.0005)) return raw;
+  return formatDuration(ms);
+}
+
+export interface InlineLogField {
+  key: string;
+  label: string | null;
+  value: string;
+  tone: 'default' | 'ok' | 'error';
+  title: string;
+}
+
+interface InlineFieldSpec {
+  key: string;
+  label: string | null;
+  format?: (value: unknown) => { value: string; tone?: InlineLogField['tone'] } | null;
+  tone?: InlineLogField['tone'];
+}
+
+function formatOutcome(value: unknown): { value: string; tone: InlineLogField['tone'] } | null {
+  if (value === false || value === 'false') return { value: 'ok', tone: 'ok' };
+  if (value === true || value === 'true') return { value: 'error', tone: 'error' };
+  return null;
+}
+
+// Attribute keys shown after the message in a collapsed row, in priority
+// order. `server` and `replica_id` are absent on purpose: the source column
+// already shows the server, and replica ids are noise at row level. `client`
+// sits after the outcome and error so those never lose the cap to it.
+const INLINE_LOG_FIELDS: InlineFieldSpec[] = [
+  { key: 'tool', label: 'tool' },
+  { key: 'name', label: 'name' },
+  { key: 'duration', label: null, format: (v) => ({ value: formatGoDuration(v) }) },
+  { key: 'is_error', label: null, format: formatOutcome },
+  { key: 'error', label: 'error', tone: 'error' },
+  { key: 'client', label: 'client' },
+  { key: 'reason', label: 'reason' },
+  { key: 'status', label: 'status' },
+  { key: 'method', label: 'method' },
+  { key: 'path', label: 'path' },
+  { key: 'output', label: null },
+];
+
+export const MAX_INLINE_LOG_FIELDS = 4;
+
+export function inlineLogFields(log: ParsedLog): InlineLogField[] {
+  const attrs = log.attrs;
+  if (!attrs) return [];
+  const fields: InlineLogField[] = [];
+  for (const spec of INLINE_LOG_FIELDS) {
+    if (fields.length >= MAX_INLINE_LOG_FIELDS) break;
+    const raw = attrs[spec.key];
+    if (raw == null || raw === '') continue;
+    const rawText = stringifyAttrValue(raw);
+    const formatted = spec.format ? spec.format(raw) : { value: rawText };
+    if (!formatted) continue;
+    const value = formatted.value.replace(/\s*[\r\n]+\s*/g, ' ').trim();
+    if (value === '') continue;
+    fields.push({
+      key: spec.key,
+      label: spec.label,
+      value,
+      tone: formatted.tone ?? spec.tone ?? 'default',
+      title: `${spec.key}=${rawText}`,
+    });
+  }
+  return fields;
+}
 
 // Export serialization. JSONL rebuilds the wire-shaped entry object per line —
 // `raw` is pretty-printed multi-line JSON and would not be valid JSONL.
