@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { useRunsStore } from '../../stores/useRunsStore';
 import { exportRuns, updateStackRuns, wipeRuns, type RunRecord } from '../../lib/api';
@@ -7,6 +7,8 @@ import { cn } from '../../lib/cn';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { FailedState, FailureBanner } from '../ui/EmptyState';
 import { refreshPhase } from '../../lib/refreshPhase';
+import { parseRunsSearch, resolveRunsQuery, writeRunsSearch } from '../../lib/runsFilters';
+import { RunsFilterBar } from './RunsFilterBar';
 
 const RECORDING_BLURB =
   'Records are saved after dispatch attempts return. Recording is best-effort. Attempts interrupted by a crash may leave no record, and older records may have been removed by retention or wipe.';
@@ -26,7 +28,7 @@ export function RunsView({ servers }: RunsViewProps) {
   const mutationError = useRunsStore((s) => s.mutationError);
   const selectedId = useRunsStore((s) => s.selectedId);
   const filters = useRunsStore((s) => s.filters);
-  const setFilters = useRunsStore((s) => s.setFilters);
+  const replaceFilters = useRunsStore((s) => s.replaceFilters);
   const select = useRunsStore((s) => s.select);
   const load = useRunsStore((s) => s.load);
   const setMutationError = useRunsStore((s) => s.setMutationError);
@@ -36,34 +38,36 @@ export function RunsView({ servers }: RunsViewProps) {
   const [confirmDisable, setConfirmDisable] = useState(false);
   const [confirmWipe, setConfirmWipe] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [params] = useSearchParams();
+  const [params, setSearchParams] = useSearchParams();
+  const initialParams = useRef(params);
+  const [urlApplied, setUrlApplied] = useState(false);
   const [narrow, setNarrow] = useState(false);
   const [ageDraft, setAgeDraft] = useState<string | null>(null);
   const [sizeDraft, setSizeDraft] = useState<string | null>(null);
 
+  // URL to store, once on mount and before the first load: a deep link with
+  // any filter key replaces the filters wholesale. The load and mirror
+  // effects wait for urlApplied so mounting issues exactly one request.
+  useLayoutEffect(() => {
+    const { filters: urlFilters, run } = parseRunsSearch(initialParams.current);
+    if (urlFilters) replaceFilters(urlFilters);
+    if (run) select(run);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- gates the first load until the URL is applied; the layout effect re-renders before paint
+    setUrlApplied(true);
+  }, [replaceFilters, select]);
+
+  // Store to URL. Reads live store state so the first pass after the mount
+  // sync never writes stale render-time values.
   useEffect(() => {
-    const server = params.get('server');
-    if (server) setFilters({ server });
-  }, [params, setFilters]);
+    if (!urlApplied) return;
+    const s = useRunsStore.getState();
+    setSearchParams((prev) => writeRunsSearch(prev, s.filters, s.selectedId), { replace: true });
+  }, [urlApplied, filters, selectedId, setSearchParams]);
 
   useEffect(() => {
+    if (!urlApplied) return;
     void load();
-  }, [
-    load,
-    filters.server,
-    filters.tool,
-    filters.disposition,
-    filters.requested,
-    filters.client,
-    filters.access,
-    filters.attempt,
-    filters.parent,
-    filters.root,
-    filters.previous,
-    filters.trace,
-    filters.since,
-    filters.until,
-  ]);
+  }, [load, filters, urlApplied]);
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 768px)');
@@ -89,6 +93,8 @@ export function RunsView({ servers }: RunsViewProps) {
   const firstLoadPending = phase === 'loading' && isLoading;
   const emptyReason = emptyState(status, records.length, firstLoadPending);
   const dropSummary = dropText(status);
+  const missingSelection =
+    selectedId != null && hasLoaded && !isLoading && !records.some((r) => r.attemptId === selectedId);
 
   return (
     <div className="h-full flex flex-col min-h-0">
@@ -133,21 +139,8 @@ export function RunsView({ servers }: RunsViewProps) {
               setBusy(true);
               setMutationError(null);
               try {
-                const blob = await exportRuns({
-                  server: filters.server || undefined,
-                  tool: filters.tool || undefined,
-                  disposition: filters.disposition || undefined,
-                  requested: filters.requested || undefined,
-                  client: filters.client || undefined,
-                  access: filters.access || undefined,
-                  attempt: filters.attempt || undefined,
-                  parent: filters.parent || undefined,
-                  root: filters.root || undefined,
-                  previous: filters.previous || undefined,
-                  trace: filters.trace || undefined,
-                  since: filters.since || undefined,
-                  until: filters.until || undefined,
-                });
+                // Export the query behind the rows on screen, not one in flight.
+                const blob = await exportRuns(useRunsStore.getState().lastQuery ?? resolveRunsQuery(filters, Date.now()));
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -196,51 +189,7 @@ export function RunsView({ servers }: RunsViewProps) {
             </>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-3 text-xs">
-          <label className="flex items-center gap-1">
-            <span className="text-text-muted">Server</span>
-            <select
-              className="bg-surface border border-border rounded px-1 py-0.5"
-              value={filters.server}
-              onChange={(e) => setFilters({ server: e.target.value })}
-              aria-label="Filter by server"
-            >
-              <option value="">All</option>
-              {servers.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex items-center gap-1">
-            <span className="text-text-muted">Disposition</span>
-            <select
-              className="bg-surface border border-border rounded px-1 py-0.5"
-              value={filters.disposition}
-              onChange={(e) => setFilters({ disposition: e.target.value })}
-              aria-label="Filter by disposition"
-            >
-              <option value="">All</option>
-              {['completed', 'denied', 'tool_error', 'routing_failed', 'transport_error', 'cancelled', 'timeout', 'input_required', 'retry_rejected'].map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </label>
-          <FilterInput label="Tool" value={filters.tool} onChange={(v) => setFilters({ tool: v })} />
-          <FilterInput label="Requested" value={filters.requested} onChange={(v) => setFilters({ requested: v })} />
-          <FilterInput label="Client" value={filters.client} onChange={(v) => setFilters({ client: v })} />
-          <FilterInput label="Access" value={filters.access} onChange={(v) => setFilters({ access: v })} />
-          <FilterInput label="Attempt" value={filters.attempt} onChange={(v) => setFilters({ attempt: v })} />
-          <FilterInput label="Parent" value={filters.parent} onChange={(v) => setFilters({ parent: v })} />
-          <FilterInput label="Root" value={filters.root} onChange={(v) => setFilters({ root: v })} />
-          <FilterInput label="Previous" value={filters.previous} onChange={(v) => setFilters({ previous: v })} />
-          <FilterInput label="Trace" value={filters.trace} onChange={(v) => setFilters({ trace: v })} />
-          <FilterInput label="Since" value={filters.since} onChange={(v) => setFilters({ since: v })} placeholder="RFC3339" />
-          <FilterInput label="Until" value={filters.until} onChange={(v) => setFilters({ until: v })} placeholder="RFC3339" />
-        </div>
+        <RunsFilterBar servers={servers} />
         {status?.enabled && (
           <div className="flex flex-wrap items-center gap-3 text-xs">
             <label className="flex items-center gap-1">
@@ -427,6 +376,14 @@ export function RunsView({ servers }: RunsViewProps) {
           {phase === 'stale' && error && (
             <FailureBanner message={error} onRetry={() => void load()} className="mt-3" />
           )}
+          {missingSelection && (
+            <p className="px-6 pt-3 text-xs text-text-muted flex items-center gap-2" role="status">
+              The selected run is not in the current results.
+              <button type="button" className="underline text-text-primary" onClick={() => select(null)}>
+                Clear selection
+              </button>
+            </p>
+          )}
           {firstLoadPending ? (
             <div className="p-3 space-y-2 animate-pulse" data-testid="runs-skeleton">
               {[1, 2, 3].map((i) => (
@@ -518,31 +475,6 @@ export function RunsView({ servers }: RunsViewProps) {
         )}
       </div>
     </div>
-  );
-}
-
-function FilterInput({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <label className="flex items-center gap-1">
-      <span className="text-text-muted">{label}</span>
-      <input
-        className="bg-surface border border-border rounded px-1 py-0.5 w-28"
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label={`Filter by ${label.toLowerCase()}`}
-      />
-    </label>
   );
 }
 
