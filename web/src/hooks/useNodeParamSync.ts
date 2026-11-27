@@ -117,7 +117,7 @@ export function useNodeParamSync(): void {
 
   const setParamsRef = useRef(setSearchParams);
   const rawRef = useRef(raw);
-  const stillHereRef = useRef(() => true);
+  const stillHereRef = useRef<() => boolean>(() => true);
   useEffect(() => {
     setParamsRef.current = setSearchParams;
     rawRef.current = raw;
