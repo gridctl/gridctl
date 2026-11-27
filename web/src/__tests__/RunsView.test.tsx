@@ -875,6 +875,32 @@ describe('RunsView header, rows, detail, and empty state', () => {
     expect(within(nested).getByText('tool_error')).toBeInTheDocument();
   });
 
+  it('selects a loaded previous run and keeps focus in the detail', async () => {
+    const prev: RunRecord = { ...record, attemptId: 'prev1', sequence: 2 };
+    const retry: RunRecord = { ...record, attemptId: 'a2', sequence: 3, previousAttemptId: 'prev1' };
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [retry, prev], warnings: [], partial: false, wipeEpoch: 0 });
+    renderRuns();
+    fireEvent.click((await screen.findAllByText('github › create_issue'))[0]);
+    expect(useRunsStore.getState().selectedId).toBe('a2');
+    const detail = screen.getByRole('complementary', { name: 'Run detail' });
+    const prevButton = within(detail).getByRole('button', { name: 'prev1' });
+    prevButton.focus();
+    fireEvent.click(prevButton);
+    expect(useRunsStore.getState().selectedId).toBe('prev1');
+    expect(within(screen.getByRole('complementary', { name: 'Run detail' })).queryByRole('button', { name: 'prev1' })).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole('complementary', { name: 'Run detail' }));
+  });
+
+  it('returns focus to the grid when Escape closes the detail from inside it', async () => {
+    renderRuns();
+    fireEvent.click(await screen.findByText('github › create_issue'));
+    const copy = screen.getByRole('button', { name: 'Copy attempt ID' });
+    copy.focus();
+    fireEvent.keyDown(copy, { key: 'Escape' });
+    expect(screen.queryByLabelText('Run detail')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole('grid', { name: 'Run records' }));
+  });
+
   it('closes with the button and returns focus to the grid', async () => {
     renderRuns();
     fireEvent.click(await screen.findByText('github › create_issue'));

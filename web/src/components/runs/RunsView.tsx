@@ -150,7 +150,14 @@ export function RunsView({ servers, onViewTrace, onViewLogs }: RunsViewProps) {
     onEnter: () => {
       if (activeNavId) select(activeNavId);
     },
-    onEscape: selectedId ? () => select(null) : undefined,
+    onEscape: selectedId
+      ? () => {
+          // Closing unmounts the detail; keep focus in the list if it was inside.
+          const inDetail = document.activeElement?.closest('[data-run-detail]') != null;
+          select(null);
+          if (inDetail) gridRef.current?.focus();
+        }
+      : undefined,
   });
 
   const selected = useMemo(

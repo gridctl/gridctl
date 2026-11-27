@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Copy, ScrollText, Waypoints, X } from 'lucide-react';
 import type { RunRecord } from '../../lib/api';
 import { cn } from '../../lib/cn';
@@ -31,6 +31,16 @@ export function runTarget(record: RunRecord): string {
 
 export function RunDetail({ record, records, onSelect, onClose, onViewTrace, onViewLogs, narrow }: RunDetailProps) {
   const target = runTarget(record);
+  const asideRef = useRef<HTMLElement>(null);
+  // Following a parent, previous, or nested link can remove the focused
+  // button; keep focus in the detail instead of dropping it to <body>.
+  const shownId = useRef(record.attemptId);
+  useEffect(() => {
+    if (shownId.current === record.attemptId) return;
+    shownId.current = record.attemptId;
+    const active = document.activeElement;
+    if (!active || active === document.body) asideRef.current?.focus();
+  }, [record.attemptId]);
   const children = records.filter((r) => r.parentAttemptId === record.attemptId);
   const loaded = (id?: string) => Boolean(id) && records.some((r) => r.attemptId === id);
   const traceId = record.traceId;
@@ -93,6 +103,9 @@ export function RunDetail({ record, records, onSelect, onClose, onViewTrace, onV
 
   return (
     <aside
+      ref={asideRef}
+      tabIndex={-1}
+      data-run-detail=""
       className={cn(
         'border-border overflow-auto flex flex-col min-h-0',
         narrow ? 'w-full border-t' : 'w-96 flex-shrink-0 border-l',
