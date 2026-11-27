@@ -1650,7 +1650,8 @@ The identifier is self-declared by the connecting client (it sets its own
 `client` parameter, header, or `clientInfo.name`). `gridctl call --as` and the
 `client` field on `POST /api/tools/call` / `GET /api/tools/discover` send the
 same kind of caller-declared label (default `cli`) and do not take it from
-conflicting query or header identities. Per-client scoping is
+conflicting query or header identities. The Tools workspace's
+[Try it](tools-workspace.md#try-it) sends the fixed label `ui`. Per-client scoping is
 therefore a least-privilege guardrail for cooperating clients, not an
 authentication boundary against a hostile client that can choose its own
 identity. OAuth mode uses the authenticated branch above instead.
