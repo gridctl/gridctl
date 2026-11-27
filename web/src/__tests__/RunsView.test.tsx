@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, within, act } from '@testing-librar
 import '@testing-library/jest-dom';
 import { MemoryRouter } from 'react-router';
 import { RunsView } from '../components/runs/RunsView';
-import { useRunsStore } from '../stores/useRunsStore';
+import { emptyFilters, useRunsStore } from '../stores/useRunsStore';
 import type { RunRecord, RunStatusResponse } from '../lib/api';
 
 vi.mock('../lib/api', async () => {
@@ -77,7 +77,7 @@ describe('RunsView', () => {
       loadedFilters: null,
       error: null,
       selectedId: null,
-      filters: { server: '', tool: '', disposition: '', requested: '', client: '', access: '', attempt: '', parent: '', root: '', previous: '', trace: '', since: '', until: '' },
+      filters: emptyFilters(),
       nextCursor: null,
       statusError: null,
       mutationError: null,
@@ -347,7 +347,7 @@ describe('useRunsStore load failures', () => {
       hasLoaded: false,
       loadedFilters: null,
       error: null,
-      filters: { server: '', tool: '', disposition: '', requested: '', client: '', access: '', attempt: '', parent: '', root: '', previous: '', trace: '', since: '', until: '' },
+      filters: emptyFilters(),
       loadSeq: 0,
     });
     vi.mocked(fetchRunsStatus).mockResolvedValue(status());

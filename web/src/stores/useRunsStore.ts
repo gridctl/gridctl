@@ -8,38 +8,16 @@ import {
   type RunStatusResponse,
 } from '../lib/api';
 import { useAuthStore } from './useAuthStore';
+import {
+  emptyFilters,
+  resolveRunsQuery,
+  sameRunsFilters,
+  type RunsFilters,
+  type RunsQuery,
+} from '../lib/runsFilters';
 
-export interface RunsFilters {
-  server: string;
-  tool: string;
-  disposition: string;
-  requested: string;
-  client: string;
-  access: string;
-  attempt: string;
-  parent: string;
-  root: string;
-  previous: string;
-  trace: string;
-  since: string;
-  until: string;
-}
-
-const emptyFilters = (): RunsFilters => ({
-  server: '',
-  tool: '',
-  disposition: '',
-  requested: '',
-  client: '',
-  access: '',
-  attempt: '',
-  parent: '',
-  root: '',
-  previous: '',
-  trace: '',
-  since: '',
-  until: '',
-});
+export type { RunsFilters, RunsQuery, RunsTimeRange } from '../lib/runsFilters';
+export { emptyFilters };
 
 interface RunsState {
   records: RunRecord[];
@@ -57,34 +35,18 @@ interface RunsState {
   mutationError: string | null;
   selectedId: string | null;
   filters: RunsFilters;
+  /**
+   * Resolved parameters of the last fresh load that succeeded, so it always
+   * describes the rows on screen. Load older and Export reuse it.
+   */
+  lastQuery: RunsQuery | null;
   loadSeq: number;
   setFilters: (filters: Partial<RunsFilters>) => void;
+  replaceFilters: (filters: RunsFilters) => void;
+  clearFilters: () => void;
   select: (id: string | null) => void;
   setMutationError: (error: string | null) => void;
   load: (opts?: { append?: boolean }) => Promise<void>;
-}
-
-function filterParams(filters: RunsFilters, cursor?: RunCursor | null) {
-  return {
-    server: filters.server || undefined,
-    tool: filters.tool || undefined,
-    disposition: filters.disposition || undefined,
-    requested: filters.requested || undefined,
-    client: filters.client || undefined,
-    access: filters.access || undefined,
-    attempt: filters.attempt || undefined,
-    parent: filters.parent || undefined,
-    root: filters.root || undefined,
-    previous: filters.previous || undefined,
-    trace: filters.trace || undefined,
-    since: filters.since || undefined,
-    until: filters.until || undefined,
-    cursor: cursor ? JSON.stringify(cursor) : undefined,
-  };
-}
-
-function sameFilters(a: RunsFilters, b: RunsFilters): boolean {
-  return (Object.keys(a) as (keyof RunsFilters)[]).every((k) => a[k] === b[k]);
 }
 
 export const useRunsStore = create<RunsState>()((set, get) => ({
@@ -101,8 +63,22 @@ export const useRunsStore = create<RunsState>()((set, get) => ({
   mutationError: null,
   selectedId: null,
   filters: emptyFilters(),
+  lastQuery: null,
   loadSeq: 0,
-  setFilters: (filters) => set({ filters: { ...get().filters, ...filters } }),
+  // Setters keep the filters identity when nothing changed: the load effect
+  // keys on it, so a no-op commit must not reload.
+  setFilters: (filters) => {
+    const next = { ...get().filters, ...filters };
+    if (!sameRunsFilters(next, get().filters)) set({ filters: next });
+  },
+  replaceFilters: (filters) => {
+    const next = { ...emptyFilters(), ...filters };
+    if (!sameRunsFilters(next, get().filters)) set({ filters: next });
+  },
+  clearFilters: () => {
+    const next = emptyFilters();
+    if (!sameRunsFilters(next, get().filters)) set({ filters: next });
+  },
   select: (id) => set({ selectedId: id }),
   setMutationError: (error) => set({ mutationError: error }),
   load: async (opts) => {
@@ -112,11 +88,14 @@ export const useRunsStore = create<RunsState>()((set, get) => ({
     // briefly report the history as readable.
     set({ loadSeq: seq, isLoading: true });
     const append = Boolean(opts?.append);
-    const { filters, nextCursor } = get();
+    const { filters, nextCursor, lastQuery } = get();
+    // A fresh load resolves a relative preset against now; Load older reuses
+    // the resolved window so it does not move between pages.
+    const query = append ? (lastQuery ?? resolveRunsQuery(filters, Date.now())) : resolveRunsQuery(filters, Date.now());
     let list: RunListResponse | null = null;
     let listError: string | null = null;
     try {
-      list = await fetchRuns(filterParams(filters, append ? nextCursor : null));
+      list = await fetchRuns({ ...query, cursor: append && nextCursor ? JSON.stringify(nextCursor) : undefined });
     } catch (err) {
       listError = err instanceof Error ? err.message : 'Failed to load run history';
     }
@@ -133,7 +112,7 @@ export const useRunsStore = create<RunsState>()((set, get) => ({
       // Rows loaded under the same filters stay as last-known data; rows
       // from other filters are never shown under the new ones.
       const loaded = get().loadedFilters;
-      const keep = append || (loaded !== null && sameFilters(loaded, filters));
+      const keep = append || (loaded !== null && sameRunsFilters(loaded, filters));
       set({
         isLoading: false,
         error: listError,
@@ -141,7 +120,7 @@ export const useRunsStore = create<RunsState>()((set, get) => ({
         status: status ?? get().status,
         ...(keep
           ? {}
-          : { records: [], warnings: [], partial: false, nextCursor: null, hasLoaded: false, loadedFilters: null }),
+          : { records: [], warnings: [], partial: false, nextCursor: null, hasLoaded: false, loadedFilters: null, lastQuery: null }),
       });
       return;
     }
@@ -155,7 +134,7 @@ export const useRunsStore = create<RunsState>()((set, get) => ({
       statusError,
       isLoading: false,
       hasLoaded: true,
-      ...(append ? {} : { loadedFilters: { ...filters } }),
+      ...(append ? {} : { loadedFilters: { ...filters }, lastQuery: query }),
       error: null,
     });
   },
