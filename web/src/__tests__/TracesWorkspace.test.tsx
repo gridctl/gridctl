@@ -97,10 +97,14 @@ vi.mock('../lib/api', async (importActual) => {
     fetchTraces: vi.fn(),
     fetchTraceDetail: vi.fn(),
     fetchTraceOTLP: vi.fn(),
+    fetchRuns: vi.fn(),
+    fetchRunsStatus: vi.fn(),
   };
 });
 
-import { fetchTraces, fetchTraceDetail } from '../lib/api';
+import { fetchTraces, fetchTraceDetail, fetchRuns, fetchRunsStatus } from '../lib/api';
+import { emptyFilters, useRunsStore } from '../stores/useRunsStore';
+import type { RunRecord } from '../lib/api';
 import { copyTextToClipboard } from '../lib/clipboard';
 
 function server(name: string): MCPServerStatus {
@@ -1254,5 +1258,138 @@ describe('TraceWaterfall keyboard access', () => {
     fireEvent.keyDown(splitter, { key: 'ArrowRight', metaKey: true });
     expect(pct()).toBe(18);
     expectNoLeak(grid);
+  });
+});
+
+describe('TracesWorkspace run and trace links', () => {
+  const run: RunRecord = {
+    schemaVersion: 1,
+    recorderInstanceId: 'r',
+    sequence: 1,
+    attemptId: 'a1',
+    startedAt: '2026-07-23T10:00:00Z',
+    returnedAt: '2026-07-23T10:00:00.042Z',
+    durationMs: 42,
+    requestedName: 'github__create_issue',
+    resolvedServer: 'github',
+    resolvedTool: 'create_issue',
+    disposition: 'completed',
+    stage: 'downstream',
+    reason: 'ok',
+    traceId: 'abc123def4567890',
+  };
+
+  beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: (query: string) => ({
+        matches: false,
+        media: query,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }),
+    });
+    useRunsStore.setState({
+      records: [],
+      warnings: [],
+      partial: false,
+      status: null,
+      isLoading: false,
+      hasLoaded: false,
+      loadedFilters: null,
+      error: null,
+      errorStatus: null,
+      appendFailed: false,
+      selectedId: null,
+      filters: emptyFilters(),
+      nextCursor: null,
+      statusError: null,
+      mutationError: null,
+      lastQuery: null,
+      loadSeq: 0,
+    });
+    vi.mocked(fetchRuns).mockReset();
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [run], warnings: [], partial: false, wipeEpoch: 0 });
+    vi.mocked(fetchRunsStatus).mockResolvedValue({
+      enabled: true,
+      effective: true,
+      writer_health: 'ok',
+      queue_depth: 0,
+      queue_capacity: 1024,
+      drops: {},
+      failures: {},
+      historical_loss: 'unknown',
+      wipe_epoch: 0,
+      recordingNote: 'note',
+      privacyNote: 'privacy',
+      retentionNote: 'retention',
+      inventory: { stack: 'demo', signal: 'runs', path: '/tmp/runs', sizeBytes: 10, fileCount: 1 },
+    });
+  });
+
+  function renderWithProbe(initialEntry: string) {
+    return render(
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <SearchProbe />
+        <Routes>
+          <Route path="/traces" element={<TracesWorkspace />} />
+          <Route path="/logs" element={<div data-testid="logs-probe" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it('counts loaded run records in the header', async () => {
+    renderWithProbe('/traces?view=runs');
+    await waitFor(() => expect(screen.getByText('1 run record loaded')).toBeInTheDocument());
+  });
+
+  it('opens a run trace in the Traces tab through the store', async () => {
+    renderWithProbe('/traces?view=runs');
+    fireEvent.click(await screen.findByText('github › create_issue'));
+    fireEvent.click(screen.getByRole('button', { name: 'View trace' }));
+    expect(useTracesStore.getState().selectedTraceId).toBe('abc123def4567890');
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Traces' })).toHaveAttribute('aria-selected', 'true'));
+    expect(screen.getByTestId('location-search').textContent).not.toContain('view=');
+    await waitFor(() => expect(vi.mocked(fetchTraceDetail)).toHaveBeenCalledWith('abc123def4567890'));
+  });
+
+  it('lands on the evicted-trace state when the run trace is gone', async () => {
+    vi.mocked(fetchTraceDetail).mockRejectedValue(new Error('trace not found'));
+    renderWithProbe('/traces?view=runs');
+    fireEvent.click(await screen.findByText('github › create_issue'));
+    fireEvent.click(screen.getByRole('button', { name: 'View trace' }));
+    await waitFor(() => expect(screen.getByText('Trace no longer in buffer')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }));
+    await waitFor(() => expect(useTracesStore.getState().selectedTraceId).toBeNull());
+  });
+
+  it('opens logs for a run trace', async () => {
+    renderWithProbe('/traces?view=runs');
+    fireEvent.click(await screen.findByText('github › create_issue'));
+    fireEvent.click(screen.getByRole('button', { name: 'View logs' }));
+    await waitFor(() => expect(screen.getByTestId('logs-probe')).toBeInTheDocument());
+    expect(screen.getByTestId('location-search')).toHaveTextContent('?trace=abc123def4567890');
+  });
+
+  it('opens the runs of a trace with only the trace filter, even with a Traces server filter', async () => {
+    useRunsStore.setState({ selectedId: 'stale', filters: { ...emptyFilters(), tool: 'old' } });
+    renderWithProbe('/traces?trace=abc123def4567890&server=github');
+    await waitFor(() => expect(useTracesStore.getState().filters.server).toBe('github'));
+    const viewRuns = await screen.findByRole('button', { name: 'View runs' });
+    expect(viewRuns).toHaveAttribute('title', 'View run records for this trace');
+    fireEvent.click(viewRuns);
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Runs' })).toHaveAttribute('aria-selected', 'true'));
+    await waitFor(() => expect(fetchRuns).toHaveBeenCalledTimes(1));
+    expect(useRunsStore.getState().filters).toEqual({ ...emptyFilters(), trace: 'abc123def4567890' });
+    expect(useRunsStore.getState().selectedId).toBeNull();
+    expect(vi.mocked(fetchRuns).mock.calls[0][0]?.trace).toBe('abc123def4567890');
+    expect(vi.mocked(fetchRuns).mock.calls[0][0]?.server).toBeUndefined();
+    const search = screen.getByTestId('location-search').textContent ?? '';
+    expect(search).toContain('view=runs');
+    expect(search).not.toContain('server=');
   });
 });

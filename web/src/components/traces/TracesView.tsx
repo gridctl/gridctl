@@ -3,6 +3,7 @@ import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels';
 import {
   Activity,
   AlertCircle,
+  History,
   Pause,
   Play,
   RefreshCw,
@@ -52,6 +53,8 @@ interface TracesViewProps {
   onViewLogs?: (traceId: string) => void;
   /** When set, the waterfall header gets a "View metrics" pivot. */
   onViewMetrics?: (server: string) => void;
+  /** When set, the waterfall header gets a "View runs" pivot. */
+  onViewRuns?: (traceId: string) => void;
   /** Extra toolbar actions (e.g. the popout button), rendered rightmost. */
   toolbarExtra?: React.ReactNode;
 }
@@ -60,7 +63,7 @@ interface TracesViewProps {
 // useTracesStore. Mounted by the Traces workspace and the detached window
 // (each browser window gets its own store instance, so detached state never
 // bleeds into the main shell).
-export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbarExtra }: TracesViewProps) {
+export function TracesView({ active, servers, onViewLogs, onViewMetrics, onViewRuns, toolbarExtra }: TracesViewProps) {
   const generation = useAuthStore(s => s.generation);
   const authRequired = useAuthStore(s => s.authRequired);
   const traces = useTracesStore((s) => s.traces);
@@ -828,6 +831,17 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                           >
                             <ScrollText size={11} className="flex-shrink-0" />
                             <span className="@max-[30rem]:sr-only">View logs</span>
+                          </button>
+                        )}
+                        {onViewRuns && (
+                          <button
+                            type="button"
+                            onClick={() => onViewRuns(traceDetail.traceId)}
+                            title="View run records for this trace"
+                            className="flex items-center justify-center gap-1 min-h-6 min-w-6 px-1.5 py-0.5 rounded text-3xs font-medium text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors"
+                          >
+                            <History size={11} className="flex-shrink-0" />
+                            <span className="@max-[30rem]:sr-only">View runs</span>
                           </button>
                         )}
                         {onViewMetrics && selectedSummary?.server && (

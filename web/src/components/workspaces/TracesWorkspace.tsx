@@ -4,7 +4,7 @@ import { WORKSPACE_LABELS } from '../../types/workspace';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
 import { useTracesStore } from '../../stores/useTracesStore';
-import { useRunsStore } from '../../stores/useRunsStore';
+import { emptyFilters, useRunsStore } from '../../stores/useRunsStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { PopoutButton } from '../ui/PopoutButton';
 import { Tab, TabPanel, Tabs } from '../ui/Tabs';
@@ -108,6 +108,24 @@ export function TracesWorkspace() {
     }, { replace: true });
   };
 
+  // The cross-tab links write the target store and switch tabs instead of
+  // navigating: each view reads the URL only on mount and then mirrors its
+  // store back, so a navigate to ?trace= from here would be overwritten.
+  // The filter is set before the Runs tab mounts so its first load is
+  // already scoped to the trace.
+  const viewRunsForTrace = (traceId: string) => {
+    const runs = useRunsStore.getState();
+    runs.replaceFilters({ ...emptyFilters(), trace: traceId });
+    runs.select(null);
+    selectRuns();
+  };
+  // Run records outlive the in-memory trace buffer, so this often lands on
+  // the Traces view's "Trace no longer in buffer" state.
+  const viewTraceForRun = (traceId: string) => {
+    useTracesStore.getState().selectTrace(traceId);
+    selectTraces();
+  };
+
   return (
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
       <WorkspaceHeader
@@ -137,7 +155,7 @@ export function TracesWorkspace() {
         summary={(
           <span className="font-mono">
             {view === 'runs'
-              ? `${runCount} dispatch record${runCount === 1 ? '' : 's'}${runPartial ? ' (partial)' : ''}`
+              ? `${runCount} run record${runCount === 1 ? '' : 's'} loaded${runPartial ? ' (partial)' : ''}`
               : selectedTraceId
                 ? selectedTraceId.slice(0, 16)
                 : filters.segment === 'all'
@@ -153,13 +171,18 @@ export function TracesWorkspace() {
         className="flex-1 min-h-0"
       >
         {view === 'runs' ? (
-          <RunsView servers={servers} />
+          <RunsView
+            servers={servers}
+            onViewTrace={viewTraceForRun}
+            onViewLogs={(traceId) => navigate(`/logs?trace=${encodeURIComponent(traceId)}`)}
+          />
         ) : (
           <TracesView
             active
             servers={servers}
             onViewLogs={(traceId) => navigate(`/logs?trace=${encodeURIComponent(traceId)}`)}
             onViewMetrics={(server) => navigate(`/metrics?scope=servers&selected=${encodeURIComponent(server)}`)}
+            onViewRuns={viewRunsForTrace}
             toolbarExtra={
               <PopoutButton
                 onClick={() => (tracesDetached ? focusDetachedWindow('traces') : openDetachedWindow('traces'))}
