@@ -16,6 +16,7 @@ import { useAccessLensStore } from '../../stores/useAccessLensStore';
 import { STACK_TABLE_AUTO_THRESHOLD, type StackFacet, type StackFilter } from '../../lib/stackRows';
 import { usePollingRefresh } from '../../hooks/usePolling';
 import { useNodeParamSync } from '../../hooks/useNodeParamSync';
+import { useLiveSearchParams } from '../../hooks/useLiveSearchParams';
 import { WORKSPACE_LABELS } from '../../types/workspace';
 import { cn } from '../../lib/cn';
 import { refreshPhase } from '../../lib/refreshPhase';
@@ -63,16 +64,17 @@ export function StackWorkspace() {
   // deep-link it. Closing clears the flag.
   useNodeParamSync();
   const specOpen = searchParams.get('spec') === '1';
+  const liveParams = useLiveSearchParams();
   const closeSpec = useCallback(() => {
     setSearchParams(
       (prev) => {
-        const params = new URLSearchParams(prev);
+        const params = liveParams(prev);
         params.delete('spec');
         return params;
       },
       { replace: true },
     );
-  }, [setSearchParams]);
+  }, [setSearchParams, liveParams]);
 
   // Opening the spec closes the other right-side panels.
   useEffect(() => {

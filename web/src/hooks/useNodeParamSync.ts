@@ -10,6 +10,7 @@ import { useStackStore } from '../stores/useStackStore';
 import { useUIStore } from '../stores/useUIStore';
 import { showToast } from '../components/ui/Toast';
 import { GATEWAY_NODE_ID } from '../lib/graph/edges';
+import { useLiveSearchParams } from './useLiveSearchParams';
 
 // How long a well-formed ?node= id may stay absent after the gateway first
 // responds before the link is dropped. Client nodes arrive after the first
@@ -80,16 +81,19 @@ function missToast(value: string): void {
 }
 
 type SetSearchParams = ReturnType<typeof useSearchParams>[1];
+type LiveParams = (rendered: URLSearchParams) => URLSearchParams;
 
 // One replace write: ?node= becomes the live store selection, or is removed.
 // Skipped once the router has moved to another path: a workspace change can
 // stay pending while its lazy chunk loads, and a write relative to the
 // rendered /stack location would replace that navigation's history entry.
-function writeFromStore(setSearchParams: SetSearchParams, stillHere: () => boolean): void {
+// Other parameters come from the live location, so a write in the same tick
+// (closing the spec) is kept.
+function writeFromStore(setSearchParams: SetSearchParams, stillHere: () => boolean, live: LiveParams): void {
   if (!stillHere()) return;
   setSearchParams(
     (prev) => {
-      const next = new URLSearchParams(prev);
+      const next = live(prev);
       const selected = useStackStore.getState().selectedNodeId;
       if (selected) next.set(NODE_PARAM, selected);
       else next.delete(NODE_PARAM);
@@ -115,11 +119,15 @@ export function useNodeParamSync(): void {
   const { navigator } = useContext(UNSAFE_NavigationContext);
   const renderedPath = useHref({ pathname: useLocation().pathname });
 
+  const liveParams = useLiveSearchParams();
+
   const setParamsRef = useRef(setSearchParams);
+  const liveRef = useRef(liveParams);
   const rawRef = useRef(raw);
   const stillHereRef = useRef<() => boolean>(() => true);
   useEffect(() => {
     setParamsRef.current = setSearchParams;
+    liveRef.current = liveParams;
     rawRef.current = raw;
     stillHereRef.current = () => {
       const live = (navigator as { location?: Location }).location;
@@ -145,10 +153,10 @@ export function useNodeParamSync(): void {
         break;
       case 'reject':
         missToast(action.value);
-        writeFromStore(setParamsRef.current, stillHereRef.current);
+        writeFromStore(setParamsRef.current, stillHereRef.current, liveRef.current);
         break;
       case 'write':
-        writeFromStore(setParamsRef.current, stillHereRef.current);
+        writeFromStore(setParamsRef.current, stillHereRef.current, liveRef.current);
         break;
       default:
         break;
@@ -174,7 +182,7 @@ export function useNodeParamSync(): void {
       pendingRef.current = null;
       setPending(null);
       missToast(pending);
-      writeFromStore(setParamsRef.current, stillHereRef.current);
+      writeFromStore(setParamsRef.current, stillHereRef.current, liveRef.current);
     }, NODE_PARAM_GRACE_MS);
     return () => clearTimeout(timer);
   }, [pending, hasGateway]);

@@ -117,7 +117,7 @@ describe('SpecTab issues list', () => {
     fireEvent.click(screen.getByRole('button', { name: /line 2/ }));
     expect(scroll).toHaveBeenCalledTimes(1);
     expect(scroll.mock.contexts[0]).toBe(yamlRow(2));
-    expect(scroll.mock.calls[0][0]).toMatchObject({ block: 'center' });
+    expect(scroll.mock.calls[0][0]).toMatchObject({ block: 'center', behavior: 'smooth' });
     expect(yamlRow(2)).toHaveAttribute('aria-current', 'true');
     expect(screen.getByRole('button', { name: /line 2/ })).toHaveAttribute('aria-current', 'true');
 
