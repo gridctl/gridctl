@@ -96,6 +96,8 @@ interface StackState {
   // Stack name draggedPositions was last loaded from storage for; null before
   // the first status (the empty string is the stackless stack name).
   positionsHydratedFor: string | null;
+  // Card mode draggedPositions belongs to; null before the first hydration.
+  positionsCompact: boolean | null;
 
   // === Autoscale observability (client-derived from polling) ===
   autoscaleHistory: Record<string, AutoscaleSample[]>;
@@ -193,6 +195,7 @@ export const useStackStore = create<StackState>()(
     edges: [],
     draggedPositions: new Map(),
     positionsHydratedFor: null,
+    positionsCompact: null,
     autoscaleHistory: {},
     autoscaleDecisions: {},
     autoscaleLastSeen: {},
@@ -245,11 +248,13 @@ export const useStackStore = create<StackState>()(
       );
       // Load saved positions once per stack, before the first layout uses them.
       const stackName = status.stack_name || '';
+      const hydrateCompact = useUIStore.getState().compactCards;
       const hydrate =
         get().positionsHydratedFor !== stackName
           ? {
-              draggedPositions: loadStackPositions(stackName, useUIStore.getState().compactCards),
+              draggedPositions: loadStackPositions(stackName, hydrateCompact),
               positionsHydratedFor: stackName,
+              positionsCompact: hydrateCompact,
             }
           : {};
       set({
@@ -434,6 +439,7 @@ export const useStackStore = create<StackState>()(
         nodes: fanned.nodes,
         edges: fanned.edges,
         draggedPositions: new Map(),
+        positionsCompact: isCompact,
         layoutEpoch: get().layoutEpoch + 1,
       });
       clearStackPositions(get().stackName);
@@ -444,7 +450,13 @@ export const useStackStore = create<StackState>()(
     setEdges: (edges) => set({ edges }),
 
     recordDraggedPositions: (changes) => {
-      const draggedPositions = new Map(get().draggedPositions);
+      // The card toggle clears positions through Canvas, which is unmounted in
+      // the table view. Positions from the other mode are dropped here instead,
+      // so they are never saved under the new mode.
+      const compact = useUIStore.getState().compactCards;
+      const { positionsCompact } = get();
+      const modeChanged = positionsCompact !== null && positionsCompact !== compact;
+      const draggedPositions = modeChanged ? new Map() : new Map(get().draggedPositions);
       let changed = false;
       for (const change of changes) {
         if (change.type === 'position' && change.dragging === false && change.position) {
@@ -455,8 +467,8 @@ export const useStackStore = create<StackState>()(
         }
       }
       if (!changed) return;
-      set({ draggedPositions });
-      saveStackPositions(get().stackName, useUIStore.getState().compactCards, draggedPositions);
+      set({ draggedPositions, positionsCompact: compact });
+      saveStackPositions(get().stackName, compact, draggedPositions);
     },
   }))
 );

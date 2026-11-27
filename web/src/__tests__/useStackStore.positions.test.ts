@@ -51,6 +51,7 @@ describe('useStackStore persisted positions', () => {
       edges: [],
       draggedPositions: new Map(),
       positionsHydratedFor: null,
+      positionsCompact: null,
       expandedServers: new Set(),
       clients: [],
       gatewayInfo: null,
@@ -192,6 +193,20 @@ describe('useStackStore persisted positions', () => {
     useStackStore.setState({ positionsHydratedFor: null, draggedPositions: new Map() });
     useStackStore.getState().setGatewayStatus(status('a'));
     expect(useStackStore.getState().draggedPositions.size).toBe(0);
+  });
+
+  it('drops positions from the other card mode when the toggle ran without the canvas', () => {
+    useStackStore.getState().setGatewayStatus(status('a'));
+    useStackStore.getState().recordDraggedPositions([dragEnd('mcp-github', 4321, 1)]);
+    // Table view: the toggle flips the mode and nothing calls resetLayout.
+    useUIStore.getState().toggleCompactCards();
+    useStackStore.getState().recordDraggedPositions([dragEnd('mcp-jira', 7, 8)]);
+    const payload = JSON.parse(localStorage.getItem(key('a'))!);
+    expect(payload.compact).toBe(false);
+    expect(payload.positions).toEqual({ 'mcp-jira': { x: 7, y: 8 } });
+    useStackStore.setState({ positionsHydratedFor: null, positionsCompact: null, draggedPositions: new Map() });
+    useStackStore.getState().setGatewayStatus(status('a'));
+    expect([...useStackStore.getState().draggedPositions.keys()]).toEqual(['mcp-jira']);
   });
 
   it('saves and restores tool fan-out positions with the rest', () => {
