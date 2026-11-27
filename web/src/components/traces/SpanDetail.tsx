@@ -126,6 +126,7 @@ export function SpanDetail({ span, selfTimeMs, onClose }: SpanDetailProps) {
           <button
             onClick={() => copyWithToast(span.spanId, 'Span ID')}
             title="Copy span ID"
+            aria-label="Copy span ID"
             className="p-1 rounded text-text-muted hover:text-primary hover:bg-surface-highlight transition-colors flex-shrink-0"
           >
             <Copy size={10} />

@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Copy } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Copy } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { copyWithToast } from '../ui/Toast';
 import { formatTotalDuration } from '../../lib/duration';
@@ -75,6 +75,28 @@ export const TraceRow = memo(function TraceRow({
           'group-focus-within/grid:outline-2 group-focus-within/grid:-outline-offset-2 group-focus-within/grid:outline-primary'
       )}
     >
+      {compact ? (
+        <td className="w-6 pl-3 pr-0 py-1.5">
+          {trace.status === 'error' ? (
+            <AlertCircle size={11} role="img" aria-label={trace.status} className="text-status-error" />
+          ) : (
+            <CheckCircle2 size={11} role="img" aria-label={trace.status} className="text-status-running" />
+          )}
+        </td>
+      ) : (
+        <td className="px-3 py-1.5">
+          <span
+            className={cn(
+              'px-1.5 py-0.5 text-3xs font-medium rounded-full border',
+              trace.status === 'error'
+                ? 'bg-status-error/10 text-status-error border-status-error/20'
+                : 'bg-status-running/10 text-status-running border-status-running/20'
+            )}
+          >
+            {trace.status}
+          </span>
+        </td>
+      )}
       <td
         className="px-3 py-1.5 text-text-muted font-mono whitespace-nowrap text-zoom"
         title={formatAbsoluteTime(trace.startTime)}
@@ -113,18 +135,6 @@ export const TraceRow = memo(function TraceRow({
       {!compact && (
         <td className="px-3 py-1.5 text-right text-text-muted tabular-nums text-zoom">{trace.spanCount}</td>
       )}
-      <td className="px-3 py-1.5">
-        <span
-          className={cn(
-            'px-1.5 py-0.5 text-3xs font-medium rounded-full border',
-            trace.status === 'error'
-              ? 'bg-status-error/10 text-status-error border-status-error/20'
-              : 'bg-status-running/10 text-status-running border-status-running/20'
-          )}
-        >
-          {trace.status}
-        </span>
-      </td>
       {!compact && (
         <td className="px-1 py-1.5">
           <button

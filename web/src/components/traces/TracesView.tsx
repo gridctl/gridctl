@@ -82,6 +82,8 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
   const detailError = useTracesStore((s) => s.detailError);
   const selectTrace = useTracesStore((s) => s.selectTrace);
   const loadTraces = useTracesStore((s) => s.loadTraces);
+  const loadMore = useTracesStore((s) => s.loadMore);
+  const limit = useTracesStore((s) => s.limit);
   const setTracesPrefs = useUIStore((s) => s.setTracesPrefs);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -267,8 +269,8 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
   }, [selectTrace]);
 
   // Bind the span to the trace whose waterfall was actually clicked (the
-  // rendered detail), not selectedTraceId: an out-of-order detail fetch can
-  // briefly render trace A's waterfall while B is selected.
+  // rendered detail). The store drops detail responses for a trace that is
+  // no longer selected, so this matches selectedTraceId once detail loads.
   const selectSpan = useCallback(
     (spanId: string | null) => {
       const traceId = useTracesStore.getState().traceDetail?.traceId;
@@ -297,6 +299,30 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
   }, [active, selectedTraceId, listPanelRef]);
 
   const bufferPressure = bufferCapacity > 0 ? bufferSize / bufferCapacity : 0;
+
+  // The server stopped at the limit with more traces left in the ring. With a
+  // server-side filter, bufferSize is not a match count, so it is never shown.
+  const serverFiltered = !!filters.server || filters.errorsOnly || filters.minDuration != null;
+  const truncated = traces.length >= limit && bufferSize > traces.length;
+  const windowLabel = serverFiltered
+    ? `newest ${traces.length} loaded`
+    : `newest ${traces.length} of ${bufferSize} in buffer`;
+  const windowSentence = serverFiltered
+    ? `Showing the newest ${traces.length} matching traces. Older matching traces may exist.`
+    : `Showing the newest ${traces.length} of ${bufferSize} traces in buffer.`;
+  const loadMoreButton = (
+    <button onClick={() => void loadMore()} className="text-3xs text-primary hover:underline">
+      Load more
+    </button>
+  );
+
+  // A pasted full trace ID that no loaded row has can still be opened: the
+  // detail endpoint reads the whole buffer.
+  const searchTerm = filters.search.trim();
+  const openTraceId =
+    /^[0-9a-f]{32}$/i.test(searchTerm) && !displayTraces.some((t) => t.traceId.toLowerCase() === searchTerm.toLowerCase())
+      ? searchTerm.toLowerCase()
+      : null;
 
   const selectedSummary = displayTraces.find((t) => t.traceId === selectedTraceId)
     ?? traces.find((t) => t.traceId === selectedTraceId);
@@ -327,6 +353,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
 
           {/* Server filter */}
           <select
+            aria-label="Filter by server"
             value={filters.server}
             onChange={(e) => setServer(e.target.value)}
             className="h-6 px-1.5 text-3xs bg-background/60 border border-border/40 rounded text-text-secondary max-w-[120px]"
@@ -356,6 +383,7 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
           <input
             type="text"
             placeholder="Search traces…"
+            aria-label="Search loaded traces"
             value={filters.search}
             onChange={(e) => setFilters({ search: e.target.value })}
             className="h-6 px-2 text-3xs bg-background/60 border border-border/40 rounded text-text-secondary placeholder:text-text-muted w-36"
@@ -375,6 +403,11 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
           {/* Counts, right-aligned within the left cluster */}
           <span className="ml-auto text-3xs text-text-muted font-mono whitespace-nowrap flex-shrink-0 hidden sm:block">
             {displayTraces.length} matching
+            {truncated && (
+              <span title="Search and time range apply to the loaded traces only">
+                {' '}· {windowLabel}
+              </span>
+            )}
             {infraHidden > 0 && <span className="text-text-muted"> · {infraHidden} infra hidden</span>}
             {bufferCapacity > 0 && (
               <span
@@ -557,6 +590,25 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                     <>Enable <code className="font-mono text-3xs">gateway.tracing</code> in stack.yaml to record tool-call traces.</>
                   }
                 />
+              ) : openTraceId ? (
+                <EmptyState
+                  icon={Activity}
+                  title="No loaded trace has this ID"
+                  description="The trace may still be in the buffer."
+                  action={
+                    <span className="flex items-center gap-3">
+                      <button
+                        onClick={() => selectTrace(openTraceId)}
+                        className="text-3xs text-primary hover:underline"
+                      >
+                        Open trace {openTraceId.slice(0, 16)}…
+                      </button>
+                      <button onClick={clearFilters} className="text-3xs text-primary hover:underline">
+                        Clear filters
+                      </button>
+                    </span>
+                  }
+                />
               ) : infraHidden > 0 ? (
                 <EmptyState
                   icon={Activity}
@@ -575,10 +627,24 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                 <EmptyState
                   icon={Activity}
                   title="No traces match your filters"
+                  description={
+                    truncated
+                      ? `Only the newest ${traces.length} traces were searched.`
+                      : undefined
+                  }
                   action={
-                    <button onClick={clearFilters} className="text-3xs text-primary hover:underline">
-                      Clear filters
-                    </button>
+                    truncated ? (
+                      <span className="flex items-center gap-3">
+                        <button onClick={clearFilters} className="text-3xs text-primary hover:underline">
+                          Clear filters
+                        </button>
+                        {loadMoreButton}
+                      </span>
+                    ) : (
+                      <button onClick={clearFilters} className="text-3xs text-primary hover:underline">
+                        Clear filters
+                      </button>
+                    )
                   }
                 />
               ) : (
@@ -611,6 +677,13 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                   >
                     <thead className="sticky top-0 z-sticky bg-surface-elevated/95 backdrop-blur-sm">
                       <tr className="border-b border-border/30">
+                        {compact ? (
+                          <th className="w-6 pl-3 pr-0 py-1.5">
+                            <span className="sr-only">Status</span>
+                          </th>
+                        ) : (
+                          <th className="px-3 py-1.5 text-left text-3xs font-medium text-text-muted uppercase tracking-wider whitespace-nowrap">Status</th>
+                        )}
                         <th className="px-3 py-1.5 text-left text-3xs font-medium text-text-muted uppercase tracking-wider whitespace-nowrap">Time</th>
                         <th className="px-3 py-1.5 text-left text-3xs font-medium text-text-muted uppercase tracking-wider whitespace-nowrap">Tool</th>
                         {!compact && (
@@ -623,7 +696,6 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                         {!compact && (
                           <th className="px-3 py-1.5 text-right text-3xs font-medium text-text-muted uppercase tracking-wider whitespace-nowrap">Spans</th>
                         )}
-                        <th className="px-3 py-1.5 text-left text-3xs font-medium text-text-muted uppercase tracking-wider whitespace-nowrap">Status</th>
                         {!compact && <th className="w-8" aria-label="Row actions" />}
                       </tr>
                     </thead>
@@ -643,6 +715,14 @@ export function TracesView({ active, servers, onViewLogs, onViewMetrics, toolbar
                     </tbody>
                   </table>
                 </div>
+                {truncated && (
+                  <div className="flex items-center gap-2 px-3 py-1 min-w-0 flex-shrink-0 border-t border-border/20 text-3xs text-text-muted">
+                    <span className="min-w-0">
+                      {windowSentence} Search and time range apply to these only.
+                    </span>
+                    <span className="ml-auto flex-shrink-0">{loadMoreButton}</span>
+                  </div>
+                )}
                 {/* Keyboard hint strip. Nowrap so the wider 10 px labels scroll
                     sideways instead of wrapping inside h-5. A visible scrollbar
                     would cover that line, so the bar is hidden. */}

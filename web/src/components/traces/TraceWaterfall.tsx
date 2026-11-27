@@ -68,6 +68,23 @@ function getSpanServer(span: Span): string {
   );
 }
 
+function getSpanTool(span: Span): string {
+  return (
+    span.attributes['gen_ai.tool.name'] ||
+    span.attributes['mcp.tool.name'] ||
+    span.attributes['tool.name'] ||
+    ''
+  );
+}
+
+// A root span that returned before routing keeps the bare name; the tool is
+// still in its attributes.
+function displaySpanName(span: Span): string {
+  if (span.name !== 'tools/call') return span.name;
+  const tool = getSpanTool(span);
+  return tool ? `tools/call ${tool}` : span.name;
+}
+
 function buildDepthMap(spans: Span[]): Map<string, number> {
   const depthMap = new Map<string, number>();
   const byId = new Map(spans.map((s) => [s.spanId, s]));
@@ -261,7 +278,14 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
             {trace.spans.length} spans · {formatTotalDuration(totalDuration)}
           </span>
           {hasError && (
-            <AlertCircle size={11} className="text-status-error flex-shrink-0" />
+            <AlertCircle
+              size={11}
+              role="img"
+              aria-label="Trace has errors"
+              className="text-status-error flex-shrink-0"
+            >
+              <title>Trace has errors</title>
+            </AlertCircle>
           )}
         </div>
         <div className="flex items-center gap-1 flex-shrink-0 ml-2">
@@ -360,6 +384,7 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
                 const onCriticalPath = criticalPath.has(span.spanId);
                 const hasChildren = (childCounts.get(span.spanId) ?? 0) > 0;
                 const selfMs = selfTimes.get(span.spanId);
+                const name = displaySpanName(span);
 
                 const barColor = isError ? 'var(--color-status-error)' : isSlow ? 'var(--color-status-pending)' : stableColor(server);
 
@@ -387,10 +412,16 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
                           'text-3xs truncate font-mono',
                           isError ? 'text-status-error' : 'text-text-secondary'
                         )}
-                        title={span.name}
+                        title={name}
                       >
-                        {span.name}
+                        {name}
                       </span>
+                      {isError && (
+                        <AlertCircle size={10} role="img" aria-label="error" className="text-status-error flex-shrink-0" />
+                      )}
+                      {isSlow && (
+                        <span className="flex-shrink-0 text-3xs text-status-pending font-mono">slow</span>
+                      )}
                     </div>
 
                     {/* Timeline bar column. min-w-0 matches the ruler so a narrow
@@ -426,12 +457,12 @@ export function TraceWaterfall({ trace, selectedSpanId, onSelectSpan, onClose, a
             {servers.length > 0 && (
               <div className="h-7 flex items-center gap-3 px-3 flex-shrink-0 border-t border-border/20 bg-surface-elevated/10 overflow-x-auto">
                 {servers.map((srv) => (
-                  <div key={srv} className="flex items-center gap-1 flex-shrink-0">
+                  <div key={srv ? `server:${srv}` : 'gateway'} className="flex items-center gap-1 flex-shrink-0">
                     <div
                       className="w-2 h-2 rounded-sm flex-shrink-0"
                       style={{ backgroundColor: stableColor(srv) }}
                     />
-                    <span className="text-3xs text-text-muted font-mono">{srv}</span>
+                    <span className="text-3xs text-text-muted font-mono">{srv || 'gateway'}</span>
                   </div>
                 ))}
                 {sorted.some((s) => s.status === 'error') && (
