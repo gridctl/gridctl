@@ -466,6 +466,46 @@ describe('RunsView', () => {
     expect(screen.getByText(/History: readable/)).toBeInTheDocument();
   });
 
+  it('shows the full failed state when a refresh of an empty history fails', async () => {
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [], warnings: [], partial: false, wipeEpoch: 0 });
+    render(
+      <MemoryRouter>
+        <RunsView servers={['github']} />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText(/History: readable/)).toBeInTheDocument());
+    vi.mocked(fetchRuns).mockRejectedValue(new Error('runs store offline'));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh run records' }));
+
+    await waitFor(() => expect(screen.getByText('Run history unavailable')).toBeInTheDocument());
+    expect(screen.getByText('runs store offline')).toBeInTheDocument();
+    expect(screen.getByText(/History: refresh failed/)).toBeInTheDocument();
+    expect(screen.queryByRole('grid', { name: 'Run records' })).not.toBeInTheDocument();
+  });
+
+  it('clears a retention error when the field is edited', async () => {
+    render(
+      <MemoryRouter>
+        <RunsView servers={['github']} />
+      </MemoryRouter>,
+    );
+    const age = await screen.findByLabelText('Retention max age days');
+    fireEvent.change(age, { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save retention' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Max age must be a whole number/);
+    fireEvent.change(age, { target: { value: '14' } });
+    expect(age).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    const size = screen.getByLabelText('Retention max size mebibytes');
+    fireEvent.change(size, { target: { value: 'x' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save retention' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Max size must be a whole number/);
+    fireEvent.change(size, { target: { value: '200' } });
+    expect(size).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('keeps rows when Load older fails and retries the append', async () => {
     const cursor = { sequence: 1 } as never;
     vi.mocked(fetchRuns).mockResolvedValueOnce({

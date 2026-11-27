@@ -257,7 +257,10 @@ export function RunsView({ servers }: RunsViewProps) {
               <input
                 className="bg-surface border border-border rounded px-1 py-0.5 w-16"
                 value={ageDays}
-                onChange={(e) => setAgeDraft(e.target.value)}
+                onChange={(e) => {
+                  setAgeDraft(e.target.value);
+                  setAgeError(null);
+                }}
                 aria-label="Retention max age days"
                 aria-invalid={ageError ? true : undefined}
                 aria-describedby={ageError ? 'runs-retention-age-error' : undefined}
@@ -268,7 +271,10 @@ export function RunsView({ servers }: RunsViewProps) {
               <input
                 className="bg-surface border border-border rounded px-1 py-0.5 w-20"
                 value={sizeMb}
-                onChange={(e) => setSizeDraft(e.target.value)}
+                onChange={(e) => {
+                  setSizeDraft(e.target.value);
+                  setSizeError(null);
+                }}
                 aria-label="Retention max size mebibytes"
                 aria-invalid={sizeError ? true : undefined}
                 aria-describedby={sizeError ? 'runs-retention-size-error' : undefined}
