@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   CheckCircle2,
   AlertCircle,
@@ -21,6 +21,8 @@ import { describeError, isCancellation } from '../../../lib/describeError';
 import { useStackStore } from '../../../stores/useStackStore';
 import { useWizardStore } from '../../../stores/useWizardStore';
 import { DeployChangesSection, SaveLoadChangesSection } from './ReviewChangesSection';
+import { SECRET_MASK, SecretsToggle } from '../YAMLPreview';
+import { maskYAMLSecrets } from '../../../lib/wizard-secrets';
 
 type ServerKind = 'source' | 'container' | 'connect';
 
@@ -604,7 +606,7 @@ export function ReviewStep({
       {resourceType === 'mcp-server' && (
         <details className="rounded-xl border border-border/30 bg-background/30">
           <summary className="cursor-pointer px-4 py-3 text-xs font-medium text-text-secondary">Exact server YAML</summary>
-          <pre className="overflow-x-auto border-t border-border/20 p-4 text-2xs text-text-secondary"><code>{yaml}</code></pre>
+          <MaskedYAMLBlock yaml={yaml} />
         </details>
       )}
 
@@ -660,6 +662,24 @@ export function ReviewStep({
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+// MaskedYAMLBlock shows YAML with literal secrets masked until revealed. The
+// real text still drives deploy, save, copy, download, and validation.
+function MaskedYAMLBlock({ yaml }: { yaml: string }) {
+  const [shown, setShown] = useState(false);
+  const masked = useMemo(() => maskYAMLSecrets(yaml, SECRET_MASK), [yaml]);
+  const maskedCount = masked?.masked ?? 0;
+  return (
+    <div className="border-t border-border/20">
+      {maskedCount > 0 && (
+        <div className="flex justify-end px-4 pt-2">
+          <SecretsToggle shown={shown} onToggle={() => setShown((v) => !v)} />
+        </div>
+      )}
+      <pre className="overflow-x-auto p-4 text-2xs text-text-secondary"><code>{maskedCount > 0 && !shown ? masked!.yaml : yaml}</code></pre>
     </div>
   );
 }

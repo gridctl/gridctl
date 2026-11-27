@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { DraftManager } from '../components/wizard/DraftManager';
 import { useWizardStore } from '../stores/useWizardStore';
 import { deleteWizardDraft, fetchWizardDrafts, saveWizardDraft } from '../lib/api';
+import { showToast } from '../components/ui/Toast';
 
 vi.mock('../components/ui/Toast', () => ({
   showToast: vi.fn(),
@@ -76,6 +77,47 @@ describe('DraftManager YAML and load guard', () => {
     useWizardStore.setState({ expertMode: false, yamlContent: 'name: x\n' });
     const arg = await save('form one');
     expect('yaml' in arg).toBe(false);
+  });
+
+  it('drops literal secrets from the form data it sends', async () => {
+    useWizardStore.getState().updateFormData('mcp-server', {
+      serverType: 'external',
+      auth: { type: 'bearer', token: 'sk-literal-123' },
+    });
+    const arg = await save('secret one');
+    expect((arg.formData.auth as { token: string }).token).toBe('');
+    expect(JSON.stringify(arg)).not.toContain('sk-literal-123');
+    expect(useWizardStore.getState().formData['mcp-server'].auth?.token).toBe('sk-literal-123');
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('success', 'Draft "secret one" saved without 1 literal secret'),
+    );
+  });
+
+  it('keeps references in a saved draft', async () => {
+    useWizardStore.getState().updateFormData('mcp-server', {
+      serverType: 'external',
+      auth: { type: 'bearer', token: '${var:TOKEN}' },
+    });
+    const arg = await save('ref one');
+    expect((arg.formData.auth as { token: string }).token).toBe('${var:TOKEN}');
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('success', 'Draft "ref one" saved'));
+  });
+
+  it('masks literals in YAML-mode text and counts them', async () => {
+    useWizardStore.setState({ expertMode: true, yamlContent: 'name: x\nauth:\n  type: bearer\n  token: sk-literal-123\n' });
+    const arg = await save('yaml secret');
+    expect(arg.yaml).toBe('name: x\nauth:\n  type: bearer\n  token: ""\n');
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('success', 'Draft "yaml secret" saved without 1 literal secret'),
+    );
+  });
+
+  it('omits YAML-mode text that does not parse and warns', async () => {
+    useWizardStore.setState({ expertMode: true, yamlContent: 'auth:\n  token: sk-literal-123\n  bad: [\n' });
+    const arg = await save('broken');
+    expect('yaml' in arg).toBe(false);
+    expect(JSON.stringify(arg)).not.toContain('sk-literal-123');
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('warning', expect.stringContaining('without its YAML')));
   });
 
   it('confirms before loading a draft over dirty form data', async () => {

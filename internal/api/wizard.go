@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"github.com/gridctl/gridctl/pkg/state"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -110,10 +111,14 @@ func (s *Server) handleWizardDraftCreate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Ensure directory exists
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	// Drafts may hold credentials, so the directory and files are owner-only.
+	// MkdirAll leaves an existing directory's mode alone, hence the Chmod.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		writeJSONError(w, "Failed to create drafts directory: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		slog.Warn("wizard drafts: could not restrict directory mode", "dir", dir, "error", err)
 	}
 
 	// Generate unique ID
@@ -142,7 +147,7 @@ func (s *Server) handleWizardDraftCreate(w http.ResponseWriter, r *http.Request)
 	}
 
 	filePath := filepath.Join(dir, id+".json")
-	if err := os.WriteFile(filePath, data, 0o644); err != nil {
+	if err := os.WriteFile(filePath, data, 0o600); err != nil {
 		writeJSONError(w, "Failed to save draft: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

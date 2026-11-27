@@ -7,6 +7,7 @@ import { showToast } from '../ui/Toast';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { describeError, isCancellation } from '../../lib/describeError';
 import { useDismiss } from '../../hooks/useDismiss';
+import { maskYAMLSecrets, redactFormData } from '../../lib/wizard-secrets';
 
 interface DraftManagerProps {
   className?: string;
@@ -76,13 +77,34 @@ export function DraftManager({ className, onLoad }: DraftManagerProps) {
     setSaving(true);
     try {
       const currentData = formData[selectedType as keyof typeof formData] as unknown as Record<string, unknown>;
+      // Drafts are plain files, so literal secrets are dropped before sending.
+      const redactable = selectedType === 'stack' || selectedType === 'mcp-server' || selectedType === 'resource';
+      const form = redactable ? redactFormData(selectedType, currentData) : { data: currentData, redacted: 0 };
+      let omitted = form.redacted;
+      let yamlUnparsed = false;
+      let yaml: string | undefined;
+      if (expertMode) {
+        const masked = maskYAMLSecrets(yamlContent, '""');
+        if (masked) {
+          yaml = masked.yaml;
+          omitted += masked.masked;
+        } else {
+          yamlUnparsed = true;
+        }
+      }
       await saveWizardDraft({
         name: saveName.trim(),
         resourceType: selectedType,
-        formData: currentData,
-        ...(expertMode ? { yaml: yamlContent } : {}),
+        formData: form.data,
+        ...(yaml !== undefined ? { yaml } : {}),
       });
-      showToast('success', `Draft "${saveName}" saved`);
+      if (yamlUnparsed) {
+        showToast('warning', `Draft "${saveName}" saved without its YAML, which does not parse and may hold a literal secret`);
+      } else if (omitted > 0) {
+        showToast('success', `Draft "${saveName}" saved without ${omitted} literal secret${omitted === 1 ? '' : 's'}`);
+      } else {
+        showToast('success', `Draft "${saveName}" saved`);
+      }
       setSaveName('');
       setShowSave(false);
       await refreshDrafts();

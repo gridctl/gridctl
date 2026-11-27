@@ -218,7 +218,7 @@ describe('StackForm', () => {
     });
     render(<StackForm data={data} onChange={onChange} />);
     fireEvent.click(screen.getByText('Gateway'));
-    expect(screen.getByPlaceholderText('auth-token-value')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('${var:GATEWAY_TOKEN}')).toBeInTheDocument();
   });
 
   it('displays header name field when header auth is selected', () => {

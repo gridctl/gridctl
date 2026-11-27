@@ -131,3 +131,41 @@ describe('YAMLPreview validation', () => {
     expect(screen.queryByText('Valid')).not.toBeInTheDocument();
   });
 });
+
+describe('YAMLPreview secret masking', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(validateStackSpec).mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const yaml = 'version: "1"\nname: demo\ngateway:\n  auth:\n    type: bearer\n    token: sk-literal-123\n';
+
+  it('masks literals by default, reveals them on toggle, and validates the real YAML', async () => {
+    const { container } = render(<YAMLPreview yaml={yaml} resourceType="stack" />);
+    expect(container.textContent).not.toContain('sk-literal-123');
+    const lines = Array.from(container.querySelectorAll('span.whitespace-pre')).map((s) => s.textContent);
+    expect(lines).toHaveLength(yaml.split('\n').length);
+    expect(lines[5]).toBe('    token: ••••••••');
+
+    const toggle = screen.getByRole('button', { name: 'Show secrets' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    act(() => toggle.click());
+    expect(container.textContent).toContain('sk-literal-123');
+    expect(screen.getByRole('button', { name: 'Hide secrets' })).toHaveAttribute('aria-pressed', 'true');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(validateStackSpec).toHaveBeenCalledWith(yaml);
+  });
+
+  it('shows no toggle for references', () => {
+    const { container } = render(<YAMLPreview yaml={'name: demo\ngateway:\n  auth:\n    token: "${var:GATEWAY_TOKEN}"\n'} resourceType="stack" />);
+    expect(screen.queryByRole('button', { name: 'Show secrets' })).not.toBeInTheDocument();
+    expect(container.textContent).toContain('${var:GATEWAY_TOKEN}');
+  });
+});
