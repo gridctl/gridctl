@@ -61,6 +61,27 @@ It is not a tab list. Fit view (`f`, `⌘0`) and canvas zoom apply only on
 Stack, never from a field, and are listed under Stack in the shortcuts panel.
 `⌘F` is left to the browser.
 
+`layout/WorkspaceShell.tsx` lays out every workspace except Stack and Traces
+as an optional left rail, a center pane, and an optional right rail. It
+measures its own root with `useContainerWidth`. Below 900 px of shell width
+(`collapseRightBelowPx`) the right rail is not docked, and below 640 px
+(`collapseLeftBelowPx`) neither is the left rail. An unmeasured width (0)
+keeps both rails docked. An undocked rail renders no panel or separator, so
+each set of docked panels keeps its own saved layout and a narrow session
+never changes the wide one. Its content moves through a portal into a
+non-modal overlay drawer on the same side, without remounting, so inspector
+state and focus survive a resize. Each rail has a toggle on the center
+pane's inner edge at every width ("Collapse left rail", "Expand right rail",
+and so on, with `aria-expanded`, and `aria-controls` in drawer mode) that
+does what `[` or `]` does: collapse or expand a docked panel, or open or
+close a drawer. At most one drawer is open. The `rightKey` prop opens the
+right drawer when a selection appears and closes it when the selection
+clears; the `leftKey` prop closes the left drawer when the navigation
+selection changes. Escape closes an open drawer unless a modal dialog is
+open or a rail child handled the key, and a press outside the left drawer
+closes it. The drawer has no transform once its entrance animation ends,
+so fixed dialogs inside a rail still cover the viewport.
+
 The Stack canvas is read-only: `graph/Canvas.tsx` passes
 `nodesConnectable={false}`, `edgesFocusable={false}`, and
 `deleteKeyCode={null}`, and its change handlers drop `remove` changes, so
