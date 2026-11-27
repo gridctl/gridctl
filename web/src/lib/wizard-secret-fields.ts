@@ -113,6 +113,18 @@ function keyOf(Y: YamlModule, pair: unknown): string | null {
   return null;
 }
 
+// parentKey names the mapping that owns a pair whose map sits under path[i].
+// A merge key (`<<: {...}` or `<<: [{...}, ...]`) folds its maps into the
+// enclosing mapping when loaded, so it is skipped in favor of that mapping.
+function parentKey(Y: YamlModule, path: readonly unknown[], i: number): string | null {
+  for (;;) {
+    if (Y.isSeq(path[i]) && keyOf(Y, path[i - 1]) === '<<') i -= 1;
+    const name = keyOf(Y, path[i]);
+    if (name !== '<<') return name;
+    i -= 2;
+  }
+}
+
 // maskYAMLSecrets replaces the source text of each literal secret scalar with
 // replacement (raw YAML text) and leaves every other character as authored.
 // The document is parsed only to locate scalars; it is never re-serialized,
@@ -131,7 +143,7 @@ export function maskYAMLSecretsWith(Y: YamlModule, yaml: string, replacement: st
       if (name === null) return;
       const map = path[path.length - 2];
       if (!Y.isMap(map)) return;
-      const parent = keyOf(Y, path[path.length - 3]);
+      const parent = parentKey(Y, path, path.length - 3);
       const sensitive =
         (parent === 'auth' && (name === 'token' || name === 'value' || name === 'client_secret')) ||
         parent === 'headers' ||

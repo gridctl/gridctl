@@ -170,6 +170,13 @@ describe('maskYAMLSecrets', () => {
     expect(result!.yaml).toBe('auth:\n  type: oauth\n  client_id: cid\n  client_secret: X\n  value: X\nbuild_args:\n  NPM_TOKEN: X\n  VERSION: "1"\ntoken: top-level\n');
   });
 
+  it('masks literals folded in through a merge key', () => {
+    const yaml = 'auth:\n  <<: {token: sk-merge}\nheaders:\n  <<: [{X-A: a}, {X-B: "${var:B}"}]\n';
+    const result = maskYAMLSecrets(yaml, '""');
+    expect(result?.masked).toBe(2);
+    expect(result!.yaml).toBe('auth:\n  <<: {token: ""}\nheaders:\n  <<: [{X-A: ""}, {X-B: "${var:B}"}]\n');
+  });
+
   it('leaves references and aliases unmasked', () => {
     const yaml = 'base: &tok sk-anchor\nauth:\n  token: *tok\n  value: "${var:V}"\n';
     expect(maskYAMLSecrets(yaml, '""')).toEqual({ yaml, masked: 0 });
