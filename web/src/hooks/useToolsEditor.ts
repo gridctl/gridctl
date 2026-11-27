@@ -105,10 +105,14 @@ export interface UseToolsEditor {
   // discard or return to the owner. Stays up until the editor unlocks.
   discardPrompt: string | null;
   handleSave: () => Promise<void>;
-  // Deselect the named tools and save the result through the same save+reload
-  // path as handleSave. Used by Audit Mode's "disable unused" remediation.
-  // Respects expose-all semantics: persists the remaining tools as a concrete
-  // whitelist (or [] if the remaining set is every tool).
+  // Remove the named tools from the saved whitelist and persist only that,
+  // through the same save+reload path as handleSave. Used by Audit Mode's
+  // "disable unused" remediation. The names also leave the draft; every other
+  // draft edit stays unsaved. Refused (no change, no request) when it would
+  // empty the saved whitelist; no request when none of the names are saved.
+  // A save that does not persist restores the draft as it was before the
+  // call. Respects expose-all semantics: persists the remaining tools as a
+  // concrete whitelist (or [] if the remaining set is every tool).
   disableTools: (names: string[]) => Promise<void>;
   handleReloadFromDisk: () => Promise<void>;
   handleDiscard: () => void;
@@ -296,11 +300,13 @@ export function useToolsEditor(
   // save+reload path and refreshes the global caches. Shared by handleSave
   // (current selection) and disableTools (selection minus the unused tools)
   // so both honor the same expose-all semantics and structured-error handling.
-  const saveSelection = async (targetSelection: string[]) => {
+  // Resolves true when the write persisted (including reload_failed, where the
+  // file was written but the hot reload was not).
+  const saveSelection = async (targetSelection: string[]): Promise<boolean> => {
     // A locked draft belongs to another server. Refusing here, at the shared
     // choke point, makes a write to the wrong server impossible from any
     // caller, whatever the view renders.
-    if (locked) return;
+    if (locked) return false;
     // Refuse an empty selection outright: the wire form can't express "expose
     // nothing" (an empty whitelist means "expose all"), so saving it would
     // silently re-expose every tool, the inverse of the user's intent. A
@@ -312,7 +318,7 @@ export function useToolsEditor(
         'error',
         `Can't save an empty selection for ${serverName} — an empty whitelist would re-expose every tool. Keep at least one tool enabled or discard.`,
       );
-      return;
+      return false;
     }
     setIsSaving(true);
     setConflict(null);
@@ -347,6 +353,7 @@ export function useToolsEditor(
       } catch {
         /* ignore refresh failures — the page will re-poll shortly */
       }
+      return true;
     } catch (err) {
       if (err instanceof AuthError) {
         throw err;
@@ -355,7 +362,7 @@ export function useToolsEditor(
         switch (err.code) {
           case 'stack_modified':
             setConflict(err.hint || err.message);
-            return;
+            return false;
           case 'reload_failed':
             showToast(
               'error',
@@ -376,13 +383,13 @@ export function useToolsEditor(
             } catch {
               /* ignore refresh failures */
             }
-            return;
+            return true;
           case 'unknown_tool':
             if (!isCancellation(err)) {
               const described = describeError(err, 'Save');
               showToast('error', described.text, { detail: described.fullDetail });
             }
-            return;
+            return false;
           case 'hidden_tool_reference': {
             const notice = formatHiddenToolReference(err.issues, err.hint);
             showToast('error', notice);
@@ -390,52 +397,67 @@ export function useToolsEditor(
             // was in flight. Revert and show the notice only when it still
             // shows the server this save was for, and revert to that owner's
             // current baseline, never a value captured before the await.
-            if (currentServerRef.current !== savedFor) return;
+            if (currentServerRef.current !== savedFor) return false;
             setDraft((cur) =>
               cur.owner === savedFor ? { ...cur, selection: cur.ownerSaved } : cur,
             );
             setHiddenReference(notice);
-            return;
+            return false;
           }
           default:
             if (!isCancellation(err)) {
               const described = describeError(err, 'Save');
               showToast('error', described.text, { detail: described.fullDetail });
             }
-            return;
+            return false;
         }
       }
       if (!isCancellation(err)) {
         const described = describeError(err, 'Save');
         showToast('error', described.text, { detail: described.fullDetail });
       }
+      return false;
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleSave = () => saveSelection(canonicalSelection);
+  const handleSave = async () => {
+    await saveSelection(canonicalSelection);
+  };
 
-  const disableTools = (names: string[]) => {
-    if (locked) return Promise.resolve();
+  const disableTools = async (names: string[]) => {
+    if (locked) return;
     const drop = new Set(names);
-    const remaining = canonicalSelection.filter((name) => !drop.has(name));
+    const savedRemaining = savedSelection.filter((name) => !drop.has(name));
     // The whitelist model can't express "expose nothing": an empty whitelist
     // means "expose all". Disabling every exposed tool would therefore
     // paradoxically re-expose them (and any previously-disabled tools). Refuse
     // that case rather than silently inverting the user's intent.
-    if (remaining.length === 0) {
+    if (savedRemaining.length === 0) {
       showToast(
         'error',
         `Can't disable every exposed tool on ${serverName} — at least one must stay enabled.`,
       );
-      return Promise.resolve();
+      return;
     }
-    // Reflect the change in the view, then persist it. saveSelection reads the
-    // computed `remaining` directly (not React state) so the save is correct
-    // even though setSelection has not flushed yet.
-    setSelection(remaining);
-    return saveSelection(remaining);
+    // Captured before the optimistic update: a failed save restores exactly
+    // this, never React state read after the await.
+    const before = draft.selection;
+    const savedFor = serverName;
+    setSelection((prev) => prev.filter((name) => !drop.has(name)));
+    // Names enabled only in the draft are not on disk; nothing to write.
+    if (savedRemaining.length === savedSelection.length) return;
+    const restore = () =>
+      setDraft((cur) => (cur.owner === savedFor ? { ...cur, selection: before } : cur));
+    let persisted = false;
+    try {
+      persisted = await saveSelection(savedRemaining);
+    } catch (err) {
+      restore();
+      throw err;
+    }
+    if (!persisted) restore();
   };
 
   // handleReloadFromDisk refreshes the saved state after a 409. We refetch

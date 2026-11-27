@@ -26,10 +26,12 @@ function props(over: Partial<ToolListRowProps> = {}): ToolListRowProps {
     lastUsed: '2m ago',
     isEnabled: true,
     isActive: false,
+    isCursor: false,
     auditState: 'used',
     policyLabel: '',
     policyTitle: '',
     policyTone: '',
+    policyText: '',
     onSelect: () => {},
     onToggle: () => {},
     registerRef: () => {},
@@ -82,10 +84,14 @@ describe('toolListRowPropsEqual', () => {
     const base = props(stable);
     expect(toolListRowPropsEqual(base, props({ ...stable, isEnabled: false }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, isActive: true }))).toBe(false);
+    expect(toolListRowPropsEqual(base, props({ ...stable, isCursor: true }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, auditState: 'unused' }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, policyLabel: 'BLOCKED' }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, policyTitle: 'blocked by policy default' }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, policyTone: 'danger' }))).toBe(false);
+    expect(toolListRowPropsEqual(base, props({ ...stable, policyText: 'blocked by policy default' }))).toBe(false);
+    expect(toolListRowPropsEqual(base, props({ ...stable, setSize: 300 }))).toBe(false);
+    expect(toolListRowPropsEqual(base, props({ ...stable, posInSet: 1 }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, onSelect: () => {} }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, onToggle: () => {} }))).toBe(false);
     expect(toolListRowPropsEqual(base, props({ ...stable, registerRef: () => {} }))).toBe(false);
