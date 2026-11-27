@@ -335,10 +335,10 @@ function LogLineDetail({
                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border bg-primary/10 text-primary border-primary/30 hover:bg-primary/15 transition-colors break-all text-left"
               >
                 <Activity size={9} className="flex-shrink-0" />
-                {log.traceId}
+                {highlightMatches(log.traceId, searchQuery)}
               </button>
             ) : (
-              <span className="text-secondary break-all">{log.traceId}</span>
+              <span className="text-secondary break-all">{highlightMatches(log.traceId, searchQuery)}</span>
             )}
           </div>
         )}

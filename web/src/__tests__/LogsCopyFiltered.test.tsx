@@ -4,6 +4,7 @@ import '@testing-library/jest-dom';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { LogsWorkspace } from '../components/workspaces/LogsWorkspace';
 import { useLogsView } from '../components/log/useLogsView';
+import { parseLogEntry } from '../components/log/logTypes';
 import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
 import { useStackStore } from '../stores/useStackStore';
 import { useUIStore, COMPACT_MODE_DEFAULTS } from '../stores/useUIStore';
@@ -87,7 +88,7 @@ describe('Logs copy filtered view', () => {
     fireEvent.click(screen.getByRole('button', { name: /Copy filtered view/i }));
     expect(copyWithToast).toHaveBeenCalledTimes(1);
     const [text, label] = vi.mocked(copyWithToast).mock.calls[0];
-    for (const e of entries) expect(text).toContain(e.msg);
+    expect(text).toBe(entries.map((e) => parseLogEntry(e).raw).join('\n'));
     expect(label).toBe('3 entries');
   });
 

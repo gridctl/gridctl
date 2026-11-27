@@ -351,8 +351,21 @@ describe('LogStream', () => {
       showSource: true,
     });
     const marks = Array.from(document.querySelectorAll('mark')).map((m) => m.textContent);
-    expect(marks.length).toBeGreaterThanOrEqual(1);
-    expect(marks.every((t) => t?.toLowerCase() === 'gate')).toBe(true);
+    expect(marks).toEqual(['gate', 'gate']);
+    const cells = screen.getAllByTitle('gateway');
+    expect(cells).toHaveLength(2);
+    for (const cell of cells) expect(cell.querySelector('mark')).toHaveTextContent('gate');
+  });
+
+  it('highlights a match inside the source filter button', () => {
+    renderStream([entry({ component: 'gateway', message: 'listening' })], {
+      searchQuery: 'gate',
+      showSource: true,
+      onSourceClick: () => {},
+    });
+    const button = screen.getByRole('button', { name: 'Filter to gateway' });
+    expect(button.querySelector('mark')).toHaveTextContent('gate');
+    expect(document.querySelectorAll('mark')).toHaveLength(2);
   });
 
   it('shows a hint when the query matches only a hidden attribute', () => {
@@ -368,6 +381,13 @@ describe('LogStream', () => {
   it('shows a hint for a trace-only match', () => {
     renderStream([entry({ message: 'ok', traceId: 'abc123def' })], { searchQuery: 'abc123' });
     expect(screen.getByText('match in trace ID')).toBeInTheDocument();
+  });
+
+  it('marks the trace ID in the expand panel for a trace-only match', () => {
+    render(<Harness logs={[entry({ message: 'ok', traceId: 'abc123def' })]} searchQuery="abc123" />);
+    fireEvent.click(screen.getByText('ok'));
+    const marks = Array.from(document.querySelectorAll('mark')).map((m) => m.textContent);
+    expect(marks).toContain('abc123');
   });
 
   it('opens Other attributes with the match marked when the filter matched there', () => {
