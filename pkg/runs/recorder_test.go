@@ -374,6 +374,36 @@ func TestWipeStackInProcess_RoutesThroughRecorder(t *testing.T) {
 	}
 }
 
+func TestWipeStackInProcess_DisabledRegisteredRecorder(t *testing.T) {
+	dir := t.TempDir()
+	r, err := NewActiveRecorder(Config{
+		Enabled: true, StackName: "inproc-disabled", Dir: dir, MaxBytes: 1 << 20, MaxAge: time.Hour,
+		QueueSize: 32, SyncInterval: 20 * time.Millisecond, ShutdownDrain: time.Second,
+	}, discardLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer UnregisterActive("inproc-disabled")
+	if activeRecorder("inproc-disabled") != r {
+		t.Fatal("NewActiveRecorder did not register the recorder")
+	}
+
+	pre := r.Begin(context.Background(), "pre__wipe")
+	pre.SetOutcome(DispositionCompleted, StageDownstream, ReasonOK)
+	pre.Finish()
+	waitRecords(t, dir, 1)
+	if err := r.Apply(Config{Enabled: false, StackName: "inproc-disabled", Dir: dir}); err != nil {
+		t.Fatal(err)
+	}
+	if err := WipeStackInProcess(context.Background(), "inproc-disabled"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "runs.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("run file still present: %v", err)
+	}
+}
+
 func TestNewRecorder_OpenFailureStaysEnabledDegraded(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "not-a-dir")
 	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
