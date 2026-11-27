@@ -37,6 +37,9 @@ interface TracesFilters {
 /** Server-side filters, the ones a reload sends to the API. */
 type LoadedTraceFilters = Pick<TracesFilters, 'server' | 'errorsOnly' | 'minDuration'>;
 
+/** Rows per list request; Load more raises the limit by this much. */
+export const TRACES_PAGE_SIZE = 100;
+
 // Only the newest list request may write results; a superseded one is dropped.
 let tracesLoadSeq = 0;
 
@@ -58,6 +61,8 @@ interface TracesState {
   /** Server-side filters of the last successful load; null before one. */
   loadedFilters: LoadedTraceFilters | null;
   filters: TracesFilters;
+  /** Row limit sent with each list request. */
+  limit: number;
 
   // Selected trace detail
   selectedTraceId: string | null;
@@ -70,6 +75,8 @@ interface TracesState {
   setPaused: (paused: boolean) => void;
   selectTrace: (traceId: string | null) => void;
   loadTraces: () => Promise<void>;
+  /** Raise the row limit by one page (clamped to the buffer capacity) and reload. */
+  loadMore: () => Promise<void>;
   loadTraceDetail: (traceId: string) => Promise<void>;
 }
 
@@ -92,18 +99,30 @@ export const useTracesStore = create<TracesState>()((set, get) => ({
     timeRange: 'all',
     search: '',
   },
+  limit: TRACES_PAGE_SIZE,
   selectedTraceId: null,
   traceDetail: null,
   isLoadingDetail: false,
   detailError: null,
 
   setFilters: (filters) =>
-    set((s) => ({ filters: { ...s.filters, ...filters } })),
+    set((s) => {
+      const next = { ...s.filters, ...filters };
+      // A new server-side filter starts again from the first page.
+      return sameServerFilters(s.filters, next)
+        ? { filters: next }
+        : { filters: next, limit: TRACES_PAGE_SIZE };
+    }),
 
   setPaused: (paused) => set({ isPaused: paused }),
 
   selectTrace: (traceId) => {
-    set({ selectedTraceId: traceId, traceDetail: null, detailError: null });
+    set({
+      selectedTraceId: traceId,
+      traceDetail: null,
+      detailError: null,
+      ...(traceId ? {} : { isLoadingDetail: false }),
+    });
     if (traceId) {
       get().loadTraceDetail(traceId);
     }
@@ -127,7 +146,7 @@ export const useTracesStore = create<TracesState>()((set, get) => ({
         server: filters.server || undefined,
         errors: filters.errorsOnly || undefined,
         minDuration: filters.minDuration ?? undefined,
-        limit: 100,
+        limit: get().limit,
       });
       if (seq !== tracesLoadSeq) return;
       if (useAuthStore.getState().generation !== generation) return;
@@ -157,6 +176,13 @@ export const useTracesStore = create<TracesState>()((set, get) => ({
     }
   },
 
+  loadMore: () => {
+    const { limit, bufferCapacity } = get();
+    const raised = limit + TRACES_PAGE_SIZE;
+    set({ limit: bufferCapacity > 0 ? Math.min(raised, bufferCapacity) : raised });
+    return get().loadTraces();
+  },
+
   loadTraceDetail: async (traceId) => {
     const generation = useAuthStore.getState().generation;
     if (useAuthStore.getState().authRequired) return;
@@ -164,9 +190,12 @@ export const useTracesStore = create<TracesState>()((set, get) => ({
     try {
       const detail = await fetchTraceDetail(traceId);
       if (useAuthStore.getState().generation !== generation) return;
+      // A response for a trace that is no longer selected is dropped.
+      if (get().selectedTraceId !== traceId) return;
       set({ traceDetail: detail, isLoadingDetail: false });
     } catch (err) {
       if (useAuthStore.getState().generation !== generation) return;
+      if (get().selectedTraceId !== traceId) return;
       set({
         detailError: err instanceof Error ? err.message : 'Failed to fetch trace detail',
         isLoadingDetail: false,

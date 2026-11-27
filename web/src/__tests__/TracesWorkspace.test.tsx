@@ -7,7 +7,8 @@ import { useStackStore } from '../stores/useStackStore';
 import { useTracesStore } from '../stores/useTracesStore';
 import { useUIStore, COMPACT_MODE_DEFAULTS } from '../stores/useUIStore';
 import { workspaceLayoutStorageKey } from '../hooks/useWorkspaceLayout';
-import type { TraceDetail, TraceSummary } from '../lib/api';
+import type { Span, TraceDetail, TraceSummary } from '../lib/api';
+import { TraceRow } from '../components/traces/TraceRow';
 import type { MCPServerStatus } from '../types';
 
 vi.mock('../hooks/useWindowManager', () => ({
@@ -154,6 +155,7 @@ beforeEach(() => {
     lastLoadedAt: 0,
     loadedFilters: null,
     filters: { segment: 'tool-calls', server: '', errorsOnly: false, minDuration: null, timeRange: 'all', search: '' },
+    limit: 100,
     selectedTraceId: null,
     traceDetail: null,
     isLoadingDetail: false,
@@ -747,5 +749,208 @@ describe('useTracesStore loadTraces', () => {
     const s = useTracesStore.getState();
     expect(s.traces).toHaveLength(1);
     expect(s.loadedFilters).toEqual({ server: 'github', errorsOnly: false, minDuration: null });
+  });
+});
+
+function manySummaries(n: number): TraceSummary[] {
+  return Array.from({ length: n }, (_, i) => ({
+    ...summary,
+    traceId: `row${String(i).padStart(13, '0')}`,
+  }));
+}
+
+function span(over: Partial<Span> & { spanId: string }): Span {
+  return {
+    parentSpanId: '',
+    name: 'child',
+    startTime: '2026-07-23T10:00:00.000Z',
+    duration: 1,
+    status: 'ok',
+    attributes: {},
+    events: [],
+    ...over,
+  };
+}
+
+describe('TracesWorkspace list window', () => {
+  it('discloses the buffer window and loads one more page', async () => {
+    vi.mocked(fetchTraces).mockResolvedValue(listEnvelope(manySummaries(100), { bufferSize: 742 }));
+    renderAt('/traces');
+    await waitFor(() => {
+      expect(screen.getByText(/newest 100 of 742 in buffer/)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Showing the newest 100 of 742 traces in buffer/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    await waitFor(() => {
+      expect(vi.mocked(fetchTraces)).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 200 }));
+    });
+  });
+
+  it('shows no window disclosure when the whole buffer is loaded', async () => {
+    vi.mocked(fetchTraces).mockResolvedValue(listEnvelope([summary], { bufferSize: 950 }));
+    renderAt('/traces');
+    await waitFor(() => {
+      expect(screen.getByText('create_issue')).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/in buffer/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+  });
+
+  it('uses the loaded wording under a server-side filter', async () => {
+    vi.mocked(fetchTraces).mockResolvedValue(listEnvelope(manySummaries(100), { bufferSize: 742 }));
+    renderAt('/traces?server=github');
+    await waitFor(() => {
+      expect(screen.getByText(/newest 100 loaded/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/of 742/)).toBeNull();
+    expect(screen.getByText(/Older matching traces may exist/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeInTheDocument();
+  });
+
+  it('offers no Load more once the loaded rows equal the buffer count', async () => {
+    vi.mocked(fetchTraces).mockResolvedValue(listEnvelope(manySummaries(100), { bufferSize: 100 }));
+    renderAt('/traces?server=github');
+    await waitFor(() => {
+      expect(screen.getAllByText('create_issue').length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+    expect(screen.queryByText(/newest 100/)).toBeNull();
+  });
+
+  it('says only the loaded traces were searched when a search misses a truncated list', async () => {
+    vi.mocked(fetchTraces).mockResolvedValue(listEnvelope(manySummaries(100), { bufferSize: 742 }));
+    renderAt('/traces?q=nomatch');
+    await waitFor(() => {
+      expect(screen.getByText('No traces match your filters')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Only the newest 100 traces were searched.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeInTheDocument();
+  });
+
+  it('discloses the window and offers Load more when every loaded row is infra', async () => {
+    const infraRows = Array.from({ length: 100 }, (_, i) => ({
+      ...infraSummary,
+      traceId: `infra${String(i).padStart(11, '0')}`,
+    }));
+    vi.mocked(fetchTraces).mockResolvedValue(listEnvelope(infraRows, { bufferSize: 742 }));
+    renderAt('/traces');
+    await waitFor(() => {
+      expect(screen.getByText('No tool-call traces yet')).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Only the newest 100 traces were searched\./)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show all' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    await waitFor(() => {
+      expect(vi.mocked(fetchTraces)).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 200 }));
+    });
+  });
+
+  it('opens a pasted full trace ID that no loaded row has', async () => {
+    const id = 'ABCDEF0123456789ABCDEF0123456789';
+    renderAt(`/traces?q=${id}`);
+    const open = await screen.findByRole('button', { name: /^Open trace/ });
+    expect(open).toHaveTextContent('Open trace abcdef0123456789…');
+    fireEvent.click(open);
+    await waitFor(() => {
+      expect(vi.mocked(fetchTraceDetail)).toHaveBeenCalledWith(id.toLowerCase());
+    });
+    expect(useTracesStore.getState().selectedTraceId).toBe(id.toLowerCase());
+  });
+
+  it('offers Open trace even when the ID matches an infra trace hidden by the segment', async () => {
+    const id = 'ffff0000ffff0000ffff0000ffff0000';
+    vi.mocked(fetchTraces).mockResolvedValue(listEnvelope([{ ...infraSummary, traceId: id }]));
+    renderAt(`/traces?q=${id}`);
+    expect(await screen.findByRole('button', { name: /^Open trace/ })).toBeInTheDocument();
+  });
+
+  it('offers no Open trace for a partial ID', async () => {
+    renderAt('/traces?q=0123456789abcdef');
+    await waitFor(() => {
+      expect(screen.getByText('No traces match your filters')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: /^Open trace/ })).toBeNull();
+  });
+});
+
+describe('TracesWorkspace labels and markers', () => {
+  it('puts status in the first cell of each trace row', async () => {
+    renderAt('/traces');
+    await waitFor(() => {
+      expect(screen.getByText('create_issue')).toBeInTheDocument();
+    });
+    const row = document.getElementById('trace-row-abc123def4567890')!;
+    expect(row.querySelectorAll('td')[0]).toHaveTextContent('ok');
+    const headers = screen.getAllByRole('columnheader');
+    expect(headers[0]).toHaveTextContent('Status');
+    expect(headers.filter((h) => h.textContent === 'Status')).toHaveLength(1);
+  });
+
+  it('renders a shaped status glyph with a name in compact rows', () => {
+    const { rerender } = render(
+      <table><tbody>
+        <TraceRow trace={summary} relativeLabel="now" heat={0} isSelected={false} isHighlighted={false} compact onActivate={() => {}} />
+      </tbody></table>,
+    );
+    const firstCell = document.querySelector('td')!;
+    expect(within(firstCell).getByRole('img', { name: 'ok' })).toBeInTheDocument();
+    rerender(
+      <table><tbody>
+        <TraceRow trace={{ ...summary, status: 'error' }} relativeLabel="now" heat={0} isSelected={false} isHighlighted={false} compact onActivate={() => {}} />
+      </tbody></table>,
+    );
+    expect(within(document.querySelector('td')!).getByRole('img', { name: 'error' })).toBeInTheDocument();
+  });
+
+  it('names bare tool-call spans and labels serverless spans as gateway', async () => {
+    vi.mocked(fetchTraceDetail).mockResolvedValue({
+      traceId: 'abc123def4567890',
+      spans: [
+        span({ spanId: 'r', name: 'tools/call', duration: 5, attributes: { 'gen_ai.tool.name': 'execute' } }),
+        span({ spanId: 'c', parentSpanId: 'r', name: 'tools/call create_issue', attributes: { 'server.name': 'github', 'gen_ai.tool.name': 'create_issue' } }),
+      ],
+    });
+    renderAt('/traces?trace=abc123def4567890');
+    expect(await screen.findByText('tools/call execute')).toHaveAttribute('title', 'tools/call execute');
+    expect(screen.getByText('tools/call create_issue')).toBeInTheDocument();
+    expect(screen.getByText('gateway')).toBeInTheDocument();
+    expect(screen.getByText('github', { selector: 'span.font-mono' })).toBeInTheDocument();
+  });
+
+  it('names the trace error icon and marks error spans without color', async () => {
+    vi.mocked(fetchTraceDetail).mockResolvedValue({
+      traceId: 'abc123def4567890',
+      spans: [span({ spanId: 'r', name: 'root', status: 'error' })],
+    });
+    renderAt('/traces?trace=abc123def4567890');
+    expect(await screen.findByRole('img', { name: 'Trace has errors' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'error' })).toBeInTheDocument();
+  });
+
+  it('marks spans above the p95 as slow', async () => {
+    const spans = Array.from({ length: 21 }, (_, i) =>
+      span({ spanId: `s${i}`, parentSpanId: i === 0 ? '' : 's0', name: i === 20 ? 'slowpoke' : `span${i}`, duration: i === 20 ? 500 : 10 }),
+    );
+    vi.mocked(fetchTraceDetail).mockResolvedValue({ traceId: 'abc123def4567890', spans });
+    renderAt('/traces?trace=abc123def4567890');
+    const name = await screen.findByText('slowpoke');
+    expect(within(name.parentElement!).getByText('slow')).toBeInTheDocument();
+    expect(screen.getAllByText('slow', { selector: 'span.flex-shrink-0' })).toHaveLength(1);
+  });
+
+  it('gives the server filter and search input accessible names', async () => {
+    renderAt('/traces');
+    await waitFor(() => {
+      expect(screen.getByText('create_issue')).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText('Filter by server').tagName).toBe('SELECT');
+    expect(screen.getByLabelText('Search loaded traces').tagName).toBe('INPUT');
+  });
+
+  it('names the span ID copy button', async () => {
+    renderAt('/traces?trace=abc123def4567890');
+    fireEvent.click(await screen.findByText('mcp.client.call_tool'));
+    expect(await screen.findByRole('button', { name: 'Copy span ID' })).toBeInTheDocument();
   });
 });
