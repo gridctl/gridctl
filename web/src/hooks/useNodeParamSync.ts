@@ -1,5 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useContext, useEffect, useRef, useState } from 'react';
+import {
+  UNSAFE_NavigationContext,
+  useHref,
+  useLocation,
+  useSearchParams,
+  type Location,
+} from 'react-router';
 import { useStackStore } from '../stores/useStackStore';
 import { useUIStore } from '../stores/useUIStore';
 import { showToast } from '../components/ui/Toast';
@@ -76,7 +82,11 @@ function missToast(value: string): void {
 type SetSearchParams = ReturnType<typeof useSearchParams>[1];
 
 // One replace write: ?node= becomes the live store selection, or is removed.
-function writeFromStore(setSearchParams: SetSearchParams): void {
+// Skipped once the router has moved to another path: a workspace change can
+// stay pending while its lazy chunk loads, and a write relative to the
+// rendered /stack location would replace that navigation's history entry.
+function writeFromStore(setSearchParams: SetSearchParams, stillHere: () => boolean): void {
+  if (!stillHere()) return;
   setSearchParams(
     (prev) => {
       const next = new URLSearchParams(prev);
@@ -100,11 +110,21 @@ export function useNodeParamSync(): void {
   const paramNodeExists = useStackStore((s) => param !== null && s.nodes.some((n) => n.id === param));
   const hasGateway = useStackStore((s) => s.gatewayInfo !== null);
 
+  // Declarative routers pass their history as the navigator; its location
+  // moves at once on navigate, before the transition renders it.
+  const { navigator } = useContext(UNSAFE_NavigationContext);
+  const renderedPath = useHref({ pathname: useLocation().pathname });
+
   const setParamsRef = useRef(setSearchParams);
   const rawRef = useRef(raw);
+  const stillHereRef = useRef(() => true);
   useEffect(() => {
     setParamsRef.current = setSearchParams;
     rawRef.current = raw;
+    stillHereRef.current = () => {
+      const live = (navigator as { location?: Location }).location;
+      return !live || live.pathname === renderedPath;
+    };
   });
 
   const lastRef = useRef<NodeParamRun | null>(null);
@@ -125,10 +145,10 @@ export function useNodeParamSync(): void {
         break;
       case 'reject':
         missToast(action.value);
-        writeFromStore(setParamsRef.current);
+        writeFromStore(setParamsRef.current, stillHereRef.current);
         break;
       case 'write':
-        writeFromStore(setParamsRef.current);
+        writeFromStore(setParamsRef.current, stillHereRef.current);
         break;
       default:
         break;
@@ -154,7 +174,7 @@ export function useNodeParamSync(): void {
       pendingRef.current = null;
       setPending(null);
       missToast(pending);
-      writeFromStore(setParamsRef.current);
+      writeFromStore(setParamsRef.current, stillHereRef.current);
     }, NODE_PARAM_GRACE_MS);
     return () => clearTimeout(timer);
   }, [pending, hasGateway]);

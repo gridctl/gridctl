@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
-import { StrictMode, useEffect, useRef } from 'react';
+import { StrictMode, Suspense, lazy, useEffect, useRef } from 'react';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate, type NavigateFunction } from 'react-router';
 import {
   NODE_PARAM_GRACE_MS,
@@ -113,6 +113,7 @@ beforeEach(() => {
     missingSelection: null,
     draggedPositions: new Map(),
     positionsHydratedFor: null,
+    positionsCompact: null,
     expandedServers: new Set(),
     selectNode: originalSelectNode,
   });
@@ -410,6 +411,37 @@ describe('useNodeParamSync', () => {
     locations = [];
     act(() => useStackStore.getState().selectNode('mcp-a'));
     expect(locations).toEqual([]);
+  });
+
+  it('does not undo a workspace change that is still loading', async () => {
+    loadStatus();
+    let resolveChunk: (mod: { default: () => null }) => void = () => {};
+    const Lazy = lazy(
+      () => new Promise<{ default: () => null }>((resolve) => {
+        resolveChunk = resolve;
+      }),
+    );
+    render(
+      <MemoryRouter initialEntries={['/stack?node=mcp-a']}>
+        <Probe />
+        <Routes>
+          <Route path="/stack" element={<Suspense fallback={null}><Hook /></Suspense>} />
+          <Route path="/logs" element={<Suspense fallback={null}><Lazy /></Suspense>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(selected()).toBe('mcp-a');
+    act(() => {
+      navigateRef('/logs');
+    });
+    expect(url()).toBe('/stack?node=mcp-a');
+    act(() => useStackStore.getState().selectNode(null));
+    expect(url()).toBe('/stack?node=mcp-a');
+    await act(async () => {
+      resolveChunk({ default: () => null });
+      await Promise.resolve();
+    });
+    expect(url()).toBe('/logs');
   });
 
   describe('under StrictMode', () => {
