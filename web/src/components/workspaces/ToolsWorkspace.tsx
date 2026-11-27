@@ -640,6 +640,8 @@ export function ToolsWorkspace() {
         defaultRightPct={30}
         left={leftRail}
         right={rightRail}
+        leftKey={activeServerName}
+        rightKey={selectedRow ? `${activeServerName}${TOOL_NAME_DELIMITER}${selectedRow.name}` : null}
         minLeftPx={220}
         minRightPx={300}
       >

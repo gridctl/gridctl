@@ -893,6 +893,7 @@ export function LibraryWorkspace() {
         defaultRightPct={30}
         minRightPx={300}
         right={inspector}
+        rightKey={selectedSkillObj?.name ?? null}
       >
         <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
           <LibraryHeader

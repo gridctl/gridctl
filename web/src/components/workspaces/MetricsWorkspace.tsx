@@ -407,10 +407,13 @@ export function MetricsWorkspace() {
     focusNote = 'The chart shows the whole stack; per-client token series is not recorded.';
   }
 
+  const inspectorRow = scope === 'clients' || scope === 'servers' || scope === 'tools' ? selectedRow : null;
+  const inspectorRowKey = inspectorRow ? `${scope}:${inspectorRow.name}` : null;
+
   const inspector = (
     <MetricsInspector
       scope={inspectorScope}
-      row={scope === 'clients' || scope === 'servers' || scope === 'tools' ? selectedRow : null}
+      row={inspectorRow}
       onClose={() => setSelected(null)}
       tokenPoints={inspectorTokenPoints}
     />
@@ -442,6 +445,8 @@ export function MetricsWorkspace() {
         defaultRightPct={30}
         left={leftRail}
         right={inspector}
+        leftKey={scope}
+        rightKey={inspectorRowKey}
         minLeftPx={200}
         minRightPx={300}
       >

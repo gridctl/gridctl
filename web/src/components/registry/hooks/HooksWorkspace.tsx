@@ -164,6 +164,7 @@ export function HooksWorkspace({ onKindChange }: HooksWorkspaceProps) {
         workspace="library"
         defaultRightPct={30}
         minRightPx={300}
+        rightKey={selected?.name ?? null}
         right={(
           <HookDetailPanel
             key={selected?.name ?? 'none'}

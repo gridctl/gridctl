@@ -526,6 +526,7 @@ export function PinsWorkspace() {
           />
         }
         minLeftPx={220}
+        leftKey={activeName}
       >
         <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
           <WorkspaceHeader
