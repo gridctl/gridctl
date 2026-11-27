@@ -9,6 +9,7 @@ import { useNavigationGuardStore } from '../stores/useNavigationGuardStore';
 import { usePinsStore } from '../stores/usePinsStore';
 import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
 import { useUIStore } from '../stores/useUIStore';
+import { useToolCallHistoryStore } from '../stores/useToolCallHistoryStore';
 import { TOOL_NAME_DELIMITER } from '../lib/constants';
 import * as api from '../lib/api';
 import type { MCPServerStatus, Tool } from '../types';
@@ -1071,5 +1072,38 @@ describe('ToolsWorkspace — pin chip', () => {
     usePinsStore.setState({ pins: { [ATLAS]: pinEntry([]) } });
     renderAt('/tools?server=atlassian&tool=get_page');
     expect(screen.getByRole('link', { name: 'Pin status: Not in pin set. Open in Pins' })).toBeInTheDocument();
+  });
+});
+
+describe('ToolsWorkspace — Try it gating', () => {
+  beforeEach(() => {
+    useToolCallHistoryStore.setState({ byTool: {}, tryItOpen: true });
+  });
+
+  it('gates Run on the saved allow-list, not the draft', () => {
+    renderAt('/tools?server=github&tool=list_repos');
+    const run = screen.getByRole('button', { name: 'Run' });
+    expect(run).toBeDisabled();
+    const reason = document.getElementById(run.getAttribute('aria-describedby') ?? '');
+    expect(reason).toHaveTextContent('Not exposed. This tool is hidden by the saved allow-list for github');
+    // Checking the draft box without saving does not enable Run.
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+    expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled();
+    expect(
+      screen.getByText('Unsaved allow-list changes are not applied. Calls use the saved allow-list.'),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps Run enabled with a note when the draft hides an exposed tool', () => {
+    renderAt('/tools?server=github&tool=create_issue');
+    expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled();
+    expect(
+      screen.queryByText('Unsaved allow-list changes are not applied. Calls use the saved allow-list.'),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: /create_issue/i }));
+    expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled();
+    expect(
+      screen.getByText('Unsaved allow-list changes are not applied. Calls use the saved allow-list.'),
+    ).toBeInTheDocument();
   });
 });
