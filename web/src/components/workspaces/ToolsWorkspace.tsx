@@ -1762,63 +1762,62 @@ function GlobalResults({
         aria-label="Search results"
         className="space-y-1"
       >
-        {results.length === 0 ? (
-          <div className="py-10 text-center text-xs text-text-secondary">
-            No tools match "{query}" across any server.
-          </div>
-        ) : (
-          results.map((r, index) => {
-            const auditState = auditFor(r.server, r.tool);
-            const active = index === activeIndex;
-            return (
-              <button
-                key={`${r.server}${TOOL_NAME_DELIMITER}${r.tool}`}
-                type="button"
-                id={resultOptionId(listId, index)}
-                role="option"
-                aria-selected={active}
-                tabIndex={-1}
-                onClick={() => onPick(index)}
-                className={cn(
-                  'w-full flex items-start gap-2 px-3 py-2 rounded-md text-left bg-background/40 border border-border/30 hover:border-primary/40 hover:bg-surface-highlight/40 transition-colors',
-                  active && 'border-primary/40 bg-surface-highlight/40',
-                )}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-mono truncate">
-                    <span className="text-primary">{highlightMatches(r.server, query)}</span>
-                    <span className="text-text-muted mx-1">›</span>
-                    <span className="text-text-primary">{highlightMatches(r.tool, query)}</span>
-                  </div>
-                  {r.description && (
-                    <div className="text-3xs text-text-muted truncate mt-0.5">
-                      {highlightMatches(excerptAround(r.description, query), query)}
-                    </div>
-                  )}
-                  {auditState && (
-                    <div
-                      className={cn(
-                        'flex items-center gap-1 text-3xs mt-0.5',
-                        AUDIT_STYLES[auditState].text,
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          'inline-block w-1.5 h-1.5 rounded-full flex-shrink-0',
-                          AUDIT_STYLES[auditState].dot,
-                        )}
-                        aria-hidden="true"
-                      />
-                      <span>{AUDIT_STYLES[auditState].label}</span>
-                    </div>
-                  )}
+        {results.map((r, index) => {
+          const auditState = auditFor(r.server, r.tool);
+          const active = index === activeIndex;
+          return (
+            <button
+              key={`${r.server}${TOOL_NAME_DELIMITER}${r.tool}`}
+              type="button"
+              id={resultOptionId(listId, index)}
+              role="option"
+              aria-selected={active}
+              tabIndex={-1}
+              onClick={() => onPick(index)}
+              className={cn(
+                'w-full flex items-start gap-2 px-3 py-2 rounded-md text-left bg-background/40 border border-border/30 hover:border-primary/40 hover:bg-surface-highlight/40 transition-colors',
+                active && 'border-primary/40 bg-surface-highlight/40',
+              )}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-mono truncate">
+                  <span className="text-primary">{highlightMatches(r.server, query)}</span>
+                  <span className="text-text-muted mx-1">›</span>
+                  <span className="text-text-primary">{highlightMatches(r.tool, query)}</span>
                 </div>
-                <ChevronRight size={13} className="text-text-muted flex-shrink-0 mt-0.5" />
-              </button>
-            );
-          })
-        )}
+                {r.description && (
+                  <div className="text-3xs text-text-muted truncate mt-0.5">
+                    {highlightMatches(excerptAround(r.description, query), query)}
+                  </div>
+                )}
+                {auditState && (
+                  <div
+                    className={cn(
+                      'flex items-center gap-1 text-3xs mt-0.5',
+                      AUDIT_STYLES[auditState].text,
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'inline-block w-1.5 h-1.5 rounded-full flex-shrink-0',
+                        AUDIT_STYLES[auditState].dot,
+                      )}
+                      aria-hidden="true"
+                    />
+                    <span>{AUDIT_STYLES[auditState].label}</span>
+                  </div>
+                )}
+              </div>
+              <ChevronRight size={13} className="text-text-muted flex-shrink-0 mt-0.5" />
+            </button>
+          );
+        })}
       </div>
+      {results.length === 0 && (
+        <div className="py-10 text-center text-xs text-text-secondary">
+          No tools match "{query}" across any server.
+        </div>
+      )}
     </div>
   );
 }

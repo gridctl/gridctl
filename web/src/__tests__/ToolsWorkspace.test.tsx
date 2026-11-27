@@ -1267,6 +1267,37 @@ describe('ToolsWorkspace — global search navigation', () => {
     expect(screen.getByRole('option', { name: /get_page/ })).toBeInTheDocument();
   });
 
+  it('lists tool-name hits before description-only hits', () => {
+    const catalog = [
+      tool(`${ATLAS}${TOOL_NAME_DELIMITER}list_things`, 'List boards for a project with their columns and owners'),
+      tool(`${GITHUB}${TOOL_NAME_DELIMITER}get_board_items_by_name`, 'Fetch items'),
+      tool(`${GITHUB}${TOOL_NAME_DELIMITER}move_board`, 'Move an item'),
+    ];
+    useStackStore.setState({
+      mcpServers: [
+        server(GITHUB, ['get_board_items_by_name', 'move_board'], []),
+        server(ATLAS, ['list_things'], []),
+      ],
+      tools: catalog,
+      toolCatalog: catalog,
+    });
+    renderAt('/tools');
+    fireEvent.change(searchInput(), { target: { value: 'board' } });
+    const order = resultOptions().map((o) =>
+      ['list_things', 'get_board_items_by_name', 'move_board'].find((t) => o.textContent?.includes(t)),
+    );
+    expect(order).toHaveLength(3);
+    expect(order[2]).toBe('list_things');
+  });
+
+  it('renders the empty message outside the listbox', () => {
+    renderAt('/tools');
+    fireEvent.change(searchInput(), { target: { value: 'nothingmatchesthis' } });
+    const listbox = screen.getByRole('listbox', { name: /search results/i });
+    expect(listbox).toBeEmptyDOMElement();
+    expect(screen.getByText(/no tools match "nothingmatchesthis" across any server/i)).toBeInTheDocument();
+  });
+
   it('resolves aria-activedescendant for names containing whitespace', () => {
     const catalog = [tool(`my server${TOOL_NAME_DELIMITER}do thing`, 'Has spaces')];
     useStackStore.setState({
