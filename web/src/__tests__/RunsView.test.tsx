@@ -6,7 +6,7 @@ import { RunsView } from '../components/runs/RunsView';
 import { emptyFilters, useRunsStore } from '../stores/useRunsStore';
 import type { RunRecord, RunStatusResponse } from '../lib/api';
 
-vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
+vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn(), copyWithToast: vi.fn() }));
 
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
@@ -21,7 +21,9 @@ vi.mock('../lib/api', async () => {
 });
 
 import { HTTPError, fetchRuns, fetchRunsStatus, updateStackRuns, wipeRuns } from '../lib/api';
-import { showToast } from '../components/ui/Toast';
+import { copyWithToast, showToast } from '../components/ui/Toast';
+import { formatLocalDateTime } from '../lib/time';
+import { dispositionTone } from '../components/runs/DispositionBadge';
 
 const record: RunRecord = {
   schemaVersion: 1,
@@ -55,6 +57,13 @@ const status = (over: Partial<RunStatusResponse> = {}): RunStatusResponse => ({
   inventory: { stack: 'demo', signal: 'runs', path: '/tmp', sizeBytes: 10, fileCount: 1 },
   ...over,
 });
+
+const header = () => screen.getByRole('group', { name: 'Run recording' });
+
+async function openSettings() {
+  fireEvent.click(await screen.findByRole('button', { name: 'Recording settings' }));
+  return screen.getByRole('dialog', { name: 'Recording settings' });
+}
 
 describe('RunsView', () => {
   beforeEach(() => {
@@ -121,7 +130,7 @@ describe('RunsView', () => {
     );
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('boom'));
     expect(screen.getByRole('alert')).toHaveTextContent('Run history unavailable');
-    expect(screen.queryByText(/No matching run records/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No run records/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(fetchRuns).toHaveBeenCalledTimes(2));
   });
@@ -151,8 +160,8 @@ describe('RunsView', () => {
         <RunsView servers={[]} />
       </MemoryRouter>,
     );
-    await waitFor(() => expect(screen.getByRole('button', { name: /enable recording/i })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /enable recording/i }));
+    await waitFor(() => expect(within(header()).getByRole('button', { name: /enable recording/i })).toBeInTheDocument());
+    fireEvent.click(within(header()).getByRole('button', { name: /enable recording/i }));
     expect(screen.getByText(/Metadata only/)).toBeInTheDocument();
     expect(screen.getByText(/Seven days and 100 MiB/)).toBeInTheDocument();
     const dialog = screen.getByRole('alertdialog', { name: /enable run recording/i });
@@ -162,7 +171,7 @@ describe('RunsView', () => {
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(updateStackRuns).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: /enable recording/i }));
+    fireEvent.click(within(header()).getByRole('button', { name: /enable recording/i }));
     fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^enable$/i }));
     await waitFor(() => expect(updateStackRuns).toHaveBeenCalledWith({ enabled: true }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
@@ -177,8 +186,8 @@ describe('RunsView', () => {
         <RunsView servers={[]} />
       </MemoryRouter>,
     );
-    await waitFor(() => expect(screen.getByRole('button', { name: /enable recording/i })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /enable recording/i }));
+    await waitFor(() => expect(within(header()).getByRole('button', { name: /enable recording/i })).toBeInTheDocument());
+    fireEvent.click(within(header()).getByRole('button', { name: /enable recording/i }));
     fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^enable$/i }));
     const dialog = await screen.findByRole('alertdialog', { name: /enable run recording/i });
     expect(dialog).toHaveTextContent('recorder unavailable');
@@ -217,8 +226,10 @@ describe('RunsView', () => {
         <RunsView servers={['github']} />
       </MemoryRouter>,
     );
-    await waitFor(() => expect(screen.getByText(/Loss queue_full: 3/)).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /wipe history/i }));
+    await waitFor(() => expect(screen.getByText('3 records not saved (queue_full: 3)')).toBeInTheDocument());
+    expect(screen.getByText('3 records not saved (queue_full: 3)')).toHaveAttribute('role', 'status');
+    fireEvent.click(within(await openSettings()).getByRole('button', { name: /wipe history/i }));
+    expect(screen.queryByRole('dialog', { name: 'Recording settings' })).not.toBeInTheDocument();
     expect(wipeRuns).not.toHaveBeenCalled();
     const dialog = screen.getByRole('alertdialog');
     expect(dialog).toHaveTextContent(/demo/);
@@ -227,7 +238,7 @@ describe('RunsView', () => {
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(wipeRuns).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: /wipe history/i }));
+    fireEvent.click(within(await openSettings()).getByRole('button', { name: /wipe history/i }));
     fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /wipe history/i }));
     await waitFor(() => expect(wipeRuns).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/partial/i));
@@ -240,8 +251,8 @@ describe('RunsView', () => {
         <RunsView servers={['github']} />
       </MemoryRouter>,
     );
-    await waitFor(() => expect(screen.getByRole('button', { name: /wipe history/i })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /wipe history/i }));
+    fireEvent.click(within(await openSettings()).getByRole('button', { name: /wipe history/i }));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(wipeRuns).not.toHaveBeenCalled();
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
@@ -305,7 +316,7 @@ describe('RunsView', () => {
     const grid = await screen.findByRole('grid', { name: 'Run records' });
     fireEvent.keyDown(document.body, { key: 'ArrowDown' });
     expect(grid).toHaveAttribute('aria-activedescendant', 'run-row-a1');
-    const save = screen.getByRole('button', { name: 'Save retention' });
+    const save = within(await openSettings()).getByRole('button', { name: 'Save retention' });
     save.focus();
     expect(fireEvent.keyDown(save, { key: 'Enter' })).toBe(true);
     expect(screen.queryByLabelText('Run detail')).not.toBeInTheDocument();
@@ -320,7 +331,7 @@ describe('RunsView', () => {
     await screen.findByRole('grid', { name: 'Run records' });
     fireEvent.click(screen.getByText(/github › create_issue/));
     expect(screen.getByLabelText('Run detail')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /wipe history/i }));
+    fireEvent.click(within(await openSettings()).getByRole('button', { name: /wipe history/i }));
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
@@ -338,7 +349,8 @@ describe('RunsView', () => {
         <RunsView servers={['github']} />
       </MemoryRouter>,
     );
-    await waitFor(() => expect(screen.getByRole('button', { name: /wipe history/i })).toBeInTheDocument());
+    const settings = await openSettings();
+    expect(within(settings).getByRole('button', { name: /wipe history/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /disable recording/i })).not.toBeInTheDocument();
     expect(screen.queryByText('Omit caller labels')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Retention max age days')).toHaveValue('3');
@@ -350,7 +362,7 @@ describe('RunsView', () => {
       expect(updateStackRuns).toHaveBeenCalledWith({ retention: { max_age_days: 3, max_size_mb: 50 } }),
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /wipe history/i }));
+    fireEvent.click(within(settings).getByRole('button', { name: /wipe history/i }));
     fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /wipe history/i }));
     await waitFor(() => expect(wipeRuns).toHaveBeenCalledTimes(1));
   });
@@ -365,7 +377,8 @@ describe('RunsView', () => {
         <RunsView servers={[]} />
       </MemoryRouter>,
     );
-    await waitFor(() => expect(screen.getByRole('button', { name: /enable recording/i })).toBeInTheDocument());
+    await waitFor(() => expect(within(header()).getByRole('button', { name: /enable recording/i })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Recording settings' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /wipe history/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Retention max age days')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Retention max size mebibytes')).not.toBeInTheDocument();
@@ -377,6 +390,7 @@ describe('RunsView', () => {
         <RunsView servers={['github']} />
       </MemoryRouter>,
     );
+    await openSettings();
     const age = await screen.findByLabelText('Retention max age days');
     fireEvent.change(age, { target: { value } });
     fireEvent.click(screen.getByRole('button', { name: 'Save retention' }));
@@ -392,6 +406,7 @@ describe('RunsView', () => {
         <RunsView servers={['github']} />
       </MemoryRouter>,
     );
+    await openSettings();
     const size = await screen.findByLabelText('Retention max size mebibytes');
     fireEvent.change(size, { target: { value } });
     fireEvent.click(screen.getByRole('button', { name: 'Save retention' }));
@@ -407,6 +422,7 @@ describe('RunsView', () => {
         <RunsView servers={['github']} />
       </MemoryRouter>,
     );
+    await openSettings();
     const age = await screen.findByLabelText('Retention max age days');
     const size = screen.getByLabelText('Retention max size mebibytes');
     fireEvent.change(age, { target: { value: '14' } });
@@ -431,6 +447,7 @@ describe('RunsView', () => {
         <RunsView servers={['github']} />
       </MemoryRouter>,
     );
+    await openSettings();
     await screen.findByLabelText('Retention max age days');
     fireEvent.click(screen.getByRole('button', { name: 'Save retention' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('stack validation failed after runs patch');
@@ -452,18 +469,17 @@ describe('RunsView', () => {
     expect(screen.getByText(/github › create_issue/)).toBeInTheDocument();
     expect(screen.getByRole('grid', { name: 'Run records' })).toBeInTheDocument();
     expect(screen.queryByText('Run history unavailable')).not.toBeInTheDocument();
-    expect(screen.getByText(/History: refresh failed/)).toBeInTheDocument();
+    expect(screen.queryByText(/History:/)).not.toBeInTheDocument();
 
     let resolveRetry: (value: Awaited<ReturnType<typeof fetchRuns>>) => void = () => {};
     vi.mocked(fetchRuns).mockReturnValue(new Promise((resolve) => { resolveRetry = resolve; }));
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(screen.getByText(/History: refresh failed/)).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('runs store offline');
     await act(async () => {
       resolveRetry({ records: [record], warnings: [], partial: false, wipeEpoch: 0 });
     });
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
-    expect(screen.getByText(/History: readable/)).toBeInTheDocument();
+    expect(screen.queryByText(/History:/)).not.toBeInTheDocument();
   });
 
   it('shows the full failed state when a refresh of an empty history fails', async () => {
@@ -473,13 +489,12 @@ describe('RunsView', () => {
         <RunsView servers={['github']} />
       </MemoryRouter>,
     );
-    await waitFor(() => expect(screen.getByText(/History: readable/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('No run records to show')).toBeInTheDocument());
     vi.mocked(fetchRuns).mockRejectedValue(new Error('runs store offline'));
     fireEvent.click(screen.getByRole('button', { name: 'Refresh run records' }));
 
     await waitFor(() => expect(screen.getByText('Run history unavailable')).toBeInTheDocument());
     expect(screen.getByText('runs store offline')).toBeInTheDocument();
-    expect(screen.getByText(/History: refresh failed/)).toBeInTheDocument();
     expect(screen.queryByRole('grid', { name: 'Run records' })).not.toBeInTheDocument();
   });
 
@@ -489,6 +504,7 @@ describe('RunsView', () => {
         <RunsView servers={['github']} />
       </MemoryRouter>,
     );
+    await openSettings();
     const age = await screen.findByLabelText('Retention max age days');
     fireEvent.change(age, { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save retention' }));
@@ -574,8 +590,7 @@ describe('RunsView', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Run history unavailable');
     expect(alert).toHaveTextContent('disk read failed');
-    expect(screen.queryByText(/No matching run records/)).not.toBeInTheDocument();
-    expect(screen.getByText(/History: unreadable/)).toBeInTheDocument();
+    expect(screen.queryByText(/No run records/)).not.toBeInTheDocument();
   });
 
   it('does not show rows from other filters after a failed filter change', async () => {
@@ -596,6 +611,365 @@ describe('RunsView', () => {
     expect(screen.queryByText(/github › create_issue/)).not.toBeInTheDocument();
     expect(screen.queryByRole('grid', { name: 'Run records' })).not.toBeInTheDocument();
     expect(useRunsStore.getState().hasLoaded).toBe(false);
+  });
+});
+
+
+describe('RunsView header, rows, detail, and empty state', () => {
+  beforeEach(() => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: (query: string) => ({
+        matches: false,
+        media: query,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+        addListener: () => undefined,
+        removeListener: () => undefined,
+        dispatchEvent: () => false,
+      }),
+    });
+    useRunsStore.setState({
+      records: [],
+      warnings: [],
+      partial: false,
+      status: null,
+      isLoading: false,
+      hasLoaded: false,
+      loadedFilters: null,
+      error: null,
+      errorStatus: null,
+      appendFailed: false,
+      selectedId: null,
+      filters: emptyFilters(),
+      nextCursor: null,
+      statusError: null,
+      mutationError: null,
+      loadSeq: 0,
+    });
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [record], warnings: [], partial: false, wipeEpoch: 0 });
+    vi.mocked(fetchRunsStatus).mockResolvedValue(status());
+    vi.mocked(updateStackRuns).mockReset();
+    vi.mocked(wipeRuns).mockReset();
+    vi.mocked(copyWithToast).mockReset();
+  });
+
+  const renderRuns = (props: Partial<Parameters<typeof RunsView>[0]> = {}) =>
+    render(
+      <MemoryRouter>
+        <RunsView servers={['github']} {...props} />
+      </MemoryRouter>,
+    );
+
+  const empty = { inventory: { stack: 'demo', signal: 'runs', path: '', sizeBytes: 0, fileCount: 0 } };
+
+  it('states where records go and hides writer and history labels', async () => {
+    vi.mocked(fetchRunsStatus).mockResolvedValue(
+      status({ inventory: { stack: 'demo', signal: 'runs', path: '/home/u/.gridctl/runs/demo/runs.jsonl', sizeBytes: 2048, fileCount: 2 } }),
+    );
+    renderRuns();
+    await waitFor(() => expect(header()).toHaveTextContent('Recording to'));
+    expect(within(header()).getByText('/home/u/.gridctl/runs/demo/runs.jsonl')).toHaveAttribute(
+      'title',
+      '/home/u/.gridctl/runs/demo/runs.jsonl',
+    );
+    expect(header()).toHaveTextContent('2.0 KiB in 2 files');
+    expect(screen.queryByText(/Writer:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/History:/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Records are saved after dispatch attempts return.')).not.toBeInTheDocument();
+  });
+
+  it('shows a checking line before the status loads', async () => {
+    vi.mocked(fetchRunsStatus).mockReturnValue(new Promise(() => {}));
+    renderRuns();
+    expect(header()).toHaveTextContent('Checking recording status…');
+  });
+
+  it('reports a failed status request', async () => {
+    vi.mocked(fetchRunsStatus).mockRejectedValue(new Error('no status'));
+    renderRuns();
+    const line = await screen.findByText('Recording status unavailable');
+    expect(line).toHaveAttribute('role', 'status');
+  });
+
+  it('says recording is off and states retained size', async () => {
+    vi.mocked(fetchRunsStatus).mockResolvedValue(
+      status({ enabled: false, effective: false, inventory: { stack: 'demo', signal: 'runs', path: '/p', sizeBytes: 3072, fileCount: 1 } }),
+    );
+    renderRuns();
+    await waitFor(() => expect(header()).toHaveTextContent('Recording is off'));
+    expect(header()).toHaveTextContent('3.0 KiB of earlier records kept on disk');
+  });
+
+  it('says recording is off without a size when nothing is retained', async () => {
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [], warnings: [], partial: false, wipeEpoch: 0 });
+    vi.mocked(fetchRunsStatus).mockResolvedValue(status({ enabled: false, effective: false, ...empty }));
+    renderRuns();
+    await waitFor(() => expect(header()).toHaveTextContent('Recording is off'));
+    expect(header()).not.toHaveTextContent('kept on disk');
+  });
+
+  it('flags a recorder that is on but not saving', async () => {
+    vi.mocked(fetchRunsStatus).mockResolvedValue(status({ effective: false, writer_health: 'degraded' }));
+    renderRuns();
+    const line = await screen.findByText('Recording is on, but records are not being saved (writer degraded)');
+    expect(line).toHaveAttribute('role', 'status');
+    expect(line).toHaveClass('text-status-error');
+  });
+
+  it('shows partial reads and never says unknown or readable', async () => {
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [record], warnings: [], partial: true, wipeEpoch: 0 });
+    vi.mocked(fetchRunsStatus).mockResolvedValue(status({ writer_health: '', failures: { write_error: 2 } }));
+    renderRuns();
+    const partialLine = await screen.findByText('Some records could not be read');
+    expect(partialLine).toHaveAttribute('role', 'status');
+    expect(screen.getByText('2 records not saved (write_error: 2)')).toHaveAttribute('role', 'status');
+    expect(screen.queryByText(/Writer: unknown/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/History: readable/)).not.toBeInTheDocument();
+  });
+
+  it('counts a failure that shares a drop code once', async () => {
+    vi.mocked(fetchRunsStatus).mockResolvedValue(status({ drops: { queue_full: 1 }, failures: { queue_full: 1 } }));
+    renderRuns();
+    expect(await screen.findByText('1 record not saved (queue_full: 1)')).toBeInTheDocument();
+  });
+
+  it('opens About with every note and returns focus on Escape', async () => {
+    renderRuns();
+    const about = await screen.findByRole('button', { name: 'About run records' });
+    expect(about).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(about);
+    expect(about).toHaveAttribute('aria-expanded', 'true');
+    const dialog = screen.getByRole('dialog', { name: 'About run records' });
+    expect(dialog).toHaveTextContent('Records are saved after dispatch attempts return.');
+    expect(dialog).toHaveTextContent('Metadata only.');
+    expect(dialog).toHaveTextContent('Seven days and 100 MiB.');
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'About run records' })).not.toBeInTheDocument();
+    expect(about).toHaveAttribute('aria-expanded', 'false');
+    expect(document.activeElement).toBe(about);
+  });
+
+  it('puts retention, caller labels, and wipe in Recording settings', async () => {
+    vi.mocked(wipeRuns).mockResolvedValue({ success: true, partial: false, recordingEnabled: true, scope: 'demo' });
+    renderRuns();
+    const trigger = await screen.findByRole('button', { name: 'Recording settings' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByLabelText('Retention max age days')).not.toBeInTheDocument();
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const settings = screen.getByRole('dialog', { name: 'Recording settings' });
+    expect(within(settings).getByLabelText('Retention max age days')).toBeInTheDocument();
+    expect(within(settings).getByLabelText('Retention max size mebibytes')).toBeInTheDocument();
+    expect(within(settings).getByRole('button', { name: 'Save retention' })).toBeInTheDocument();
+    expect(within(settings).getByText('Omit caller labels')).toBeInTheDocument();
+    fireEvent.click(within(settings).getByRole('button', { name: 'Wipe history' }));
+    expect(screen.queryByRole('dialog', { name: 'Recording settings' })).not.toBeInTheDocument();
+    const confirm = screen.getByRole('alertdialog', { name: /wipe run history/i });
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Wipe history' }));
+    await waitFor(() => expect(wipeRuns).toHaveBeenCalledTimes(1));
+  });
+
+  it('renders local time, a formatted duration, and a toned badge per row', async () => {
+    const slow: RunRecord = { ...record, attemptId: 'a2', sequence: 2, durationMs: 1500, disposition: 'tool_error' };
+    const denied: RunRecord = { ...record, attemptId: 'a3', sequence: 3, durationMs: 3, disposition: 'denied' };
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [record, slow, denied], warnings: [], partial: false, wipeEpoch: 0 });
+    renderRuns();
+    const grid = await screen.findByRole('grid', { name: 'Run records' });
+    const rows = within(grid).getAllByRole('row').slice(1);
+    const cells = Array.from(rows[0].querySelectorAll('td'));
+    const time = cells[0];
+    expect(time).toHaveAttribute('title', record.returnedAt);
+    expect(time.textContent).toBe(formatLocalDateTime(record.returnedAt));
+    expect(time.textContent).not.toBe(record.returnedAt);
+    expect(rows[0]).toHaveTextContent('12ms');
+    expect(rows[1]).toHaveTextContent('1.50s');
+    const badge = (row: HTMLElement, text: string) => within(row).getByText(text);
+    const done = badge(rows[0], 'completed');
+    const failed = badge(rows[1], 'tool_error');
+    const refused = badge(rows[2], 'denied');
+    expect(done.className).not.toBe(failed.className);
+    expect(failed.className).not.toBe(refused.className);
+    expect(done.className).not.toBe(refused.className);
+  });
+
+  it('titles the target cell with a requested name that differs', async () => {
+    renderRuns();
+    const cell = await screen.findByText('github › create_issue');
+    expect(cell).toHaveAttribute('title', 'github__create_issue');
+  });
+
+  it('lists every recorded field in the detail', async () => {
+    const full: RunRecord = {
+      ...record,
+      parentAttemptId: 'p1',
+      rootAttemptId: 'root1',
+      previousAttemptId: 'prev1',
+      downstreamDurationMs: 0,
+      replicaId: 0,
+      traceId: 'trace-abc',
+      clientLabel: 'cli',
+      accessLabel: 'ops',
+      recorderInstanceId: 'rec-9',
+      sequence: 42,
+    };
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [full], warnings: [], partial: false, wipeEpoch: 0 });
+    renderRuns({ onViewTrace: vi.fn(), onViewLogs: vi.fn() });
+    fireEvent.click(await screen.findByText('github › create_issue'));
+    const detail = screen.getByRole('complementary', { name: 'Run detail' });
+    for (const label of ['Started', 'Returned', 'Duration', 'Downstream', 'Replica', 'Attempt', 'Trace', 'Parent', 'Root', 'Previous', 'Client', 'Access', 'Sequence', 'Recorder instance', 'Schema version', 'Stage', 'Reason']) {
+      expect(within(detail).getByText(label)).toBeInTheDocument();
+    }
+    for (const value of ['a1', 'trace-abc', 'p1', 'root1', 'prev1', 'cli', 'ops', '42', 'rec-9', '0ms']) {
+      expect(within(detail).getAllByText(value).length).toBeGreaterThan(0);
+    }
+    expect(within(detail).getByTitle(full.startedAt)).toHaveTextContent(formatLocalDateTime(full.startedAt));
+    expect(within(detail).getByText('Replica').closest('tr')).toHaveTextContent('0');
+    expect(within(detail).getByText('Parent record is unavailable, not still running.')).toBeInTheDocument();
+  });
+
+  it('shows none and not recorded for absent fields', async () => {
+    renderRuns();
+    fireEvent.click(await screen.findByText('github › create_issue'));
+    const detail = screen.getByRole('complementary', { name: 'Run detail' });
+    expect(within(detail).getByText('Parent').closest('tr')).toHaveTextContent('none');
+    expect(within(detail).getByText('Previous').closest('tr')).toHaveTextContent('none');
+    expect(within(detail).getByText('Root').closest('tr')).toHaveTextContent('a1');
+    expect(within(detail).getByText('Client').closest('tr')).toHaveTextContent('not recorded');
+    expect(within(detail).queryByText('Replica')).not.toBeInTheDocument();
+    expect(within(detail).queryByText('Downstream')).not.toBeInTheDocument();
+    expect(within(detail).queryByText('Parent record is unavailable, not still running.')).not.toBeInTheDocument();
+  });
+
+  it('marks omitted target names', async () => {
+    const omitted: RunRecord = { ...record, requestedName: undefined, requestedNameOmitted: 'too_long' };
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [omitted], warnings: [], partial: false, wipeEpoch: 0 });
+    renderRuns();
+    fireEvent.click(await screen.findByText('github › create_issue'));
+    expect(screen.getByText('omitted (too_long)')).toBeInTheDocument();
+  });
+
+  it('copies IDs through the toast path', async () => {
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [{ ...record, traceId: 'trace-abc' }], warnings: [], partial: false, wipeEpoch: 0 });
+    renderRuns();
+    fireEvent.click(await screen.findByText('github › create_issue'));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy attempt ID' }));
+    expect(copyWithToast).toHaveBeenCalledWith('a1', 'Attempt ID');
+    fireEvent.click(screen.getByRole('button', { name: 'Copy trace ID' }));
+    expect(copyWithToast).toHaveBeenCalledWith('trace-abc', 'Trace ID');
+    expect(screen.getByRole('button', { name: 'Copy root ID' })).toBeInTheDocument();
+  });
+
+  it('selects a loaded parent and lists nested attempts with badges', async () => {
+    const parent: RunRecord = { ...record, attemptId: 'p1', sequence: 2, requestedName: 'call_tool', resolvedServer: undefined, resolvedTool: undefined };
+    const child: RunRecord = { ...record, parentAttemptId: 'p1', disposition: 'tool_error' };
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [child, parent], warnings: [], partial: false, wipeEpoch: 0 });
+    renderRuns();
+    fireEvent.click(await screen.findByText('github › create_issue'));
+    let detail = screen.getByRole('complementary', { name: 'Run detail' });
+    fireEvent.click(within(detail).getByRole('button', { name: 'p1' }));
+    expect(useRunsStore.getState().selectedId).toBe('p1');
+    detail = screen.getByRole('complementary', { name: 'Run detail' });
+    const nested = within(detail).getByText('Nested attempts').closest('section')!;
+    expect(within(nested).getByRole('button', { name: 'github__create_issue' })).toBeInTheDocument();
+    expect(within(nested).getByText('tool_error')).toBeInTheDocument();
+  });
+
+  it('closes with the button and returns focus to the grid', async () => {
+    renderRuns();
+    fireEvent.click(await screen.findByText('github › create_issue'));
+    fireEvent.click(screen.getByRole('button', { name: 'Close run detail' }));
+    expect(screen.queryByLabelText('Run detail')).not.toBeInTheDocument();
+    expect(useRunsStore.getState().selectedId).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('grid', { name: 'Run records' }));
+  });
+
+  it('closes only an open popover on Escape, then the detail', async () => {
+    renderRuns();
+    fireEvent.click(await screen.findByText('github › create_issue'));
+    fireEvent.click(screen.getByRole('button', { name: 'About run records' }));
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'About run records' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Run detail')).toBeInTheDocument();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(screen.queryByLabelText('Run detail')).not.toBeInTheDocument();
+  });
+
+  it('links a sampled run to its trace and logs', async () => {
+    const onViewTrace = vi.fn();
+    const onViewLogs = vi.fn();
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [{ ...record, traceId: 'trace-abc' }], warnings: [], partial: false, wipeEpoch: 0 });
+    renderRuns({ onViewTrace, onViewLogs });
+    fireEvent.click(await screen.findByText('github › create_issue'));
+    fireEvent.click(screen.getByRole('button', { name: 'View trace' }));
+    expect(onViewTrace).toHaveBeenCalledWith('trace-abc');
+    fireEvent.click(screen.getByRole('button', { name: 'View logs' }));
+    expect(onViewLogs).toHaveBeenCalledWith('trace-abc');
+    expect(screen.queryByText('No trace was sampled for this run.')).not.toBeInTheDocument();
+  });
+
+  it('says no trace was sampled for a run without one', async () => {
+    renderRuns({ onViewTrace: vi.fn(), onViewLogs: vi.fn() });
+    fireEvent.click(await screen.findByText('github › create_issue'));
+    expect(screen.getByText('No trace was sampled for this run.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View trace' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View logs' })).not.toBeInTheDocument();
+  });
+
+  it('explains run records and offers Enable when recording is off', async () => {
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [], warnings: [], partial: false, wipeEpoch: 0 });
+    vi.mocked(fetchRunsStatus).mockResolvedValue(status({ enabled: false, effective: false, ...empty }));
+    renderRuns();
+    const body = (await screen.findByText('Run recording is off')).closest('[role="status"]') as HTMLElement;
+    expect(body).toHaveTextContent(/Metrics are aggregate counts and traces are sampled timing/);
+    expect(within(body).getByText('runs.enabled: true').tagName).toBe('CODE');
+    fireEvent.click(within(body).getByRole('button', { name: 'Enable recording' }));
+    const dialog = screen.getByRole('alertdialog', { name: /enable run recording/i });
+    expect(dialog).toHaveTextContent('Metadata only.');
+    expect(dialog).toHaveTextContent('Seven days and 100 MiB.');
+  });
+
+  it('notes earlier records when recording is off with history retained', async () => {
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [], warnings: [], partial: false, wipeEpoch: 0 });
+    vi.mocked(fetchRunsStatus).mockResolvedValue(status({ enabled: false, effective: false }));
+    renderRuns();
+    const body = (await screen.findByText('No run records to show')).closest('[role="status"]') as HTMLElement;
+    expect(body).toHaveTextContent('Recording is off. Earlier records are still on disk.');
+    expect(within(body).getByRole('button', { name: 'Enable recording' })).toBeInTheDocument();
+  });
+
+  it('offers Clear filters when a filter matches nothing', async () => {
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [], warnings: [], partial: false, wipeEpoch: 0 });
+    useRunsStore.setState({ filters: { ...emptyFilters(), disposition: 'denied' } });
+    renderRuns();
+    const body = (await screen.findByText('No run records match your filters')).closest('[role="status"]') as HTMLElement;
+    fireEvent.click(within(body).getByRole('button', { name: 'Clear filters' }));
+    expect(useRunsStore.getState().filters).toEqual(emptyFilters());
+  });
+
+  it('says no records yet while recording with nothing retained', async () => {
+    vi.mocked(fetchRuns).mockResolvedValue({ records: [], warnings: [], partial: false, wipeEpoch: 0 });
+    vi.mocked(fetchRunsStatus).mockResolvedValue(status(empty));
+    renderRuns();
+    const body = (await screen.findByText('No run records yet')).closest('[role="status"]') as HTMLElement;
+    vi.mocked(fetchRuns).mockClear();
+    fireEvent.click(within(body).getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(fetchRuns).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe('dispositionTone', () => {
+  it('tones success, failure, refusal, and anything else', () => {
+    expect(dispositionTone('completed')).toContain('status-running');
+    for (const d of ['tool_error', 'routing_failed', 'transport_error', 'timeout']) {
+      expect(dispositionTone(d)).toContain('status-error');
+    }
+    for (const d of ['denied', 'retry_rejected']) {
+      expect(dispositionTone(d)).toContain('status-pending');
+    }
+    for (const d of ['cancelled', 'input_required', 'something_new', 'constructor']) {
+      expect(dispositionTone(d)).toContain('text-text-muted');
+    }
   });
 });
 
