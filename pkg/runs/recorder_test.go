@@ -300,6 +300,110 @@ func TestOfflineWipeRefusesForeignDaemon(t *testing.T) {
 	}
 }
 
+func TestWipeStackInProcess_DeletesWithLiveStateFile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GRIDCTL_HOME", "")
+	if err := state.Save(&state.DaemonState{
+		StackName: "owned",
+		PID:       os.Getpid(),
+		Port:      1,
+		StartedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := Dir("owned")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "runs.jsonl")
+	if err := os.WriteFile(path, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WipeStack(context.Background(), "owned"); err != ErrActiveWriter {
+		t.Fatalf("offline wipe got %v, want ErrActiveWriter", err)
+	}
+	if err := WipeStackInProcess(context.Background(), "owned"); err != nil {
+		t.Fatalf("in-process wipe: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("run file still present: %v", err)
+	}
+	if err := WipeStackInProcess(context.Background(), "owned"); err != nil {
+		t.Fatalf("wipe of missing history: %v", err)
+	}
+}
+
+func TestWipeStackInProcess_RoutesThroughRecorder(t *testing.T) {
+	dir := t.TempDir()
+	r, err := NewRecorder(Config{
+		Enabled: true, Dir: dir, MaxBytes: 1 << 20, MaxAge: time.Hour,
+		QueueSize: 32, SyncInterval: 20 * time.Millisecond, ShutdownDrain: time.Second,
+	}, discardLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	RegisterActive("inproc-wipe", r)
+	defer UnregisterActive("inproc-wipe")
+
+	pre := r.Begin(context.Background(), "pre__wipe")
+	pre.SetOutcome(DispositionCompleted, StageDownstream, ReasonOK)
+	pre.Finish()
+	waitRecords(t, dir, 1)
+	epoch := r.WipeEpoch()
+	if err := WipeStackInProcess(context.Background(), "inproc-wipe"); err != nil {
+		t.Fatal(err)
+	}
+	if r.WipeEpoch() == epoch {
+		t.Fatal("wipe did not go through the recorder barrier")
+	}
+	post := r.Begin(context.Background(), "post__wipe")
+	post.SetOutcome(DispositionCompleted, StageDownstream, ReasonOK)
+	post.Finish()
+	res := waitRecords(t, dir, 1)
+	for _, rec := range res.Records {
+		if rec.RequestedName == "pre__wipe" {
+			t.Fatal("pre-wipe record survived")
+		}
+	}
+	if res.Records[0].RequestedName != "post__wipe" {
+		t.Fatalf("got %q, want post__wipe", res.Records[0].RequestedName)
+	}
+}
+
+func TestWipeStackInProcess_DisabledRegisteredRecorder(t *testing.T) {
+	dir := t.TempDir()
+	r, err := NewActiveRecorder(Config{
+		Enabled: true, StackName: "inproc-disabled", Dir: dir, MaxBytes: 1 << 20, MaxAge: time.Hour,
+		QueueSize: 32, SyncInterval: 20 * time.Millisecond, ShutdownDrain: time.Second,
+	}, discardLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer UnregisterActive("inproc-disabled")
+	if activeRecorder("inproc-disabled") != r {
+		t.Fatal("NewActiveRecorder did not register the recorder")
+	}
+
+	pre := r.Begin(context.Background(), "pre__wipe")
+	pre.SetOutcome(DispositionCompleted, StageDownstream, ReasonOK)
+	pre.Finish()
+	waitRecords(t, dir, 1)
+	if err := r.Apply(Config{Enabled: false, StackName: "inproc-disabled", Dir: dir}); err != nil {
+		t.Fatal(err)
+	}
+	if err := WipeStackInProcess(context.Background(), "inproc-disabled"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "runs.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("run file still present: %v", err)
+	}
+}
+
 func TestNewRecorder_OpenFailureStaysEnabledDegraded(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "not-a-dir")
 	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {

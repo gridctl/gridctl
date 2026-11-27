@@ -1530,13 +1530,12 @@ func (b *GatewayBuilder) applyRuns(gateway *mcp.Gateway, server *api.Server, sta
 	}
 	cfg := runsRuntimeConfig(stack)
 	if b.runRecorder == nil && cfg.Enabled {
-		rec, err := runs.NewRecorder(cfg, logger)
+		rec, err := runs.NewActiveRecorder(cfg, logger)
 		if err != nil {
 			logger.Warn("run recorder failed to start; dispatch continues without recording", "error", err)
 		} else {
 			b.runRecorder = rec
 			b.runStack = cfg.StackName
-			runs.RegisterActive(cfg.StackName, rec)
 		}
 	} else if b.runRecorder != nil {
 		if b.runStack != cfg.StackName && b.runStack != "" {

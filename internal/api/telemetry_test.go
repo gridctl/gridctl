@@ -521,3 +521,43 @@ func TestHandleDeleteTelemetry_DeletesScopedFiles(t *testing.T) {
 	_, err = os.Stat(filepath.Join(srvDir, "traces.jsonl"))
 	assert.NoError(t, err)
 }
+
+func TestHandleDeleteTelemetry_RunsOnDisabledDaemon(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GRIDCTL_HOME", "")
+	path := seedDisabledDaemon(t, "demo")
+
+	s := &Server{stackName: "demo"}
+	w := httptest.NewRecorder()
+	s.handleDeleteTelemetry(w, loopbackRequest(http.MethodDelete, "/api/telemetry?signal=runs", nil))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var resp telemetryPatchResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.True(t, resp.Success)
+	_, err := os.Stat(path)
+	assert.True(t, os.IsNotExist(err), "run file still present")
+}
+
+func TestHandleDeleteTelemetry_FullWipeOnDisabledDaemon(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GRIDCTL_HOME", "")
+	stackName := "demo"
+	runPath := seedDisabledDaemon(t, stackName)
+	srvDir := filepath.Join(home, ".gridctl", "telemetry", stackName, "github")
+	require.NoError(t, os.MkdirAll(srvDir, 0o700))
+	for _, sig := range []string{"logs", "metrics", "traces"} {
+		require.NoError(t, os.WriteFile(filepath.Join(srvDir, sig+".jsonl"), []byte("{}\n"), 0o600))
+	}
+
+	s := &Server{stackName: stackName}
+	w := httptest.NewRecorder()
+	s.handleDeleteTelemetry(w, loopbackRequest(http.MethodDelete, "/api/telemetry", nil))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	for _, sig := range []string{"logs", "metrics", "traces"} {
+		_, err := os.Stat(filepath.Join(srvDir, sig+".jsonl"))
+		assert.True(t, os.IsNotExist(err), "expected %s gone", sig)
+	}
+	_, err := os.Stat(runPath)
+	assert.True(t, os.IsNotExist(err), "run file still present")
+}

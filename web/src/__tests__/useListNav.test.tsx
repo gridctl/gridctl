@@ -242,6 +242,47 @@ describe('useListNav', () => {
       expect(onEnter).not.toHaveBeenCalled();
     });
 
+    it('leaves Enter on a focused link, summary, or role=button alone', () => {
+      const onEnter = vi.fn();
+      render(
+        <>
+          <Harness onEnter={onEnter} />
+          <a href="#x" data-testid="link">link</a>
+          <details>
+            <summary data-testid="summary">more</summary>
+          </details>
+          <div role="button" tabIndex={0} data-testid="role-btn">
+            <span data-testid="role-btn-child">inner</span>
+          </div>
+        </>,
+      );
+      for (const id of ['link', 'summary', 'role-btn', 'role-btn-child']) {
+        const el = screen.getByTestId(id);
+        el.focus();
+        expect(fireEvent.keyDown(el, { key: 'Enter' })).toBe(true);
+      }
+      expect(onEnter).not.toHaveBeenCalled();
+    });
+
+    it('still moves the selection with j and k from a focused button', () => {
+      render(<Harness itemCount={3} initialIndex={0} />);
+      const outside = screen.getByTestId('outside');
+      outside.focus();
+      expect(fireEvent.keyDown(outside, { key: 'j' })).toBe(false);
+      expect(getIndex()).toBe(1);
+      expect(fireEvent.keyDown(outside, { key: 'k' })).toBe(false);
+      expect(getIndex()).toBe(0);
+    });
+
+    it('still closes with Escape from a focused button', () => {
+      const onEscape = vi.fn();
+      render(<Harness onEscape={onEscape} />);
+      const outside = screen.getByTestId('outside');
+      outside.focus();
+      fireEvent.keyDown(outside, { key: 'Escape' });
+      expect(onEscape).toHaveBeenCalledTimes(1);
+    });
+
     it('does not cancel Enter when there is no onEnter', () => {
       render(<Harness />);
       expect(fireEvent.keyDown(document, { key: 'Enter' })).toBe(true);

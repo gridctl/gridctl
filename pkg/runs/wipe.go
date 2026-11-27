@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -17,7 +18,26 @@ const wipeLockTimeout = 10 * time.Second
 var (
 	registryMu sync.Mutex
 	registry   = map[string]*Recorder{}
+
+	// lifecycleMu serializes opening and registering a recorder against an
+	// in-process wipe, so the wipe never unlinks behind a writer that opened
+	// after its registry check.
+	lifecycleMu sync.Mutex
 )
+
+// NewActiveRecorder creates a recorder and registers it for cfg.StackName
+// while holding the lock WipeStackInProcess takes. Use it instead of
+// NewRecorder followed by RegisterActive in the daemon that owns the stack.
+func NewActiveRecorder(cfg Config, logger *slog.Logger) (*Recorder, error) {
+	lifecycleMu.Lock()
+	defer lifecycleMu.Unlock()
+	rec, err := NewRecorder(cfg, logger)
+	if err != nil {
+		return nil, err
+	}
+	RegisterActive(cfg.StackName, rec)
+	return rec, nil
+}
 
 // RegisterActive records the live recorder for a stack so wipe can
 // coordinate instead of unlinking behind an open writer.
@@ -67,6 +87,31 @@ func WipeStack(ctx context.Context, stackName string) error {
 	}
 	if running {
 		return ErrActiveWriter
+	}
+	dir, err := Dir(stackName)
+	if err != nil {
+		return err
+	}
+	return state.WithLock(stackName, wipeLockTimeout, func() error {
+		return deleteOwned(dir)
+	})
+}
+
+// WipeStackInProcess deletes owned run files for a stack from inside the
+// process that owns it. Only the daemon serving the stack may call it: when
+// no recorder is registered it deletes under the stack lock without the
+// daemon-state check, because the live daemon in that file is the caller.
+func WipeStackInProcess(ctx context.Context, stackName string) error {
+	if stackName == "" {
+		return fmt.Errorf("stack name is required")
+	}
+	lifecycleMu.Lock()
+	defer lifecycleMu.Unlock()
+	if rec := activeRecorder(stackName); rec != nil {
+		return rec.Wipe(ctx)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	dir, err := Dir(stackName)
 	if err != nil {

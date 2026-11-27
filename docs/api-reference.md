@@ -1112,7 +1112,7 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:8180/api/runs?dispositi
 
 **Auth:** Yes
 
-Recorder health independent of the JSONL destination, plus inventory and the recording, privacy, and retention notes. Historical loss after restart is `unknown`. Writer fields use the recorder's snake_case names (`writer_health`, `queue_depth`, `historical_loss`).
+Recorder health independent of the JSONL destination, plus inventory and the recording, privacy, and retention notes. Historical loss after restart is `unknown`. Writer fields use the recorder's snake_case names (`writer_health`, `queue_depth`, `historical_loss`). While recording is disabled, `retention_max_bytes` and `retention_max_age_days` report the retention that enabling would apply, read from the stack file's `runs.retention` (or the seven-day and 100 MiB defaults). Values declared only in an `extends` base or an override file are not read here and show as the defaults.
 
 #### `GET /api/runs/export`
 
@@ -1124,7 +1124,7 @@ Same query parameters and shared envelope as `GET /api/runs`, including `source`
 
 **Auth:** Yes
 
-Stack-wide coordinated wipe. `?server=` is rejected with `400`. Not secure erasure and does not remove exports or backups.
+Stack-wide coordinated wipe. Works whether or not recording is enabled, including on a daemon started with recording disabled. `?server=` is rejected with `400`. Not secure erasure and does not remove exports or backups.
 
 **Response:** `{success, partial, recording_enabled, scope, note?}`. A partial wipe still returns HTTP 200 with `success: false`, `partial: true`, and `error`.
 
