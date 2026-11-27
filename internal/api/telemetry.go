@@ -273,7 +273,7 @@ func (s *Server) handleDeleteTelemetry(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, runs.ErrPerServerRuns.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := runs.WipeStack(r.Context(), s.stackName); err != nil {
+		if err := runs.WipeStackInProcess(r.Context(), s.stackName); err != nil {
 			writeJSONError(w, "Failed to wipe runs: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -293,7 +293,7 @@ func (s *Server) handleDeleteTelemetry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if server == "" && signal == "" {
-		if err := runs.WipeStack(r.Context(), s.stackName); err != nil {
+		if err := runs.WipeStackInProcess(r.Context(), s.stackName); err != nil {
 			writeJSONError(w, "Failed to wipe runs: "+err.Error(), http.StatusInternalServerError)
 			return
 		}

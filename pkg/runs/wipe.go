@@ -77,6 +77,29 @@ func WipeStack(ctx context.Context, stackName string) error {
 	})
 }
 
+// WipeStackInProcess deletes owned run files for a stack from inside the
+// process that owns it. Only the daemon serving the stack may call it: when
+// no recorder is registered it deletes under the stack lock without the
+// daemon-state check, because the live daemon in that file is the caller.
+func WipeStackInProcess(ctx context.Context, stackName string) error {
+	if stackName == "" {
+		return fmt.Errorf("stack name is required")
+	}
+	if rec := activeRecorder(stackName); rec != nil {
+		return rec.Wipe(ctx)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	dir, err := Dir(stackName)
+	if err != nil {
+		return err
+	}
+	return state.WithLock(stackName, wipeLockTimeout, func() error {
+		return deleteOwned(dir)
+	})
+}
+
 func daemonRunning(stackName string) (bool, error) {
 	st, err := state.Load(stackName)
 	if err != nil {

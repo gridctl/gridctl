@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
+	"github.com/gridctl/gridctl/pkg/config"
 	"github.com/gridctl/gridctl/pkg/runs"
 )
 
@@ -91,6 +93,9 @@ func (s *Server) handleRunsStatus(w http.ResponseWriter, r *http.Request) {
 	if rec := s.getRunRecorder(); rec != nil {
 		st = rec.Status()
 	}
+	if !st.Enabled {
+		s.applyDisabledRetention(&st)
+	}
 	inv, err := runs.StackInventory(s.stackName)
 	if err != nil {
 		writeJSONError(w, "Failed to read run inventory", http.StatusInternalServerError)
@@ -103,6 +108,36 @@ func (s *Server) handleRunsStatus(w http.ResponseWriter, r *http.Request) {
 		PrivacyNote:   runsPrivacyNote,
 		RetentionNote: retentionNote(st),
 	})
+}
+
+// applyDisabledRetention reports the retention that enabling recording would
+// apply, read from the raw stack file without expansion, extends, or overrides.
+// A disabled recorder keeps its last enabled values, so they are overwritten.
+// Read and decode failures leave the status unchanged.
+func (s *Server) applyDisabledRetention(st *runs.Status) {
+	if s.stackFile == "" {
+		return
+	}
+	data, err := os.ReadFile(s.stackFile)
+	if err != nil {
+		return
+	}
+	stack, err := config.DecodeStack(data)
+	if err != nil {
+		return
+	}
+	maxBytes := int64(runs.DefaultMaxBytes)
+	maxAgeDays := int(runs.DefaultMaxAge / (24 * time.Hour))
+	if stack.Runs != nil && stack.Runs.Retention != nil {
+		if stack.Runs.Retention.MaxSizeMB > 0 {
+			maxBytes = int64(stack.Runs.Retention.MaxSizeMB) * 1024 * 1024
+		}
+		if stack.Runs.Retention.MaxAgeDays > 0 {
+			maxAgeDays = stack.Runs.Retention.MaxAgeDays
+		}
+	}
+	st.RetentionMaxBytes = maxBytes
+	st.RetentionMaxAgeDays = maxAgeDays
 }
 
 func retentionNote(st runs.Status) string {
@@ -126,7 +161,15 @@ func (s *Server) handleRunsWipe(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, runs.ErrPerServerRuns.Error(), http.StatusBadRequest)
 		return
 	}
-	err := runs.WipeStack(r.Context(), s.stackName)
+	var err error
+	if s.getRunRecorder() == nil && s.stackFile != "" {
+		mu := stackFileLock(s.stackFile)
+		mu.Lock()
+		err = runs.WipeStackInProcess(r.Context(), s.stackName)
+		mu.Unlock()
+	} else {
+		err = runs.WipeStackInProcess(r.Context(), s.stackName)
+	}
 	enabled := false
 	if rec := s.getRunRecorder(); rec != nil {
 		enabled = rec.Status().Enabled
