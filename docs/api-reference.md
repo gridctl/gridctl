@@ -1623,7 +1623,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 
 ### Wizard Drafts
 
-Persists in-progress wizard form state under `~/.gridctl/cache/wizard-drafts/`.
+Persists in-progress wizard form state under `~/.gridctl/cache/wizard-drafts/`. The directory is created (or tightened) to mode `0700` and each draft file is written with mode `0600`. The server stores the body as sent; the web UI omits literal credentials (bearer tokens, header values, OAuth client secrets, the gateway token, and credential-named environment values) from the `formData` and `yaml` it sends, and keeps `${var:KEY}` and other references.
 
 #### `GET /api/wizard/drafts`
 
