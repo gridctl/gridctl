@@ -2,12 +2,15 @@ import { describe, it, expect } from 'vitest';
 import {
   GATEWAY_LOG_SOURCE,
   filterParsedLogs,
+  formatGoDuration,
   formatTimestamp,
+  inlineLogFields,
   logEntryKeys,
   reuseUnchangedLogs,
   logSourceOf,
   normalizeLogTimeRangeParam,
   normalizeLogWindowParam,
+  parseGoDurationMs,
   parseLogEntry,
   serializeLogsJSONL,
   serializeLogsText,
@@ -248,5 +251,135 @@ describe('reuseUnchangedLogs', () => {
     // Ordinal 0 previously held raw-a, so raw-b at ordinal 0 is a new entry.
     expect(reused).toBe(only);
     expect(reused).not.toBe(extra);
+  });
+});
+
+describe('parseGoDurationMs', () => {
+  it('parses Go duration strings into milliseconds', () => {
+    expect(parseGoDurationMs('1.234567ms')).toBeCloseTo(1.234567);
+    expect(parseGoDurationMs('850µs')).toBeCloseTo(0.85);
+    expect(parseGoDurationMs('850us')).toBeCloseTo(0.85);
+    expect(parseGoDurationMs('2.5s')).toBe(2500);
+    expect(parseGoDurationMs('1m2.5s')).toBe(62500);
+    expect(parseGoDurationMs('1h0m0s')).toBe(3_600_000);
+    expect(parseGoDurationMs('42ns')).toBeCloseTo(0.000042);
+    expect(parseGoDurationMs('0s')).toBe(0);
+    expect(parseGoDurationMs('0')).toBe(0);
+  });
+
+  it('returns null for values that are not Go durations', () => {
+    expect(parseGoDurationMs('soon')).toBeNull();
+    expect(parseGoDurationMs('')).toBeNull();
+    expect(parseGoDurationMs('12')).toBeNull();
+    expect(parseGoDurationMs('1.5 s')).toBeNull();
+    expect(parseGoDurationMs('3d')).toBeNull();
+  });
+});
+
+describe('formatGoDuration', () => {
+  it('formats parsed durations compactly', () => {
+    expect(formatGoDuration('1.234567ms')).toBe('1.2ms');
+    expect(formatGoDuration('850µs')).toBe('850µs');
+    expect(formatGoDuration('2.5s')).toBe('2.50s');
+    expect(formatGoDuration('1m2.5s')).toBe('62.50s');
+  });
+
+  it('shows unparseable and numeric values as they arrived', () => {
+    expect(formatGoDuration('about a second')).toBe('about a second');
+    expect(formatGoDuration(1500)).toBe('1500');
+  });
+});
+
+describe('inlineLogFields', () => {
+  const summary = (log: ParsedLog) =>
+    inlineLogFields(log).map((f) => [f.key, f.label, f.value, f.tone]);
+
+  it('yields tool, duration, ok, and client for a finished call', () => {
+    const log = entry({
+      message: 'tool call finished',
+      attrs: {
+        server: 'github',
+        replica_id: 0,
+        client: 'claude-code',
+        tool: 'create_issue',
+        duration: '1.234567ms',
+        is_error: false,
+      },
+    });
+    expect(summary(log)).toEqual([
+      ['tool', 'tool', 'create_issue', 'default'],
+      ['duration', null, '1.2ms', 'default'],
+      ['is_error', null, 'ok', 'ok'],
+      ['client', 'client', 'claude-code', 'default'],
+    ]);
+  });
+
+  it('yields tool, duration, error, and client for a failed call', () => {
+    const log = entry({
+      message: 'tool call failed',
+      attrs: {
+        server: 'github',
+        replica_id: 1,
+        client: 'claude-code',
+        tool: 'search_code',
+        duration: '30s',
+        error: 'context deadline exceeded',
+      },
+    });
+    expect(summary(log)).toEqual([
+      ['tool', 'tool', 'search_code', 'default'],
+      ['duration', null, '30.00s', 'default'],
+      ['error', 'error', 'context deadline exceeded', 'error'],
+      ['client', 'client', 'claude-code', 'default'],
+    ]);
+  });
+
+  it('follows key order and caps at four, keeping the outcome over client', () => {
+    const log = entry({
+      attrs: {
+        client: 'claude-code',
+        is_error: true,
+        duration: '2.5s',
+        name: 'n1',
+        tool: 't1',
+        status: 'done',
+      },
+    });
+    expect(inlineLogFields(log).map((f) => f.key)).toEqual(['tool', 'name', 'duration', 'is_error']);
+  });
+
+  it('accepts boolean and string is_error and ignores other values', () => {
+    const tone = (v: unknown) => inlineLogFields(entry({ attrs: { is_error: v } }));
+    expect(tone(false)).toMatchObject([{ value: 'ok', tone: 'ok' }]);
+    expect(tone('false')).toMatchObject([{ value: 'ok', tone: 'ok' }]);
+    expect(tone(true)).toMatchObject([{ value: 'error', tone: 'error' }]);
+    expect(tone('true')).toMatchObject([{ value: 'error', tone: 'error' }]);
+    expect(tone('maybe')).toEqual([]);
+    expect(tone(0)).toEqual([]);
+  });
+
+  it('skips empty values, server, replica_id, and unlisted keys', () => {
+    const log = entry({
+      attrs: { server: 'github', replica_id: 2, tool: '', name: null, client: undefined, other: 'x' },
+    });
+    expect(inlineLogFields(log)).toEqual([]);
+    expect(inlineLogFields(entry({}))).toEqual([]);
+  });
+
+  it('collapses newlines in the value and keeps the raw value in the title', () => {
+    const [field] = inlineLogFields(
+      entry({ message: 'server stderr', attrs: { server: 'py', output: 'Traceback:\n  line 1' } }),
+    );
+    expect(field).toEqual({
+      key: 'output',
+      label: null,
+      value: 'Traceback: line 1',
+      tone: 'default',
+      title: 'output=Traceback:\n  line 1',
+    });
+  });
+
+  it('shows an unparseable duration as raw text', () => {
+    expect(inlineLogFields(entry({ attrs: { duration: 'n/a' } }))).toMatchObject([{ value: 'n/a' }]);
   });
 });
