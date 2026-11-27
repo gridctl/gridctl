@@ -11,13 +11,19 @@ import { Tab, TabPanel, Tabs } from '../ui/Tabs';
 import { WorkspaceHeader } from '../ui/WorkspaceHeader';
 import { TracesView } from '../traces/TracesView';
 import { RunsView } from '../runs/RunsView';
+import { RUN_URL_KEYS } from '../../lib/runsFilters';
+
+const TRACE_URL_KEYS = ['trace', 'server', 'errors', 'q', 'seg'] as const;
 
 // TracesWorkspace is the first-class trace surface: the global trace list,
 // waterfall, and span detail from TracesView, with the selection and filters
-// URL-synced (?trace=, ?server=, ?errors=, ?q=, ?seg=) so deep links —
-// including the log-line trace pivot — restore the exact view. The trace
-// detail pivots back to /logs?trace=<id> for the reverse correlation and to
-// /metrics?scope=servers&selected=<server> for the same server's metrics.
+// URL-synced (?trace=, ?server=, ?errors=, ?q=, ?seg=) so deep links,
+// including the log-line trace pivot, restore the exact view. The Runs tab
+// (?view=runs) owns its own keys (RUN_URL_KEYS), mirrored by RunsView. Each
+// view's sync runs only while that view is showing, and switching tabs strips
+// the other view's keys, so the two mirrors never overwrite each other. The
+// trace detail pivots back to /logs?trace=<id> for the reverse correlation and
+// to /metrics?scope=servers&selected=<server> for the same server's metrics.
 export function TracesWorkspace() {
   const headingId = useId();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -42,6 +48,7 @@ export function TracesWorkspace() {
   const initialParams = useRef(searchParams);
   useEffect(() => {
     const p = initialParams.current;
+    if (p.get('view') === 'runs') return;
     const trace = p.get('trace');
     const server = p.get('server');
     const errors = p.get('errors');
@@ -63,6 +70,7 @@ export function TracesWorkspace() {
   // Store → URL mirror. Reads live store state so the first pass after the
   // mount sync above never rewrites the URL from stale render-time values.
   useEffect(() => {
+    if (view !== 'traces') return;
     const s = useTracesStore.getState();
     setSearchParams(
       (prev) => {
@@ -81,18 +89,20 @@ export function TracesWorkspace() {
       },
       { replace: true },
     );
-  }, [selectedTraceId, filters, setSearchParams]);
+  }, [view, selectedTraceId, filters, setSearchParams]);
 
   const selectTraces = () => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.delete('view');
+      for (const key of RUN_URL_KEYS) next.delete(key);
       return next;
     }, { replace: true });
   };
   const selectRuns = () => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
+      for (const key of TRACE_URL_KEYS) next.delete(key);
       next.set('view', 'runs');
       return next;
     }, { replace: true });
