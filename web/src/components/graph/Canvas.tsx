@@ -13,7 +13,7 @@ import {
   type OnMoveStart,
   type Viewport,
 } from '@xyflow/react';
-import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid, Layers, Server, Database } from 'lucide-react';
+import { RotateCcw, Spline, Minus, Plus, Maximize, Rows3, LayoutGrid } from 'lucide-react';
 
 import { nodeTypes } from './nodeTypes';
 import { useStackStore } from '../../stores/useStackStore';
@@ -23,7 +23,6 @@ import {
   type CanvasZoomOptions,
 } from '../../stores/useCanvasActionsStore';
 import { useUIStore } from '../../stores/useUIStore';
-import { useWizardStore } from '../../stores/useWizardStore';
 import { useAccessLensStore, buildDraftScope, flattenTools, isDirty } from '../../stores/useAccessLensStore';
 import { useThemeColors } from '../../themes/useTheme';
 import { usePathHighlight } from '../../hooks/usePathHighlight';
@@ -39,6 +38,7 @@ import { SpecModeOverlay } from '../spec/SpecModeOverlay';
 import { OverlaysMenu } from './OverlaysMenu';
 import { CanvasLegend } from './CanvasLegend';
 import { SubGrid } from './SubGrid';
+import { StackEmptyState } from './StackEmptyState';
 import { requestInspectorLeave } from '../../stores/useInspectorToolsGuardStore';
 
 const MAX_ANIMATED_EDGES = 12;
@@ -106,6 +106,10 @@ export function Canvas({ filter }: CanvasProps = {}) {
   const resetLayout = useStackStore((s) => s.resetLayout);
   const connectionStatus = useStackStore((s) => s.connectionStatus);
   const gatewayInfo = useStackStore((s) => s.gatewayInfo);
+  const resources = useStackStore((s) => s.resources);
+  const stackName = useStackStore((s) => s.stackName);
+  const isLoading = useStackStore((s) => s.isLoading);
+  const error = useStackStore((s) => s.error);
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
   const requestInspectorFocus = useUIStore((s) => s.requestInspectorFocus);
   const edgeStyle = useUIStore((s) => s.edgeStyle);
@@ -595,8 +599,15 @@ export function Canvas({ filter }: CanvasProps = {}) {
   // per-client access is edited through Access Lens, not by dragging edges.
   const onConnect = useCallback(() => {}, []);
 
-  const isEmpty = !nodes || nodes.length === 0;
-  const hasActiveStack = connectionStatus === 'connected' && gatewayInfo !== null;
+  // Tested on servers and resources, not nodes: a connected gateway always
+  // has its own node. setError keeps the last status, so error is checked too.
+  const showEmptyState =
+    connectionStatus === 'connected' &&
+    gatewayInfo !== null &&
+    !isLoading &&
+    !error &&
+    mcpServers.length === 0 &&
+    resources.length === 0;
   const edgeStyleLabel = `Switch to ${edgeStyle === 'default' ? 'straight' : 'curved'} edges`;
   const cardStyleLabel = compactCards ? 'Switch to full cards' : 'Switch to compact cards';
 
@@ -604,57 +615,6 @@ export function Canvas({ filter }: CanvasProps = {}) {
     <div ref={wrapperRef} className="absolute inset-0 canvas-wrapper">
       {/* Film grain overlay */}
       <div className="film-grain" />
-      {/* Empty state CTA */}
-      {isEmpty && (
-        <div className="absolute inset-0 z-raised flex items-center justify-center pointer-events-none">
-          <div className="pointer-events-auto glass-panel-elevated rounded-xl p-8 text-center max-w-sm animate-fade-in-up">
-            <div className="w-12 h-12 rounded-xl bg-surface-elevated border border-border/40 flex items-center justify-center mx-auto mb-4">
-              <Layers size={22} className="text-primary" />
-            </div>
-            <h3 className="text-sm font-medium text-text-primary mb-1.5">
-              Create your first stack
-            </h3>
-            <p className="text-xs text-text-muted mb-5 leading-relaxed">
-              Define MCP servers and resources in a guided wizard to generate your stack spec.
-            </p>
-            <button
-              onClick={() => useWizardStore.getState().open('stack')}
-              className={cn(
-                'inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium',
-                'bg-primary/20 text-primary hover:bg-primary/30 border border-primary/30',
-                'transition-all duration-200',
-              )}
-            >
-              <Plus size={14} />
-              New Stack
-            </button>
-            {/* Quick-add links — only when a stack is active */}
-            {hasActiveStack && (
-              <div className="flex items-center gap-2 mt-3">
-                <span className="text-3xs text-text-muted">or add:</span>
-                {[
-                  { type: 'mcp-server' as const, icon: Server, label: 'MCP Server', color: 'text-primary hover:text-primary-light' },
-                  { type: 'resource' as const, icon: Database, label: 'Resource', color: 'text-secondary hover:text-secondary/80' },
-                ].map((item) => (
-                  <button
-                    key={item.type}
-                    onClick={() => useWizardStore.getState().open(item.type)}
-                    className={cn(
-                      'inline-flex items-center gap-1 px-2 py-1 rounded-md text-3xs font-medium',
-                      'bg-surface-overlay-2 border border-border-subtle hover:border-border',
-                      'transition-all duration-200',
-                      item.color,
-                    )}
-                  >
-                    <item.icon size={10} />
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
       <CanvasBase
         nodes={styledNodes}
         edges={styledEdges}
@@ -686,6 +646,8 @@ export function Canvas({ filter }: CanvasProps = {}) {
         {/* Sub-grid dots fade in above 0.8x. Isolated so this canvas does not
             subscribe to the viewport. */}
         <SubGrid />
+
+        {showEmptyState && <StackEmptyState hasStack={stackName !== ''} />}
 
         {/* Controls */}
         <Panel position="bottom-left" className="flex gap-1">
