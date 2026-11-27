@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Activity, ChevronDown, ChevronRight, Copy } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { copyWithToast } from '../ui/Toast';
@@ -11,6 +11,7 @@ import {
   PROMOTED_LOG_FIELDS,
   PROMOTED_LOG_KEYS,
   formatTimestamp,
+  inlineLogFields,
   stringifyAttrValue,
   type ParsedLog,
 } from './logTypes';
@@ -51,6 +52,7 @@ export const LogLine = memo(function LogLine({
 }) {
   const styles = LEVEL_STYLES[log.level] || LEVEL_STYLES.DEBUG;
   const showSource = source !== undefined;
+  const inlineFields = useMemo(() => inlineLogFields(log), [log]);
 
   const absoluteTs = formatTimestamp(log.timestamp);
   const parsedTs = Date.parse(log.timestamp);
@@ -145,16 +147,57 @@ export const LogLine = memo(function LogLine({
           {log.component || '\u2014'}
         </span>
 
-        {/* Message */}
+        {/* Message, then inline attribute chips */}
         <span
           className={cn(
-            'font-mono log-text',
-            wrap ? 'whitespace-pre-wrap break-words' : 'truncate',
-            log.level === 'ERROR' ? 'text-status-error' : 'text-text-primary'
+            'flex min-w-0 gap-x-2 font-mono log-text',
+            wrap ? 'flex-wrap' : 'overflow-hidden',
           )}
-          title={wrap ? undefined : log.message}
         >
-          {highlightMatches(log.message, searchQuery)}
+          <span
+            className={cn(
+              'min-w-0 font-mono log-text',
+              wrap ? 'whitespace-pre-wrap break-words' : 'truncate flex-shrink-0 max-w-full',
+              log.level === 'ERROR' ? 'text-status-error' : 'text-text-primary'
+            )}
+            title={wrap ? undefined : log.message}
+          >
+            {highlightMatches(log.message, searchQuery)}
+          </span>
+          {inlineFields.length > 0 && (
+            <span
+              data-testid="log-inline-fields"
+              className={cn(
+                'flex min-w-0 gap-x-2 font-mono log-text',
+                wrap ? 'flex-wrap' : 'flex-1 overflow-hidden whitespace-nowrap',
+              )}
+            >
+              {inlineFields.map((field) => (
+                <span
+                  key={field.key}
+                  data-field={field.key}
+                  title={field.title}
+                  className={cn(
+                    'min-w-0 rounded bg-surface-highlight/60 px-1 font-mono log-text',
+                    wrap ? 'break-all' : 'truncate max-w-[40ch] flex-shrink-0 last:flex-shrink',
+                  )}
+                >
+                  {field.label && <span className="text-text-muted">{field.label} </span>}
+                  <span
+                    className={
+                      field.tone === 'error'
+                        ? 'text-status-error'
+                        : field.tone === 'ok'
+                          ? 'text-status-running'
+                          : 'text-text-secondary'
+                    }
+                  >
+                    {highlightMatches(field.value, searchQuery)}
+                  </span>
+                </span>
+              ))}
+            </span>
+          )}
         </span>
 
         {/* Trace pivot + expand indicator */}

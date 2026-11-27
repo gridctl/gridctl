@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createRef, useState } from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { LogStream } from '../components/log/LogStream';
 import type { ParsedLog } from '../components/log/logTypes';
@@ -162,10 +162,11 @@ describe('LogStream', () => {
     expect(screen.getByText('Copy raw')).toBeInTheDocument();
     expect(screen.getByText('Copy trace ID')).toBeInTheDocument();
     // Promoted slog-flat fields render as labeled rows.
+    // Tool and client values also render as row chips, so each appears twice.
     expect(screen.getByText('Tool')).toBeInTheDocument();
-    expect(screen.getByText('create_issue')).toBeInTheDocument();
+    expect(screen.getAllByText('create_issue')).toHaveLength(2);
     expect(screen.getByText('Client')).toBeInTheDocument();
-    expect(screen.getByText('claude-code')).toBeInTheDocument();
+    expect(screen.getAllByText('claude-code')).toHaveLength(2);
     // Non-promoted attrs collapse under "Other attributes" and stay hidden.
     expect(screen.queryByText('custom-value')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText(/Other attributes \(1\)/));
@@ -190,5 +191,126 @@ describe('LogStream', () => {
     // Escape collapses the expansion.
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.getAllByText('nav second')).toHaveLength(1);
+  });
+
+  it('shows inline chips on a collapsed tool-call row', () => {
+    const finished = entry({
+      message: 'tool call finished',
+      attrs: {
+        server: 'github',
+        replica_id: 'github-0',
+        client: 'claude-code',
+        tool: 'create_issue',
+        duration: '1.234567ms',
+        is_error: false,
+      },
+    });
+    render(<Harness logs={[finished]} />);
+
+    const run = screen.getByTestId('log-inline-fields');
+    const chips = run.querySelectorAll('[data-field]');
+    expect([...chips].map((c) => c.getAttribute('data-field'))).toEqual([
+      'tool',
+      'duration',
+      'is_error',
+      'client',
+    ]);
+    expect(within(run).getByText('create_issue')).toBeInTheDocument();
+    expect(within(run).getByText('1.2ms')).toBeInTheDocument();
+    expect(within(run).getByText('ok')).toHaveClass('text-status-running');
+    expect(within(run).getByText('claude-code')).toBeInTheDocument();
+    expect(within(run).queryByText('github-0')).not.toBeInTheDocument();
+    expect(within(run).queryByText('github')).not.toBeInTheDocument();
+    expect(chips[0]).toHaveAttribute('title', 'tool=create_issue');
+    expect(chips[1]).toHaveAttribute('title', 'duration=1.234567ms');
+    // Chips are plain text: no buttons or tab stops inside the run.
+    expect(within(run).queryAllByRole('button')).toHaveLength(0);
+    expect(run.querySelectorAll('[tabindex]')).toHaveLength(0);
+  });
+
+  it('shows the error text on a failed row and the output on a stderr row', () => {
+    const failed = entry({
+      level: 'ERROR',
+      message: 'tool call failed',
+      timestamp: '2026-07-24T10:00:01Z',
+      attrs: { server: 'github', tool: 'search_code', duration: '30s', error: 'context deadline exceeded' },
+    });
+    const stderr = entry({
+      level: 'WARN',
+      message: 'server stderr',
+      timestamp: '2026-07-24T10:00:02Z',
+      attrs: { server: 'py', output: 'Traceback (most recent call last):' },
+    });
+    render(<Harness logs={[failed, stderr]} />);
+
+    expect(screen.getByText('search_code')).toBeInTheDocument();
+    expect(screen.getByText('30.00s')).toBeInTheDocument();
+    expect(screen.getByText('context deadline exceeded')).toHaveClass('text-status-error');
+    expect(screen.getByText('Traceback (most recent call last):')).toBeInTheDocument();
+  });
+
+  it('renders no chip run on rows without listed attributes', () => {
+    render(
+      <Harness
+        logs={[
+          entry({ message: 'plain line', timestamp: '2026-07-24T10:00:01Z' }),
+          entry({ message: 'unlisted line', timestamp: '2026-07-24T10:00:02Z', attrs: { server: 'x', replica_id: 1, other: 'y' } }),
+        ]}
+      />,
+    );
+    expect(screen.queryByTestId('log-inline-fields')).not.toBeInTheDocument();
+    const cell = screen.getByText('unlisted line').parentElement!;
+    expect(cell).toHaveTextContent(/^unlisted line$/);
+    expect(screen.getByText('plain line')).toHaveClass('truncate');
+  });
+
+  it('highlights a search match inside a chip value', () => {
+    const finished = entry({ message: 'tool call finished', attrs: { tool: 'create_issue' } });
+    render(
+      <LogStream
+        logs={[finished]}
+        isLoading={false}
+        error={null}
+        fontSize={12}
+        containerRef={createRef<HTMLDivElement>()}
+        expandedKey={null}
+        onToggleExpand={() => {}}
+        searchQuery="issue"
+      />,
+    );
+    const run = screen.getByTestId('log-inline-fields');
+    const mark = run.querySelector('mark');
+    expect(mark).toHaveTextContent('issue');
+    // Labels are not highlighted.
+    expect(within(run).getByText('tool').querySelector('mark')).toBeNull();
+    expect(run.querySelectorAll('mark')).toHaveLength(1);
+  });
+
+  it('expands the row when a chip is clicked', () => {
+    const finished = entry({ message: 'tool call finished', attrs: { tool: 'create_issue' } });
+    render(<Harness logs={[finished]} />);
+    fireEvent.click(screen.getByText('create_issue'));
+    expect(screen.getAllByText('tool call finished')).toHaveLength(2);
+    expect(screen.getByText('Copy message')).toBeInTheDocument();
+  });
+
+  it('flows chips after the message when wrapping', () => {
+    const finished = entry({ message: 'tool call finished', attrs: { tool: 'create_issue' } });
+    render(
+      <LogStream
+        logs={[finished]}
+        isLoading={false}
+        error={null}
+        fontSize={12}
+        containerRef={createRef<HTMLDivElement>()}
+        expandedKey={null}
+        onToggleExpand={() => {}}
+        wrap
+      />,
+    );
+    const run = screen.getByTestId('log-inline-fields');
+    expect(run).toHaveClass('flex-wrap');
+    expect(run).not.toHaveClass('overflow-hidden');
+    expect(run.parentElement).toHaveClass('flex-wrap');
   });
 });
