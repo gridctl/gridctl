@@ -110,6 +110,22 @@ describe('ToolsEditor', () => {
     expect(dirtySave).toBeEnabled();
   });
 
+  it('distinguishes no allow-list, a saved allow-list, and an unsaved draft in the count line', () => {
+    mockStoreState.toolCatalog = [tool('query', 'Run a SQL query'), tool('insert', 'Insert a row')];
+    mockStoreState.tools = mockStoreState.toolCatalog;
+    const { unmount } = render(<ToolsEditor serverName={SERVER} savedTools={[]} />);
+    expect(screen.getByText('All 2 tools exposed (no allow-list)')).toBeInTheDocument();
+    unmount();
+
+    render(<ToolsEditor serverName={SERVER} savedTools={['query']} />);
+    expect(screen.getByText('1 of 2 exposed')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('option', { name: 'insert' }));
+    expect(screen.getByText('2 of 2 selected (unsaved)')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /clear all tools/i }));
+    expect(screen.getByRole('alert')).toHaveTextContent(/cannot save an empty selection/i);
+  });
+
   it('blocks saving an empty selection and offers an in-place Discard', () => {
     render(<ToolsEditor serverName={SERVER} savedTools={['query']} />);
     fireEvent.click(screen.getByRole('button', { name: /clear all tools/i }));

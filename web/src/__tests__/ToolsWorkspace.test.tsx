@@ -6,6 +6,7 @@ import { ToolsWorkspace } from '../components/workspaces/ToolsWorkspace';
 import { requestGatewayPoll } from '../hooks/usePolling';
 import { useStackStore } from '../stores/useStackStore';
 import { useNavigationGuardStore } from '../stores/useNavigationGuardStore';
+import { usePinsStore } from '../stores/usePinsStore';
 import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
 import { useUIStore } from '../stores/useUIStore';
 import { TOOL_NAME_DELIMITER } from '../lib/constants';
@@ -225,7 +226,10 @@ describe('ToolsWorkspace', () => {
     expect(screen.getByText(/select a tool to view/i)).toBeInTheDocument();
     // Clicking the row body (the cmdk option) selects it for the panel.
     fireEvent.click(screen.getByRole('option', { name: /create_issue details/i }));
-    // The panel renders the JSON schema via CodeViewer; the prompt is gone.
+    // The panel summarizes the schema; the raw JSON sits behind a disclosure.
+    expect(screen.getByRole('table', { name: 'create_issue parameters' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('create_issue input schema')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Raw schema' }));
     expect(screen.getByLabelText('create_issue input schema')).toBeInTheDocument();
     expect(screen.queryByText(/select a tool to view/i)).not.toBeInTheDocument();
   });
@@ -236,10 +240,12 @@ describe('ToolsWorkspace — empty-save guard and discard', () => {
     renderAt('/tools?server=github');
     fireEvent.click(screen.getByRole('button', { name: /clear all tools/i }));
 
-    // The neutral "empty means all tools exposed" help text is replaced by a
-    // blocking warning, and Save cannot fire.
-    expect(screen.getByText(/cannot save an empty selection/i)).toBeInTheDocument();
-    expect(screen.queryByText(/empty means all tools exposed/i)).not.toBeInTheDocument();
+    // The neutral count sentence is replaced by a blocking alert, and Save
+    // cannot fire.
+    expect(screen.getByRole('alert')).toHaveTextContent(/cannot save an empty selection/i);
+    expect(
+      screen.queryByText(/selected \(unsaved\)|^\d+ of \d+ exposed$|exposed \(no allow-list\)/),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /save 1 change & reload/i })).toBeDisabled();
   });
 
@@ -479,8 +485,8 @@ describe('ToolsWorkspace — deep links', () => {
 
     renderAt('/tools?server=github&tool=create_issue&audit=1&window=30d');
 
-    // Tool selection restored: the detail panel renders the schema.
-    expect(screen.getByLabelText('create_issue input schema')).toBeInTheDocument();
+    // Tool selection restored: the detail panel renders the parameters table.
+    expect(screen.getByRole('table', { name: 'create_issue parameters' })).toBeInTheDocument();
     // Audit mode restored: rows classify once usage lands (create_issue has
     // no recorded calls → unused, in both its row and the open detail panel;
     // list_repos is not whitelisted → disabled).
@@ -933,5 +939,137 @@ describe('ToolsWorkspace — draft rail counts', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /discard unsaved tool changes/i }));
     expect(screen.getByText('1/2')).toBeInTheDocument();
+  });
+});
+
+describe('ToolsWorkspace — count line', () => {
+  it('distinguishes no allow-list, a saved allow-list, and an unsaved draft', () => {
+    useStackStore.setState({
+      mcpServers: [server(GITHUB, ['create_issue', 'list_repos'], ['create_issue']), server(ATLAS, ['get_page', 'get_space'], [])],
+    });
+    const { unmount } = renderAt('/tools?server=atlassian');
+    expect(screen.getByText('All 2 tools exposed (no allow-list)')).toBeInTheDocument();
+    unmount();
+
+    renderAt('/tools?server=github');
+    expect(screen.getByText('1 of 2 exposed')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+    expect(screen.getByText('2 of 2 selected (unsaved)')).toBeInTheDocument();
+    expect(screen.queryByText('1 of 2 exposed')).not.toBeInTheDocument();
+  });
+});
+
+describe('ToolsWorkspace — chip legend', () => {
+  it('lists every chip and returns focus on Escape', () => {
+    renderAt('/tools?server=github');
+    const button = screen.getByRole('button', { name: 'Legend' });
+    expect(button).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(button);
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+    const legend = screen.getByRole('dialog', { name: 'Chip legend' });
+    for (const [label, name] of [
+      ['RO', 'Read-only'],
+      ['RW', 'Read-write'],
+      ['DESTR', 'Destructive'],
+      ['SAFE', 'Non-destructive'],
+      ['IDEM', 'Idempotent'],
+      ['OPEN', 'Open world'],
+      ['CLOSED', 'Closed world'],
+    ]) {
+      expect(within(legend).getByText(label)).toBeInTheDocument();
+      expect(within(legend).getByText(name)).toBeInTheDocument();
+    }
+    expect(within(legend).getByText('BLOCKED')).toBeInTheDocument();
+    expect(within(legend).getByText('Denied by the policy block')).toBeInTheDocument();
+    expect(within(legend).getByText('APPROVAL')).toBeInTheDocument();
+    expect(within(legend).getByText('Policy requires approval; enforced as a block')).toBeInTheDocument();
+    expect(within(legend).getByText('Hints are reported by the server, not verified by gridctl.')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Chip legend' })).not.toBeInTheDocument();
+    expect(button).toHaveFocus();
+  });
+});
+
+describe('ToolsWorkspace — detail links', () => {
+  beforeEach(() => {
+    useNavigationGuardStore.setState({ guards: [], pending: null });
+  });
+  afterEach(() => {
+    useNavigationGuardStore.setState({ guards: [], pending: null });
+  });
+
+  it('navigates immediately with a clean editor', () => {
+    renderGuardedAt('/tools?server=github&tool=create_issue');
+    fireEvent.click(screen.getByRole('link', { name: 'Traces' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByTestId('loc')).toHaveTextContent('/traces?q=create_issue&server=github&errors=0');
+  });
+
+  it('asks before discarding a dirty draft, then navigates on confirm', () => {
+    renderGuardedAt('/tools?server=github&tool=create_issue');
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+    fireEvent.click(screen.getByRole('link', { name: 'Traces' }));
+
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Discard unsaved changes');
+    expect(screen.getByTestId('loc')).toHaveTextContent('/tools?server=github&tool=create_issue');
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByTestId('loc')).toHaveTextContent('/tools?server=github&tool=create_issue');
+    expect(screen.getByRole('checkbox', { name: /list_repos/i })).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.click(screen.getByRole('link', { name: 'Traces' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard & leave' }));
+    expect(screen.getByTestId('loc')).toHaveTextContent('/traces?q=create_issue&server=github&errors=0');
+  });
+});
+
+describe('ToolsWorkspace — pin chip', () => {
+  function pinEntry(tools: string[]) {
+    return {
+      server_hash: 'h',
+      pinned_at: '2026-07-01T00:00:00Z',
+      last_verified_at: '2026-07-01T00:00:00Z',
+      tool_count: tools.length,
+      status: 'pinned' as const,
+      tools: Object.fromEntries(tools.map((t) => [t, {} as api.PinRecord])),
+    };
+  }
+
+  afterEach(() => {
+    usePinsStore.setState({ pins: null });
+  });
+
+  it('renders no chip before pins load', () => {
+    usePinsStore.setState({ pins: null });
+    renderAt('/tools?server=github&tool=create_issue');
+    expect(screen.queryByRole('link', { name: /pin status/i })).not.toBeInTheDocument();
+  });
+
+  it('labels a pinned tool and links to the server in Pins', () => {
+    usePinsStore.setState({ pins: { [GITHUB]: pinEntry(['create_issue']) } });
+    renderAt('/tools?server=github&tool=create_issue');
+    expect(screen.getByRole('link', { name: 'Pin status: Pinned. Open in Pins' })).toHaveAttribute(
+      'href',
+      '/pins?server=github',
+    );
+  });
+
+  it('stays silent for a tool the saved allow-list hides, even after a draft toggle', () => {
+    usePinsStore.setState({ pins: { [GITHUB]: pinEntry(['create_issue']) } });
+    renderAt('/tools?server=github&tool=list_repos');
+    expect(screen.getByRole('heading', { name: 'list_repos' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /pin status/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: /list_repos/i }));
+    expect(screen.getByRole('checkbox', { name: /list_repos/i })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.queryByRole('link', { name: /pin status/i })).not.toBeInTheDocument();
+  });
+
+  it('reads Not in pin set for an exposed tool absent from the pin set', () => {
+    usePinsStore.setState({ pins: { [ATLAS]: pinEntry([]) } });
+    renderAt('/tools?server=atlassian&tool=get_page');
+    expect(screen.getByRole('link', { name: 'Pin status: Not in pin set. Open in Pins' })).toBeInTheDocument();
   });
 });

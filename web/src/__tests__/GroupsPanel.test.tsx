@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router';
 import { GroupsPanel } from '../components/workspaces/GroupsPanel';
 import { ToolsWorkspace } from '../components/workspaces/ToolsWorkspace';
 import { useStackStore } from '../stores/useStackStore';
-import { groupsForTool, annotationChips } from '../lib/groups';
+import { ANNOTATION_CHIP_LEGEND, groupsForTool, annotationChips } from '../lib/groups';
 import { TOOL_NAME_DELIMITER } from '../lib/constants';
 import * as api from '../lib/api';
 import type { GroupsReport } from '../lib/api';
@@ -112,6 +112,44 @@ describe('groups helpers', () => {
     expect(annotationChips(undefined)).toEqual([]);
     const labels = annotationChips({ readOnlyHint: true, destructiveHint: false }).map((c) => c.label);
     expect(labels).toEqual(['RO', 'SAFE']);
+  });
+
+  it('keeps annotationChips output exact for every hint combination', () => {
+    expect(
+      annotationChips({ readOnlyHint: true, destructiveHint: true, idempotentHint: true, openWorldHint: true }),
+    ).toEqual([
+      { label: 'RO', title: 'readOnlyHint: true — does not modify state', tone: 'safe' },
+      { label: 'DESTR', title: 'destructiveHint: true — may perform destructive updates', tone: 'danger' },
+      { label: 'IDEM', title: 'idempotentHint: true — repeat calls have no extra effect', tone: 'neutral' },
+      { label: 'OPEN', title: 'openWorldHint: true — interacts with external entities', tone: 'neutral' },
+    ]);
+    expect(
+      annotationChips({ readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }),
+    ).toEqual([
+      { label: 'RW', title: 'readOnlyHint: false — may modify state', tone: 'neutral' },
+      { label: 'SAFE', title: 'destructiveHint: false — updates are additive', tone: 'safe' },
+      { label: 'CLOSED', title: 'openWorldHint: false — closed domain of interaction', tone: 'neutral' },
+    ]);
+  });
+
+  it('lists every label annotationChips can emit in the legend, in order', () => {
+    expect(ANNOTATION_CHIP_LEGEND.map((e) => [e.label, e.name])).toEqual([
+      ['RO', 'Read-only'],
+      ['RW', 'Read-write'],
+      ['DESTR', 'Destructive'],
+      ['SAFE', 'Non-destructive'],
+      ['IDEM', 'Idempotent'],
+      ['OPEN', 'Open world'],
+      ['CLOSED', 'Closed world'],
+    ]);
+    const emitted = [
+      ...annotationChips({ readOnlyHint: true, destructiveHint: true, idempotentHint: true, openWorldHint: true }),
+      ...annotationChips({ readOnlyHint: false, destructiveHint: false, openWorldHint: false }),
+    ];
+    for (const chip of emitted) {
+      const entry = ANNOTATION_CHIP_LEGEND.find((e) => e.label === chip.label);
+      expect(entry).toMatchObject({ title: chip.title, tone: chip.tone });
+    }
   });
 });
 

@@ -4,6 +4,7 @@ import { Command } from 'cmdk';
 import { AlertCircle, Check, Loader2, RefreshCw, Save, Search, Undo2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { useToolsEditor } from '../../hooks/useToolsEditor';
+import { toolExposureSummary } from '../../lib/toolExposure';
 import { useBeforeUnloadGuard } from '../../hooks/useBeforeUnloadGuard';
 import { useInspectorToolsGuardStore } from '../../stores/useInspectorToolsGuardStore';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
@@ -128,13 +129,16 @@ export function ToolsEditor({ serverName, savedTools, serverTools, onRestoreServ
             <span role="alert" className="text-status-error">
               <span className="font-medium">0</span> of{' '}
               <span className="font-medium">{allTools.length}</span> selected — cannot save
-              an empty selection (an empty whitelist would expose all tools)
+              an empty selection (an empty allow-list would expose all tools)
             </span>
           ) : (
-            <span>
-              <span className="text-text-secondary font-medium">{selected.size}</span> of{' '}
-              <span className="text-text-secondary font-medium">{allTools.length}</span>{' '}
-              enabled — empty means all tools exposed
+            <span className="text-text-secondary">
+              {toolExposureSummary({
+                selected: selected.size,
+                total: allTools.length,
+                hasAllowList: savedTools.length > 0,
+                dirty,
+              })}
             </span>
           )}
           <div className="ml-auto flex items-center gap-2">
