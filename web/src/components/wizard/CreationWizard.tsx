@@ -180,6 +180,8 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
     openapiOperationStats,
     importInProgress,
     appendInFlight,
+    secretsRedacted,
+    dismissSecretsRedacted,
     reset,
   } = useWizardStore();
   const titleId = useId();
@@ -622,6 +624,19 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
               <Panel defaultSize="55%" minSize="40%">
                 <div className="flex flex-col h-full">
                   <div className="flex-1 overflow-y-auto scrollbar-dark px-6 py-4">
+                    {secretsRedacted && (
+                      <div role="status" className="mb-3 flex items-start gap-2 rounded-lg border border-status-pending/30 bg-status-pending/5 px-3 py-2 text-2xs text-text-secondary">
+                        <span className="flex-1">Literal secrets are not kept across a reload. Re-enter them or use a stored variable.</span>
+                        <button
+                          type="button"
+                          onClick={dismissSecretsRedacted}
+                          aria-label="Dismiss notice"
+                          className="p-0.5 text-text-muted hover:text-text-secondary transition-colors"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    )}
                     {renderStepContent(
                       currentStep,
                       selectedType,

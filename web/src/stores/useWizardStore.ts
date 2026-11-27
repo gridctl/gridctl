@@ -3,6 +3,7 @@ import { subscribeWithSelector } from 'zustand/middleware';
 import type { ResourceType } from '../lib/yaml-builder';
 import { structurallyEqual } from '../lib/graph/identity';
 import { defaultFormData, type TemplateResourceType, type WizardFormDataByType } from '../lib/wizard-templates';
+import { maskLoadedYAMLSecrets, redactFormData } from '../lib/wizard-secret-fields';
 
 export type WizardStep = 'type' | 'template' | 'form' | 'review';
 
@@ -72,6 +73,10 @@ interface WizardState {
   // settles. Never persisted to sessionStorage.
   appendInFlight: boolean;
 
+  // True when the session restored at load had literal secrets removed, so
+  // the form shows a notice until dismissed. Cleared by reset and loadDraft.
+  secretsRedacted: boolean;
+
   // Drafts
   drafts: WizardDraft[];
   draftsLoading: boolean;
@@ -91,6 +96,7 @@ interface WizardState {
   setImportInProgress: (value: boolean) => void;
   setAppendedResource: (record: AppendedResource | null) => void;
   setAppendInFlight: (value: boolean) => void;
+  dismissSecretsRedacted: () => void;
   reset: () => void;
 
   // Draft actions
@@ -117,17 +123,48 @@ export function isWizardDirty(
   });
 }
 
+// saveSession persists the wizard for a reload with every literal secret
+// removed. In-memory state keeps the operator's values; only the stored copy
+// is redacted. Form-mode YAML is regenerated from the form after a reload, so
+// it is not stored at all. Expert YAML that does not parse, or that cannot be
+// checked because the yaml module has not loaded, keeps the last stored copy
+// rather than risk writing a literal.
 function saveSession(state: Partial<WizardState>) {
   try {
+    let redacted = 0;
+    const formData = { ...(state.formData ?? defaultFormData) } as Record<string, unknown>;
+    for (const type of ['stack', 'mcp-server', 'resource'] as const) {
+      if (!(type in formData)) continue;
+      const result = redactFormData(type, formData[type]);
+      formData[type] = result.data;
+      redacted += result.redacted;
+    }
+    let yamlContent = '';
+    if (state.expertMode) {
+      const masked = maskLoadedYAMLSecrets(state.yamlContent ?? '', '""');
+      if (masked) {
+        yamlContent = masked.yaml;
+        redacted += masked.masked;
+      } else {
+        const previous = loadSession()?.yamlContent;
+        yamlContent = typeof previous === 'string' ? previous : '';
+        redacted += 1;
+      }
+    }
+    let appendedResource = state.appendedResource ?? null;
+    if (appendedResource) {
+      const masked = maskLoadedYAMLSecrets(appendedResource.yaml, '""');
+      appendedResource = masked ? { ...appendedResource, yaml: masked.yaml } : null;
+    }
     const toSave = {
-      isOpen: state.isOpen,
       currentStep: state.currentStep,
       selectedType: state.selectedType,
       selectedTemplate: state.selectedTemplate,
-      formData: state.formData,
+      formData,
       expertMode: state.expertMode,
-      yamlContent: state.yamlContent,
-      appendedResource: state.appendedResource ?? null,
+      yamlContent,
+      appendedResource,
+      secretsRedacted: redacted > 0,
     };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(toSave));
   } catch {
@@ -156,7 +193,9 @@ const savedState = loadSession();
 
 export const useWizardStore = create<WizardState>()(
   subscribeWithSelector((set, get) => ({
-    isOpen: savedState?.isOpen ?? false,
+    // Never restored: a reload, including the automatic one after a UI
+    // update, leaves the wizard closed until the operator opens it.
+    isOpen: false,
     currentStep: (savedState?.currentStep as WizardStep) ?? 'type',
     selectedType: (savedState?.selectedType as ResourceType) ?? null,
     selectedTemplate: savedState?.selectedTemplate ?? null,
@@ -168,6 +207,7 @@ export const useWizardStore = create<WizardState>()(
     importInProgress: false,
     appendedResource: toAppendedResource(savedState?.appendedResource),
     appendInFlight: false,
+    secretsRedacted: (savedState as { secretsRedacted?: unknown } | null)?.secretsRedacted === true,
     drafts: [],
     draftsLoading: false,
 
@@ -263,6 +303,10 @@ export const useWizardStore = create<WizardState>()(
       set({ appendInFlight: value });
     },
 
+    dismissSecretsRedacted: () => {
+      set({ secretsRedacted: false });
+    },
+
     reset: () => {
       const fresh = {
         currentStep: 'type' as WizardStep,
@@ -275,6 +319,7 @@ export const useWizardStore = create<WizardState>()(
         openapiOperationStats: null,
         importInProgress: false,
         appendedResource: null,
+        secretsRedacted: false,
       };
       set(fresh);
       saveSession({ ...get(), ...fresh });
@@ -301,6 +346,7 @@ export const useWizardStore = create<WizardState>()(
         // describe a different document.
         openapiOperationStats: null,
         appendedResource: null,
+        secretsRedacted: false,
       };
       set(updates);
       saveSession({ ...get(), ...updates });
