@@ -238,6 +238,38 @@ export function logEntryKeys(logs: ParsedLog[]): string[] {
   });
 }
 
+export interface LogTailAnchor {
+  key: string;
+  /** Parsed timestamp in ms; NaN when the entry's timestamp does not parse. */
+  ts: number;
+}
+
+export interface NewLogCount {
+  count: number;
+  /** The anchor left the list, so count is a lower bound. */
+  overflow: boolean;
+}
+
+// Entries newer than the anchor (the newest line seen while following). The
+// poll returns a sliding window, so the count is identity-based: by the
+// anchor's position when it is still present, else by timestamp.
+export function countNewLogs(
+  keys: string[],
+  logs: ParsedLog[],
+  anchor: LogTailAnchor | null,
+): NewLogCount {
+  if (!anchor || logs.length === 0) return { count: 0, overflow: false };
+  const i = keys.lastIndexOf(anchor.key);
+  if (i >= 0) return { count: logs.length - 1 - i, overflow: false };
+  if (!Number.isFinite(anchor.ts)) return { count: 0, overflow: false };
+  let count = 0;
+  for (const log of logs) {
+    const ts = Date.parse(log.timestamp);
+    if (Number.isFinite(ts) && ts > anchor.ts) count++;
+  }
+  return { count, overflow: count > 0 };
+}
+
 // Keep the previous ParsedLog when a poll repeats the same logEntryKeys
 // identity and the same raw line. Memoized rows then see a stable reference.
 // A changed raw under the same key (level, attrs) must not be reused.

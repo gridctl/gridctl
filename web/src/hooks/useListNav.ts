@@ -15,6 +15,8 @@ interface UseListNavOptions {
   onSlash?: () => void;
   /** Called when the user presses Escape — typically close a detail pane. */
   onEscape?: () => void;
+  /** Replaces the default End (select last item) and also binds 'G'. */
+  onEnd?: () => void;
   /** Disable handling (e.g. while a modal is open). Defaults to true. */
   enabled?: boolean;
 }
@@ -93,7 +95,7 @@ function isSelectedRow(el: Element): boolean {
  * Bindings:
  *   ArrowDown / ArrowUp (aliases j / k) — move selection, wraps at ends;
  *     with nothing selected, down goes to the first row and up to the last
- *   Home / End — jump to first / last
+ *   Home / End — jump to first / last; with onEnd, End and G call it instead
  *   Enter — call onEnter
  *   Escape — call onEscape
  *   e — call onEdit
@@ -109,6 +111,7 @@ export function useListNav({
   onToggle,
   onSlash,
   onEscape,
+  onEnd,
   enabled = true,
 }: UseListNavOptions): void {
   // Keep latest values in a ref so the listener doesn't need to re-bind every
@@ -116,9 +119,9 @@ export function useListNav({
   // so an abandoned concurrent render can't leak values; not a passive effect,
   // because the document-level listener can fire between commit and passive
   // flush and must never read a stale selectedIndex).
-  const state = useRef({ itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle, onSlash, onEscape });
+  const state = useRef({ itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle, onSlash, onEscape, onEnd });
   useLayoutEffect(() => {
-    state.current = { itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle, onSlash, onEscape };
+    state.current = { itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle, onSlash, onEscape, onEnd };
   });
 
   // Child rows commit before this effect runs, so the selected row already
@@ -148,7 +151,7 @@ export function useListNav({
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isEditableTarget(e.target)) return;
 
-      const { itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle, onSlash, onEscape } = state.current;
+      const { itemCount, selectedIndex, setSelectedIndex, onEnter, onEdit, onToggle, onSlash, onEscape, onEnd } = state.current;
       const { scoped, onControl } = classifyTarget(e.target);
 
       // Escape works even on an empty list (a detail pane may still be open).
@@ -204,7 +207,14 @@ export function useListNav({
         case 'End':
           if (!scoped) return;
           e.preventDefault();
-          select(itemCount - 1);
+          if (onEnd) onEnd();
+          else select(itemCount - 1);
+          return;
+        case 'G':
+          if (onEnd && scoped) {
+            e.preventDefault();
+            onEnd();
+          }
           return;
         case 'Enter':
           if (onEnter && scoped && !onControl) {
