@@ -192,7 +192,13 @@ export function AppShell() {
   const continueAnyway = useCallback(() => {
     setDismissed(true);
     setBlocked(false);
-    mainRef.current?.focus();
+    // tabindex lives only while <main> holds focus: a permanent one would make
+    // clicks on blank workspace area focus <main> and take list keys away.
+    const main = mainRef.current;
+    if (!main) return;
+    main.setAttribute('tabindex', '-1');
+    main.addEventListener('blur', () => main.removeAttribute('tabindex'), { once: true });
+    main.focus();
   }, []);
 
   return (
@@ -206,7 +212,7 @@ export function AppShell() {
     >
       <Header onRefresh={handleRefresh} isRefreshing={isRefreshing} />
 
-      <main ref={mainRef} tabIndex={-1} className="relative overflow-hidden" style={{ minHeight: 100 }}>
+      <main ref={mainRef} className="relative overflow-hidden" style={{ minHeight: 100 }}>
         {/* Contain a workspace render throw so the shell (header, nav, status
             bar) stays mounted and the user can navigate away. Resetting on the
             route path lets navigation recover a crashed workspace without a

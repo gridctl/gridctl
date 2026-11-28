@@ -76,10 +76,22 @@ describe('AppShell minimum width state', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue anyway' }));
     expect(heading()).toBeNull();
     expect(wrapper).not.toHaveAttribute('inert');
-    expect(document.activeElement).toBe(document.querySelector('main'));
+    const main = document.querySelector('main')!;
+    expect(document.activeElement).toBe(main);
+    expect(main).toHaveAttribute('tabindex', '-1');
+
+    // A lingering tabindex would let clicks on blank workspace area focus
+    // <main>, which takes list navigation keys away from the page.
+    act(() => main.blur());
+    expect(main).not.toHaveAttribute('tabindex');
 
     resize(390);
     expect(heading()).toBeNull();
+  });
+
+  it('leaves <main> unfocusable until Continue anyway moves focus there', () => {
+    renderShell(1024);
+    expect(document.querySelector('main')).not.toHaveAttribute('tabindex');
   });
 
   it('clears on widening without a click and never remounts the workspace', () => {
