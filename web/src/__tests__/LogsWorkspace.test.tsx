@@ -352,3 +352,87 @@ describe('LogsWorkspace', () => {
     }
   });
 });
+
+describe('LogsWorkspace follow-tail', () => {
+  function scrollUp() {
+    const el = screen.getByRole('grid', { name: 'Log entries' }).parentElement as HTMLElement;
+    const set = (m: Record<string, number>) => {
+      for (const [k, v] of Object.entries(m)) {
+        Object.defineProperty(el, k, { configurable: true, writable: true, value: v });
+      }
+    };
+    set({ scrollHeight: 1000, clientHeight: 200, scrollTop: 800 });
+    fireEvent.scroll(el);
+    set({ scrollTop: 500 });
+    fireEvent.scroll(el);
+  }
+  const pill = () => screen.getAllByRole('status').find((el) => /Live|Paused/.test(el.textContent ?? ''))!;
+  const jump = () => screen.queryByRole('button', { name: /Jump to latest/ });
+
+  it('shows not following in one persistent status region, and Paused in both follow states', async () => {
+    renderAt('/logs');
+    await screen.findByText('gateway listening');
+    const status = pill();
+    expect(status).toHaveTextContent(/^Live$/);
+    expect(screen.getByText('latest')).toBeInTheDocument();
+
+    scrollUp();
+    expect(pill()).toBe(status);
+    expect(status).toHaveTextContent(/^Live · not following$/);
+    expect(jump()).toHaveTextContent(/^Jump to latest$/);
+
+    const later: LogEntry = { ...gatewayEntry, ts: '2026-07-23T10:00:09Z', msg: 'arrived later' };
+    vi.mocked(fetchGatewayLogs).mockResolvedValue(envelope([gatewayEntry, githubEntry, zapierEntry, later]));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await screen.findByText('arrived later');
+    expect(jump()).toHaveTextContent(/^1 new · Jump to latest$/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause live updates' }));
+    expect(pill()).toBe(status);
+    expect(status).toHaveTextContent(/^Paused$/);
+    expect(jump()).toHaveTextContent(/^1 new · Jump to latest$/);
+
+    fireEvent.click(jump()!);
+    expect(pill()).toBe(status);
+    expect(status).toHaveTextContent(/^Paused$/);
+    expect(jump()).toBeNull();
+  });
+
+  it('reads Live with no button while a refresh fails, and restores not following on recovery', async () => {
+    renderAt('/logs');
+    await screen.findByText('gateway listening');
+    scrollUp();
+    expect(pill()).toHaveTextContent('Live · not following');
+
+    vi.mocked(fetchGatewayLogs).mockRejectedValue(new Error('Gateway connection unavailable'));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await screen.findByRole('alert');
+    expect(screen.getByText('gateway listening')).toBeInTheDocument();
+    expect(pill()).toHaveTextContent(/^Live$/);
+    expect(jump()).toBeNull();
+
+    vi.mocked(fetchGatewayLogs).mockResolvedValue(envelope([gatewayEntry, githubEntry, zapierEntry]));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(pill()).toHaveTextContent(/^Live · not following$/);
+    expect(jump()).not.toBeNull();
+  });
+
+  it('follows again after the list empties while not following and refills', async () => {
+    renderAt('/logs');
+    await screen.findByText('gateway listening');
+    scrollUp();
+    expect(pill()).toHaveTextContent('Live · not following');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear this view (server buffer unchanged)' }));
+    await waitFor(() => expect(screen.queryByText('gateway listening')).not.toBeInTheDocument());
+    expect(pill()).toHaveTextContent(/^Live$/);
+
+    const later: LogEntry = { ...gatewayEntry, ts: '2026-07-23T10:00:09Z', msg: 'after clear' };
+    vi.mocked(fetchGatewayLogs).mockResolvedValue(envelope([gatewayEntry, githubEntry, zapierEntry, later]));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await screen.findByText('after clear');
+    expect(pill()).toHaveTextContent(/^Live$/);
+    expect(jump()).toBeNull();
+  });
+});

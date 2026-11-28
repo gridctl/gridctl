@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   GATEWAY_LOG_SOURCE,
+  countNewLogs,
   filterParsedLogs,
   formatGoDuration,
   formatLogCount,
@@ -524,5 +525,46 @@ describe('inlineLogFields', () => {
 
   it('shows an unparseable duration as raw text', () => {
     expect(inlineLogFields(entry({ attrs: { duration: 'n/a' } }))).toMatchObject([{ value: 'n/a' }]);
+  });
+});
+
+describe('countNewLogs', () => {
+  const a = entry({ message: 'a', timestamp: '2026-07-23T10:00:01Z' });
+  const b = entry({ message: 'b', timestamp: '2026-07-23T10:00:02Z' });
+  const c = entry({ message: 'c', timestamp: '2026-07-23T10:00:03Z' });
+  const d = entry({ message: 'd', timestamp: '2026-07-23T10:00:04Z' });
+  const anchorOf = (log: ParsedLog) => ({ key: logEntryKeys([log])[0], ts: Date.parse(log.timestamp) });
+
+  it('counts entries after the anchor when it is still present', () => {
+    const logs = [a, b, c, d];
+    expect(countNewLogs(logEntryKeys(logs), logs, anchorOf(b))).toEqual({ count: 2, overflow: false });
+    expect(countNewLogs(logEntryKeys(logs), logs, anchorOf(d))).toEqual({ count: 0, overflow: false });
+  });
+
+  it('falls back to newer timestamps and marks overflow when the anchor left the window', () => {
+    const logs = [c, d];
+    expect(countNewLogs(logEntryKeys(logs), logs, anchorOf(a))).toEqual({ count: 2, overflow: true });
+  });
+
+  it('reports no overflow when no entry is newer than a missing anchor', () => {
+    const logs = [a];
+    expect(countNewLogs(logEntryKeys(logs), logs, anchorOf(b))).toEqual({ count: 0, overflow: false });
+  });
+
+  it('returns zero for a missing anchor whose timestamp does not parse', () => {
+    const logs = [c, d];
+    expect(countNewLogs(logEntryKeys(logs), logs, { key: 'gone', ts: Number.NaN })).toEqual({
+      count: 0,
+      overflow: false,
+    });
+  });
+
+  it('returns zero without an anchor', () => {
+    const logs = [a, b];
+    expect(countNewLogs(logEntryKeys(logs), logs, null)).toEqual({ count: 0, overflow: false });
+  });
+
+  it('returns zero for empty input', () => {
+    expect(countNewLogs([], [], anchorOf(a))).toEqual({ count: 0, overflow: false });
   });
 });

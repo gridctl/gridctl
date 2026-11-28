@@ -41,6 +41,11 @@ export function LogsView({
   const { fontSize, zoomIn, zoomOut, resetZoom, isMin, isMax, isDefault } =
     useLogFontSize(containerRef);
 
+  // Follow-tail. An emptied list resets it during render (not in an effect),
+  // so a refilled list starts out following.
+  const [following, setFollowing] = useState(true);
+  if (view.filteredLogs.length === 0 && !following) setFollowing(true);
+
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useDismiss<HTMLDivElement>(exportOpen, () => setExportOpen(false));
   const setSource = view.setSource;
@@ -62,17 +67,26 @@ export function LogsView({
 
   const trailing = (
     <div className="flex items-center gap-1 flex-shrink-0">
-      {/* Live / paused state */}
-      {view.isPaused ? (
-        <span className="text-3xs px-2 py-0.5 bg-status-pending/15 text-status-pending rounded-full font-medium border border-status-pending/20">
-          Paused
-        </span>
-      ) : (
-        <span className="flex items-center gap-1 text-3xs text-status-running font-medium">
-          <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse motion-reduce:animate-none" />
-          Live
-        </span>
-      )}
+      {/* Live / paused state. The status wrapper stays mounted so a change
+          of pill is announced. A failed refresh hides the jump button, so
+          the pill does not claim "not following" until polls recover. */}
+      <span role="status" className="flex items-center">
+        {view.isPaused ? (
+          <span className="text-3xs px-2 py-0.5 bg-status-pending/15 text-status-pending rounded-full font-medium border border-status-pending/20">
+            Paused
+          </span>
+        ) : following || view.error ? (
+          <span className="flex items-center gap-1 text-3xs text-status-running font-medium">
+            <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse motion-reduce:animate-none" />
+            Live
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 text-3xs text-text-muted font-medium">
+            <span className="w-1.5 h-1.5 rounded-full bg-text-muted" />
+            Live · not following
+          </span>
+        )}
+      </span>
       <IconButton
         icon={view.isPaused ? Play : Pause}
         onClick={view.togglePause}
@@ -219,6 +233,8 @@ export function LogsView({
         onClearTrace={view.clearTraceFilter}
         windowSize={view.windowSize}
         onFocusSearch={() => searchInputRef.current?.focus()}
+        following={following}
+        onFollowingChange={setFollowing}
       />
 
       {/* Keyboard hint strip. Nowrap so the wider 10 px labels scroll
@@ -229,6 +245,7 @@ export function LogsView({
         <span><kbd className="font-mono">↵</kbd> expand</span>
         <span><kbd className="font-mono">/</kbd> search</span>
         <span><kbd className="font-mono">esc</kbd> collapse</span>
+        <span><kbd className="font-mono">G</kbd> latest</span>
       </div>
     </>
   );

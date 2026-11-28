@@ -74,5 +74,7 @@ export const SHORTCUT_BINDINGS: ShortcutBinding[] = [
   { keys: ['['], label: 'Toggle trace list', scope: SHORTCUT_SCOPE.traces },
   { keys: ['/'], label: 'Search', scope: SHORTCUT_SCOPE.logs },
   { keys: ['Enter'], label: 'Expand', scope: SHORTCUT_SCOPE.logs },
+  { keys: ['End'], label: 'Jump to latest', scope: SHORTCUT_SCOPE.logs },
+  { keys: ['G'], label: 'Jump to latest', scope: SHORTCUT_SCOPE.logs },
   { keys: PINS_APPROVE_KEYS, label: 'Approve drift', scope: SHORTCUT_SCOPE.pins },
 ];

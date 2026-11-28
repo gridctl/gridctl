@@ -465,3 +465,65 @@ describe('useListNav — modal dialogs', () => {
     dialog.remove();
   });
 });
+
+function EndHarness({ onEnd }: { onEnd?: () => void }) {
+  const [index, setIndex] = useState(0);
+  useListNav({ itemCount: 3, selectedIndex: index, setSelectedIndex: setIndex, onEnd });
+  return (
+    <>
+      <div data-testid="index">{index}</div>
+      <input data-testid="input" />
+      <button data-testid="outside">Pause</button>
+      <div {...listNavProps} />
+    </>
+  );
+}
+
+describe('useListNav — onEnd', () => {
+  it('calls onEnd on End and G instead of selecting the last item', () => {
+    const onEnd = vi.fn();
+    render(<EndHarness onEnd={onEnd} />);
+    expect(fireEvent.keyDown(document, { key: 'End' })).toBe(false);
+    expect(onEnd).toHaveBeenCalledTimes(1);
+    expect(fireEvent.keyDown(document, { key: 'G', shiftKey: true })).toBe(false);
+    expect(onEnd).toHaveBeenCalledTimes(2);
+    expect(getIndex()).toBe(0);
+  });
+
+  it('does not bind lowercase g or modified G', () => {
+    const onEnd = vi.fn();
+    render(<EndHarness onEnd={onEnd} />);
+    fireEvent.keyDown(document, { key: 'g' });
+    fireEvent.keyDown(document, { key: 'G', shiftKey: true, ctrlKey: true });
+    expect(onEnd).not.toHaveBeenCalled();
+  });
+
+  it('keeps End selecting the last item and leaves G unbound without onEnd', () => {
+    render(<EndHarness />);
+    expect(fireEvent.keyDown(document, { key: 'G', shiftKey: true })).toBe(true);
+    expect(getIndex()).toBe(0);
+    fireEvent.keyDown(document, { key: 'End' });
+    expect(getIndex()).toBe(2);
+  });
+
+  it('runs G from a focused control outside the list, but not End', () => {
+    const onEnd = vi.fn();
+    render(<EndHarness onEnd={onEnd} />);
+    const outside = screen.getByTestId('outside');
+    outside.focus();
+    expect(fireEvent.keyDown(outside, { key: 'End' })).toBe(true);
+    expect(onEnd).not.toHaveBeenCalled();
+    expect(fireEvent.keyDown(outside, { key: 'G', shiftKey: true })).toBe(false);
+    expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores End and G in a text input', () => {
+    const onEnd = vi.fn();
+    render(<EndHarness onEnd={onEnd} />);
+    const input = screen.getByTestId('input');
+    input.focus();
+    fireEvent.keyDown(input, { key: 'End' });
+    fireEvent.keyDown(input, { key: 'G', shiftKey: true });
+    expect(onEnd).not.toHaveBeenCalled();
+  });
+});
