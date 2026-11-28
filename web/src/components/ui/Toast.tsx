@@ -228,7 +228,7 @@ export function ToastContainer() {
       aria-live="polite"
       aria-atomic="false"
       ref={regionRef}
-      className="fixed bottom-10 right-4 z-toast space-y-2 max-w-[min(24rem,calc(100vw-2rem))] max-sm:max-h-[33vh] max-sm:overflow-y-auto"
+      className="fixed bottom-10 right-4 z-toast space-y-2 max-w-[min(24rem,calc(100vw-2rem))] max-sm:max-h-[33vh] max-sm:overflow-y-auto max-sm:max-w-[calc(100vw-1rem)] max-sm:p-2 max-sm:-m-2"
     >
       {visible.map((toast) => {
         const showDetailsToggle = hasDetails(toast);

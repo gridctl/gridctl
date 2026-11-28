@@ -1549,6 +1549,9 @@ function LibraryHeader({ headingId, skillCount, kindSwitch, onNewSkill, onImport
       headingId={headingId}
       rowRef={rowRef}
       compact={compact}
+      // Raise the header's stacking context so the collapsed actions menu
+      // paints above the search bar below it.
+      className="relative z-raised"
       // The kind segment sits beside the title: the header is already several
       // actions wide, and this is the sole discovery mechanism for the Agents
       // catalog.
