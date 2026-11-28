@@ -8,6 +8,7 @@ import { useSharedStatus } from '../hooks/useSharedStatus';
 import { formatCompactNumber } from '../lib/format';
 import { apiRangeFor, useMetricsSeries, windowLabelFor, type MetricsTimeRange } from '../hooks/useMetricsSeries';
 import { useToolUsage } from '../hooks/useToolUsage';
+import { useHeldValue } from '../hooks/useHeldValue';
 import { useLimits } from '../hooks/useLimits';
 import { LimitsPanel } from '../components/metrics/LimitsShared';
 import { deriveLimitsSummary } from '../components/metrics/limitsData';
@@ -46,7 +47,7 @@ function DetachedMetricsPageContent() {
   // shell, so it owns its own status poll (the in-shell surfaces read the app
   // store instead). The time-series come from the shared useMetricsSeries hook.
   const { status, settled, error: statusError, refresh: refreshStatus } = useSharedStatus({ enabled: !authRequired });
-  const tokenUsage = useMemo<TokenUsage | null>(() => {
+  const liveTokenUsage = useMemo<TokenUsage | null>(() => {
     if (!status || useAuthStore.getState().generation !== generation) return null;
     return status.token_usage ?? null;
   }, [status, generation]);
@@ -65,7 +66,13 @@ function DetachedMetricsPageContent() {
 
   // Per-tool usage for the Per-Tool panel — the same GET /api/tools/usage
   // pipeline the Tools workspace and Metrics Tools scope consume.
-  const { usage: toolUsageData, error: toolUsageError } = useToolUsage(true);
+  const { usage: liveToolUsage, error: toolUsageError, reload: reloadToolUsage } = useToolUsage(true);
+
+  // Pause holds the snapshot-fed tables with the chart, on Live only.
+  const holdTables = isPaused && timeRange === 'live';
+  const [tablesEpoch, setTablesEpoch] = useState(0);
+  const tokenUsage = useHeldValue(liveTokenUsage, holdTables, tablesEpoch);
+  const toolUsageData = useHeldValue(liveToolUsage, holdTables, tablesEpoch);
 
   const { metricsData, error, lastLoadedAt, reload, clear } = useMetricsSeries({
     timeRange,
@@ -96,6 +103,23 @@ function DetachedMetricsPageContent() {
       setToolSortColumn(column);
       setToolSortDirection('desc');
     }
+  };
+
+  const onTogglePause = () => {
+    // The series poll does not fire when re-enabled; fetch now on Resume.
+    if (isPaused) void reload();
+    setIsPaused(!isPaused);
+  };
+
+  const onRefresh = async () => {
+    const [ok] = await Promise.all([reload(), refreshStatus(), reloadToolUsage()]);
+    setTablesEpoch((n) => n + 1);
+    return ok;
+  };
+
+  const onClear = async () => {
+    await clear(() => Promise.all([refreshStatus(), reloadToolUsage()]));
+    setTablesEpoch((n) => n + 1);
   };
 
   const kpis = deriveSessionKpis(tokenUsage);
@@ -141,9 +165,9 @@ function DetachedMetricsPageContent() {
               if (r === 'live') setIsPaused(false);
             }}
             isPaused={isPaused}
-            onTogglePause={() => setIsPaused((p) => !p)}
-            onRefresh={reload}
-            onClear={() => void clear()}
+            onTogglePause={onTogglePause}
+            onRefresh={onRefresh}
+            onClear={onClear}
           />
         ),
       }}

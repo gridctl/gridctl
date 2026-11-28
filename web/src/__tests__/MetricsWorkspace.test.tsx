@@ -20,6 +20,11 @@ vi.mock('../hooks/useWindowManager', () => ({
     broadcastSelectionChange: vi.fn(),
   }),
 }));
+const statusRefresh = vi.fn(() => Promise.resolve());
+vi.mock('../hooks/usePolling', async (importActual) => {
+  const actual = await importActual<typeof import('../hooks/usePolling')>();
+  return { ...actual, usePollingStatusRefresh: () => statusRefresh };
+});
 vi.mock('../lib/api', async (importActual) => {
   const actual = await importActual<typeof import('../lib/api')>();
   return {
@@ -39,7 +44,7 @@ vi.mock('../lib/api', async (importActual) => {
 });
 
 // Imported after the mock factory so the mock-then-import order is visible.
-import { fetchTokenMetrics, fetchOptimizeReport, fetchToolUsage } from '../lib/api';
+import { fetchTokenMetrics, fetchOptimizeReport, fetchToolUsage, clearTokenMetrics, HTTPError } from '../lib/api';
 import { downloadTextFile } from '../lib/download';
 import { showToast } from '../components/ui/Toast';
 import { BreakdownTable } from '../components/metrics/metricsShared';
@@ -745,5 +750,164 @@ describe('MetricsWorkspace breakdown columns and export', () => {
     } finally {
       Element.prototype.scrollIntoView = original;
     }
+  });
+});
+
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
+const changedUsage: TokenUsage = {
+  ...tokenUsage,
+  session: { input_tokens: 500, output_tokens: 200, total_tokens: 700 },
+  per_server: {
+    ...tokenUsage.per_server,
+    github: { input_tokens: 300, output_tokens: 99, total_tokens: 399 },
+  },
+};
+
+async function confirmClear() {
+  fireEvent.click(screen.getByTitle('Clear Metrics'));
+  const dialog = await screen.findByRole('alertdialog', { name: /clear all metrics/i });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Clear' }));
+}
+
+describe('MetricsWorkspace clear, refresh, and pause feedback', () => {
+  it('keeps every number and toasts once when clear fails', async () => {
+    vi.mocked(clearTokenMetrics).mockRejectedValueOnce(new HTTPError(500, '500 Internal Server Error'));
+    renderAt('/metrics?scope=servers');
+    await screen.findByText('Per-Server · session totals');
+    const fetchesBefore = vi.mocked(fetchTokenMetrics).mock.calls.length;
+    await confirmClear();
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('error', expect.any(String), expect.anything()));
+    const text = vi.mocked(showToast).mock.calls[0][1];
+    expect(text.startsWith('Clear metrics failed')).toBe(true);
+    expect(text.split('Clear metrics failed').length).toBe(2);
+    expect(screen.getByText(/Session total: 140 tokens/)).toBeInTheDocument();
+    expect(screen.getByText('github')).toBeInTheDocument();
+    expect(screen.getByText('atlassian')).toBeInTheDocument();
+    expect(vi.mocked(fetchTokenMetrics).mock.calls.length).toBe(fetchesBefore);
+    expect(showToast).not.toHaveBeenCalledWith('success', 'Metrics cleared');
+  });
+
+  it('refreshes status and tool usage alongside the series after a clear', async () => {
+    renderAt();
+    await screen.findByText('Total Tokens');
+    await waitFor(() => expect(fetchToolUsage).toHaveBeenCalledTimes(1));
+    const pending = deferred<TokenMetricsResponse>();
+    vi.mocked(fetchTokenMetrics).mockReturnValueOnce(pending.promise);
+    await confirmClear();
+    await waitFor(() => expect(clearTokenMetrics).toHaveBeenCalledTimes(1));
+    // Sent before the post-clear series fetch resolves.
+    await waitFor(() => expect(statusRefresh).toHaveBeenCalledTimes(1));
+    expect(fetchToolUsage).toHaveBeenCalledTimes(2);
+    expect(showToast).not.toHaveBeenCalled();
+    await act(async () => { pending.resolve(emptyTokenSeries); });
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('success', 'Metrics cleared'));
+  });
+
+  it('refetches the series on Resume and not on Pause', async () => {
+    renderAt();
+    await screen.findByText('Total Tokens');
+    const before = vi.mocked(fetchTokenMetrics).mock.calls.length;
+    fireEvent.click(screen.getByTitle('Pause live updates'));
+    expect(vi.mocked(fetchTokenMetrics).mock.calls.length).toBe(before);
+    fireEvent.click(screen.getByTitle('Resume live updates'));
+    await waitFor(() => expect(vi.mocked(fetchTokenMetrics).mock.calls.length).toBe(before + 1));
+  });
+
+  it('announces a refresh only after it settles', async () => {
+    renderAt();
+    await screen.findByText('Total Tokens');
+    const pending = deferred<TokenMetricsResponse>();
+    vi.mocked(fetchTokenMetrics).mockReturnValueOnce(pending.promise);
+    fireEvent.click(screen.getByTitle('Refresh'));
+    expect(screen.queryByText('Metrics refreshed')).not.toBeInTheDocument();
+    await act(async () => { pending.resolve(emptyTokenSeries); });
+    expect(await screen.findByText('Metrics refreshed')).toBeInTheDocument();
+    expect(statusRefresh).toHaveBeenCalled();
+  });
+
+  it('shows no focus chip for a selected client and keeps its note', async () => {
+    mockSeries(seededTokenSeries);
+    renderAt('/metrics?scope=clients&selected=claude');
+    expect(
+      await screen.findByText(/The chart shows the whole stack; per-client token series is not recorded/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /clear focus on/i })).not.toBeInTheDocument();
+  });
+
+  it('shows no focus chip for a server with no samples and keeps its note', async () => {
+    mockSeries(seededTokenSeries);
+    renderAt('/metrics?scope=servers&selected=github');
+    expect(
+      await screen.findByText(/No samples for github in this window\. The chart shows the whole stack as context\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /clear focus on/i })).not.toBeInTheDocument();
+  });
+
+  it('holds the tables and session line while paused on Live', async () => {
+    renderAt('/metrics?scope=servers');
+    await screen.findByText('Per-Server · session totals');
+    fireEvent.click(screen.getByTitle('Pause live updates'));
+    act(() => { useStackStore.setState({ tokenUsage: changedUsage }); });
+    expect(screen.getByText(/Session total: 140 tokens/)).toBeInTheDocument();
+    expect(screen.queryByText('399')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle('Resume live updates'));
+    expect(await screen.findByText(/Session total: 700 tokens/)).toBeInTheDocument();
+    expect(screen.getByText('399')).toBeInTheDocument();
+  });
+
+  it('applies a refresh while paused and stays paused', async () => {
+    renderAt('/metrics?scope=servers');
+    await screen.findByText('Per-Server · session totals');
+    fireEvent.click(screen.getByTitle('Pause live updates'));
+    act(() => { useStackStore.setState({ tokenUsage: changedUsage }); });
+    expect(screen.getByText(/Session total: 140 tokens/)).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('Refresh'));
+    expect(await screen.findByText(/Session total: 700 tokens/)).toBeInTheDocument();
+    expect(screen.getByTitle('Resume live updates')).toBeInTheDocument();
+    act(() => { useStackStore.setState({ tokenUsage }); });
+    expect(screen.getByText(/Session total: 700 tokens/)).toBeInTheDocument();
+  });
+
+  it('never holds the tables on a non-live range', async () => {
+    renderAt('/metrics?scope=servers');
+    await screen.findByText('Per-Server · session totals');
+    fireEvent.click(screen.getByTitle('Pause live updates'));
+    fireEvent.click(screen.getByRole('button', { name: '1h' }));
+    act(() => { useStackStore.setState({ tokenUsage: changedUsage }); });
+    expect(await screen.findByText(/Session total: 700 tokens/)).toBeInTheDocument();
+  });
+
+  it('releases the pause hold once after clearing while paused', async () => {
+    const clearedUsage: TokenUsage = {
+      ...tokenUsage,
+      session: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+      per_server: {},
+      per_client: {},
+    };
+    statusRefresh.mockImplementationOnce(async () => {
+      useStackStore.setState({ tokenUsage: clearedUsage });
+    });
+    renderAt('/metrics?scope=servers');
+    await screen.findByText('Per-Server · session totals');
+    fireEvent.click(screen.getByTitle('Pause live updates'));
+    await confirmClear();
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('success', 'Metrics cleared'));
+    expect(screen.queryByText(/Session total: 140 tokens/)).not.toBeInTheDocument();
+    expect(screen.getByTitle('Resume live updates')).toBeInTheDocument();
+  });
+
+  it('still reports a successful clear when a follow-up refresh rejects', async () => {
+    statusRefresh.mockRejectedValueOnce(new Error('status blip'));
+    renderAt();
+    await screen.findByText('Total Tokens');
+    await confirmClear();
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('success', 'Metrics cleared'));
+    expect(showToast).not.toHaveBeenCalledWith('error', expect.anything(), expect.anything());
   });
 });
