@@ -134,7 +134,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="@container flex flex-col h-full">
       {/* Search */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border/20">
         <Search size={14} className="text-text-muted flex-shrink-0" />
@@ -167,9 +167,9 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
         </div>
       )}
 
-      <div className="flex flex-1 min-h-0">
+      <div className="flex flex-col @2xl:flex-row flex-1 min-h-0">
         {/* Entry list */}
-        <div className="w-1/2 border-r border-border/10 overflow-y-auto scrollbar-dark">
+        <div className="w-full @2xl:w-1/2 basis-2/5 @2xl:basis-auto min-h-0 border-b @2xl:border-b-0 @2xl:border-r border-border/10 overflow-y-auto scrollbar-dark">
           {failed ? (
             <div role="alert" className="flex flex-col items-center justify-center gap-2 py-16">
               <span className="text-3xs text-text-muted">Failed to load the catalog</span>
@@ -230,7 +230,7 @@ export function CatalogPicker({ onSelect }: CatalogPickerProps) {
         </div>
 
         {/* Preview pane */}
-        <div className="w-1/2 flex flex-col">
+        <div className="w-full @2xl:w-1/2 flex-1 min-h-0 flex flex-col">
           {selected ? (
             <>
               <div className="flex-1 overflow-y-auto scrollbar-dark p-4 space-y-4">

@@ -3,15 +3,10 @@ import { useNavigate, useParams, useSearchParams } from 'react-router';
 import {
   AlignJustify,
   BookOpen,
-  CloudDownload,
-  Download,
-  Globe,
   LayoutGrid,
   List,
-  Plus,
   Power,
   PowerOff,
-  RefreshCw,
   Search,
   SquareCheck,
   Trash2,
@@ -23,7 +18,6 @@ import { isModalDialogOpen } from '../../lib/dom';
 import { WORKSPACE_LABELS } from '../../types/workspace';
 import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
-import { PopoutButton } from '../ui/PopoutButton';
 import { WorkspaceHeader } from '../ui/WorkspaceHeader';
 import { SkillEditor } from '../registry/SkillEditor';
 import { SkillCardSkeleton } from '../registry/SkillCardSkeleton';
@@ -48,6 +42,9 @@ import { useUIStore } from '../../stores/useUIStore';
 import { useWizardStore } from '../../stores/useWizardStore';
 import { useLibraryCommands, type LibraryFilter } from '../library/useLibraryCommands';
 import { LibraryKindSwitch } from '../registry/LibraryKindSwitch';
+import { LibraryHeaderActions } from '../registry/LibraryHeaderActions';
+import { shouldCollapseLibraryActions } from '../../lib/libraryHeader';
+import { useContainerWidth } from '../../hooks/useContainerWidth';
 import { isRegistryKind, type RegistryKind } from '../../lib/registryKind';
 import { fetchPacks } from '../../lib/api';
 import { AgentsWorkspace } from '../registry/agents/AgentsWorkspace';
@@ -1544,11 +1541,17 @@ function LibraryHeader({ headingId, skillCount, kindSwitch, onNewSkill, onImport
   const registryDetached = useUIStore((s) => s.registryDetached);
   const hasSources = sources.length > 0;
   const updateCount = sources.filter((s) => s.updateAvailable).length;
+  const rowRef = useRef<HTMLDivElement>(null);
+  const { width: rowWidth } = useContainerWidth(rowRef);
   return (
     <WorkspaceHeader
       title={WORKSPACE_LABELS.library}
       headingId={headingId}
+      rowRef={rowRef}
       compact={compact}
+      // Raise the header's stacking context so the collapsed actions menu
+      // paints above the search bar below it.
+      className="relative z-raised"
       // The kind segment sits beside the title: the header is already several
       // actions wide, and this is the sole discovery mechanism for the Agents
       // catalog.
@@ -1559,43 +1562,19 @@ function LibraryHeader({ headingId, skillCount, kindSwitch, onNewSkill, onImport
         </span>
       )}
       actions={(
-        <>
-          {/* One shared treatment for the three header actions (the
-              secondary outline Import always had): uniform color, padding,
-              and nowrap so no label ever two-lines and heights stay equal.
-              The stateful Sync pill keeps its distinct alert styling. */}
-          <button
-            onClick={onNewSkill}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium whitespace-nowrap text-secondary hover:text-secondary/80 border border-secondary/25 hover:bg-secondary/10 rounded-lg transition-colors"
-          >
-            <Plus size={12} /> New Skill
-          </button>
-          {/* Adding a git source belongs where sources are managed. Opens the
-              same import wizard the registry sidebar does, skipping the
-              generic resource-type step. */}
-          <button
-            onClick={onImportSkill}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium whitespace-nowrap text-secondary hover:text-secondary/80 border border-secondary/25 hover:bg-secondary/10 rounded-lg transition-colors"
-            title="Import skills from a git repository"
-          >
-            <Download size={12} /> Import
-          </button>
-          <button
-            onClick={onGlobalContext}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium whitespace-nowrap text-secondary hover:text-secondary/80 border border-secondary/25 hover:bg-secondary/10 rounded-lg transition-colors"
-            title="Manage the global context (single file or rule fragments) synced to linked clients"
-          >
-            <Globe size={12} /> Global Context
-          </button>
-          <SyncSourcesButton
-            hasSources={hasSources}
-            updateCount={updateCount}
-            syncing={syncing}
-            onClick={onSync}
-          />
-          <IconButton icon={RefreshCw} onClick={onRefresh} tooltip="Refresh" size="sm" variant="ghost" />
-          <PopoutButton onClick={onPopout} detached={registryDetached} />
-        </>
+        <LibraryHeaderActions
+          onNewSkill={onNewSkill}
+          onImportSkill={onImportSkill}
+          onGlobalContext={onGlobalContext}
+          onRefresh={onRefresh}
+          onSync={onSync}
+          onPopout={onPopout}
+          hasSources={hasSources}
+          updateCount={updateCount}
+          syncing={syncing}
+          detached={registryDetached}
+          collapsed={shouldCollapseLibraryActions(rowWidth, updateCount > 0)}
+        />
       )}
     >
       {/* KPI summary cards — the first-class dashboard signal, and the primary
@@ -1702,73 +1681,6 @@ function KpiCard({ label, count, dot, active, compact, onClick, unknownReason }:
         {unknown ? '–' : count}
       </span>
     </button>
-  );
-}
-
-interface SyncSourcesButtonProps {
-  hasSources: boolean;
-  updateCount: number;
-  syncing: boolean;
-  onClick: () => void;
-}
-
-/**
- * Workspace-level "Sync sources" affordance. Three states:
- * - hidden when no imported sources exist (feature is dormant)
- * - brand pill "Sync sources (N updates)" when any source has updateAvailable
- * - low-emphasis IconButton otherwise (lets users force a sync anyway)
- *
- * During sync the button disables and the label morphs inside an aria-live
- * region so screen readers announce the in-flight state. `CloudDownload`
- * differentiates the sync action from the local Refresh button (which uses
- * `RefreshCw`, matching the global Header convention).
- */
-function SyncSourcesButton({ hasSources, updateCount, syncing, onClick }: SyncSourcesButtonProps) {
-  if (!hasSources) return null;
-
-  const hasUpdates = updateCount > 0;
-  const ariaLabel = syncing
-    ? 'Syncing skill sources'
-    : hasUpdates
-      ? `Sync sources, ${updateCount} ${updateCount === 1 ? 'update' : 'updates'} available`
-      : 'Sync sources from git';
-
-  if (hasUpdates) {
-    // Pill mirrors the per-source pill in SourceGroupHeader so the two
-    // affordances read as the same family. Brand tokens rather than the warning
-    // family: an available update is informational and optional, matching the
-    // "N updates" pill in RegistrySidebar.
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        disabled={syncing}
-        aria-label={ariaLabel}
-        aria-busy={syncing}
-        title={ariaLabel}
-        className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 whitespace-nowrap rounded-lg border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-60"
-      >
-        <CloudDownload size={12} aria-hidden="true" className={syncing ? 'animate-pulse' : undefined} />
-        <span aria-live="polite">
-          {syncing ? 'Syncing…' : `Sync sources (${updateCount} update${updateCount === 1 ? '' : 's'})`}
-        </span>
-      </button>
-    );
-  }
-
-  // No pending updates: a quiet IconButton lets users force a sync without
-  // the chrome implying anything is wrong. The aria-label morph carries the
-  // in-flight announcement; no separate live region is needed.
-  return (
-    <IconButton
-      icon={CloudDownload}
-      onClick={onClick}
-      disabled={syncing}
-      tooltip={ariaLabel}
-      size="sm"
-      variant="ghost"
-      className={syncing ? 'animate-pulse' : undefined}
-    />
   );
 }
 

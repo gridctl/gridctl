@@ -177,6 +177,37 @@ once an attempt has failed. The "Updated" age sits outside every live region
 and ticks on its own one-second `useNow` clock, so it keeps advancing when
 no poll lands. While disconnected it reads "Last updated" in the warning tone.
 
+The minimum supported window width is 480 px (`MIN_SUPPORTED_WIDTH` in
+`lib/viewport.ts`, read through `useViewportWidth`). Below it AppShell covers
+`<main>` with `MinWidthState`: "Window too narrow", the reason, and a
+"Continue anyway" button. A hard block would fail WCAG (F102), so the state
+is dismissible; the dismissal lasts until the page reloads and is not saved.
+Widening to 480 px or more removes the state without a click. The header,
+status bar, toasts, palette, and global dialogs stay live. The state is only
+raised (on a width change or navigation) when no `[aria-modal="true"]`
+element is open, because most dialogs render in place inside the workspace
+subtree and would otherwise sit inert under it. While it shows, a
+`MutationObserver` on the workspace wrapper watches for a dialog opening
+there (the palette can open the skill editor); the state then gives way
+without counting as a dismissal and focus moves into the dialog. The
+observer is scoped to the wrapper because the palette is itself
+`aria-modal`. The wrapper (`<div className="contents" inert={blocked}>`
+around `ErrorBoundary` and `Outlet`) is rendered at every width: adding and
+removing it with the state would change the element type at that position
+and remount the workspace, discarding drafts.
+
+Use a container query (`@container` with `@md:` and similar variants) or
+`useContainerWidth` for anything inside a `WorkspaceShell` pane or a
+resizable panel, because the pane is not the viewport's width. Reserve
+viewport breakpoints (`sm:`, `md:`) for viewport-sized surfaces such as the
+wizard modal, the toast stack, and the minimum-width state. The Library
+header is the measured case: `LibraryHeaderActions` moves Import, Global
+Context, Sync sources, Refresh, and the popout into a More actions
+`HeaderMenu` when its row is narrower than
+`LIBRARY_ACTIONS_COLLAPSE_BELOW` in `lib/libraryHeader.ts` (990 px with a
+pending update pill, 850 px without). A width of 0 means unknown and keeps
+the full cluster.
+
 Detached windows (`/sidebar`, `/editor`, `/logs-window`, `/metrics-window`,
 `/traces-window`, `/registry` → `/library-window`) render *outside*
 AppShell. They are popout-friendly single-purpose pages and load on demand.
@@ -249,12 +280,13 @@ workspaces. Reach for them before duplicating UI:
 | `InspectorSection` | `components/inspector/` | Stack `Sidebar.tsx`, `GatewaySidebar.tsx`, `DetachedSidebarPage.tsx` (collapsible section pattern; contents mount on first open; an optional `summary` is a second header line that reads while collapsed) |
 | `InspectorValueRow` | `components/inspector/` | Identifier rows in the Stack inspector, the detached inspector, and `SourceProvenance`. The value wraps (`break-all`), is focusable, and has no hover `title`; `copyLabel` adds a `CopyButton` |
 | `CopyButton` | `components/ui/` | Copies through `copyTextToClipboard`, stops click propagation, and shows the result in place for 1.5 seconds ("Copied" or "Copy failed") with a visually hidden status announcement. `label` is the accessible name and names the field. Use it where a toast is unavailable or too loud; `copyWithToast` remains for toolbar copies |
-| `WorkspaceHeader` | `components/ui/` | Every workspace and Library segment. The one visible `<h1>` (`title`, `headingId`), then an optional `switcher`, a one-line truncating `summary` at `text-xs`, and right-aligned `actions`; `children` add rows below. `compact` selects `py-2`. Empty slots render no wrapper |
+| `WorkspaceHeader` | `components/ui/` | Every workspace and Library segment. The one visible `<h1>` (`title`, `headingId`), then an optional `switcher`, a one-line truncating `summary` at `text-xs`, and right-aligned `actions`; `children` add rows below. `compact` selects `py-2`. `rowRef` reaches the title row for callers that measure it (the Library header). Empty slots render no wrapper |
 | `Tabs` / `Tab` / `TabPanel` | `components/ui/` | Keyboard-operable tab lists. Arrow keys move and select. `InspectorTabList` / `InspectorTabButton` are wrappers that keep inspector chrome. `variant="segmented"` renders an inline segment control (the Traces and Runs switch); `SEGMENT_GROUP_CLASS` and `segmentClass` (`ui/segment.ts`) give a non-tab group, such as `LibraryKindSwitch`, the same chrome |
 | `EmptyState` | `components/ui/` | Anywhere a "no items / no selection" affordance is needed |
 | `FailedState` | `components/ui/` | Failed fetch with nothing loaded. Title is `<feature> unavailable`, with Retry when `onRetry` is set. Not a spinner or an empty collection |
 | `FailureBanner` | `components/ui/` | Failed refresh when data is already on screen: one alert row, with Retry when `onRetry` is set. `lastUpdated` adds a static "Last updated HH:MM:SS"; `className` overrides the default margins |
 | `refreshPhase` | `lib/refreshPhase.ts` | The single definition of the rule above. Maps `{ error, hasLoaded }` to `loading` (skeleton), `failed` (`FailedState`), `stale` (data plus `FailureBanner`), or `ready`. `hasLoaded` means a load completed for what is selected now |
+| `HeaderMenu` | `components/shell/` | WAI-ARIA menu button on `Popover`: the header's Help and More actions menus and the Library header's collapsed More actions menu. `size` and `variant` pass through to the `IconButton` trigger |
 | `Popover` | `components/ui/` | Theme picker, telemetry pill, the header's Help and More actions menus (`HeaderMenu`), overlays menu, log level filter, log view options, the skill editor's validation messages, and `SelectMenu` (the detached inspector's node menu and the detached Logs source menu). Escape and a programmatic close return focus to the trigger; an outside click does not. The wizard's variables popover and variable-set selector do not use it: they portal their own dropdowns to `document.body` to escape the wizard's focus trap and own Escape and Tab |
 | `DetachedWindowFrame` | `components/detached/` | Every detached page renders through it. Owns the grain, header, footer, `document.title`, the window's single `ToastContainer`, the fullscreen toggle (warns when the browser refuses), and the disconnected banner. It fetches nothing: the page passes `connection` from its one `useSharedStatus` call and holds `lost` false while its own failure notice is showing. The editor popout omits the header, footer, and banner because the flush editor covers them |
 | `Field` | `components/ui/` | Label, control, error, then help. Owns the required marker and wires `htmlFor`, `aria-invalid`, and `aria-describedby`. Pass plain label text. A different sibling order keeps its wrapper and uses `useId` |

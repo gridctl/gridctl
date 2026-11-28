@@ -6,6 +6,8 @@ import { createServer } from 'vite';
 // Run from the repository root with the externally installed Playwright module.
 // The real app shell loads at /stack and every /api/ response is fixture-owned:
 // the shell's polls overwrite seeded stores, so the fixture is the data source.
+// CHROMIUM_EXECUTABLE optionally names a browser binary when the Playwright
+// browser cache does not match the installed Playwright version.
 const { chromium } = await import(pathToFileURL(resolve(process.argv[2])).href);
 
 const WIDTHS = [1024, 1100, 1280, 1366];
@@ -233,7 +235,7 @@ const summary = [];
 try {
   await server_.listen();
   const origin = `http://127.0.0.1:${server_.httpServer.address().port}`;
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE || undefined });
 
   async function load(name, width) {
     fixture = FIXTURES[name];

@@ -78,9 +78,9 @@ export function MetricsKpiRow({
   focusLine?: string;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="@container space-y-1.5">
       <span className="block text-3xs uppercase tracking-[0.18em] text-text-muted">{windowLabel}</span>
-      <div className="grid gap-3 grid-cols-4">
+      <div className="grid gap-3 grid-cols-2 @2xl:grid-cols-4">
         <KPICard label="Input Tokens" value={windowTotals.input} colorClass="text-secondary" />
         <KPICard label="Output Tokens" value={windowTotals.output} colorClass="text-primary" />
         <KPICard label="Total Tokens" value={windowTotals.total} colorClass="text-text-primary" />

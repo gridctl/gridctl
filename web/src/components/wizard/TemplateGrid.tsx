@@ -28,7 +28,7 @@ export function TemplateGrid({ resourceType, selected, onSelect }: TemplateGridP
           Choose a template
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {templates.map((template) => {
           const isSelected = selected === template.id;
           return (

@@ -72,9 +72,9 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
       </div>
 
       {/* Two-column layout */}
-      <div className="grid grid-cols-5 gap-3 min-h-[280px]">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 md:min-h-[280px]">
         {/* Left column — skill list */}
-        <div className="col-span-2 space-y-1 overflow-y-auto scrollbar-dark pr-1">
+        <div className="md:col-span-2 max-h-56 md:max-h-none space-y-1 overflow-y-auto scrollbar-dark pr-1">
           {previews.map((preview) => {
             const isSelected = selected.has(preview.name);
             const isActive = activePreview === preview.name;
@@ -161,7 +161,7 @@ export function BrowseStep({ previews, selected, onSelectionChange }: BrowseStep
         </div>
 
         {/* Right column — preview */}
-        <div className="col-span-3 rounded-xl border border-border/20 bg-surface-overlay-1 overflow-hidden flex flex-col">
+        <div className="md:col-span-3 rounded-xl border border-border/20 bg-surface-overlay-1 overflow-hidden flex flex-col">
           {activeSkill ? (
             <>
               {/* Preview header */}

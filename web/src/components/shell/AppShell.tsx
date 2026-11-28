@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 import { Header } from '../layout/Header';
 import { StatusBar } from '../layout/StatusBar';
@@ -7,12 +7,15 @@ import { PreferencesDialog } from './PreferencesDialog';
 import { ForgetCredentialDialog } from './ForgetCredentialDialog';
 import { ShortcutsPanel } from './ShortcutsPanel';
 import { NavigationGuardDialog } from './NavigationGuardDialog';
+import { MinWidthState } from './MinWidthState';
 import { ToastContainer } from '../ui/Toast';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { useStackStore } from '../../stores/useStackStore';
 import { requestInspectorLeave } from '../../stores/useInspectorToolsGuardStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { usePolling } from '../../hooks/usePolling';
+import { useViewportWidth } from '../../hooks/useViewportWidth';
+import { MIN_SUPPORTED_WIDTH } from '../../lib/viewport';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 import { useCanvasActionsStore } from '../../stores/useCanvasActionsStore';
 import { useShellNavStore } from '../../stores/useShellNavStore';
@@ -24,6 +27,9 @@ import { restoreNodeFocus } from '../../lib/inspectorFocus';
 import { inWorkspace, navigateToWorkspace } from '../../lib/workspaceNav';
 
 const HEADER_HEIGHT = 56;
+const MODAL_SELECTOR = '[aria-modal="true"]';
+const FOCUSABLE_SELECTOR =
+  'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
 const STATUSBAR_HEIGHT = 32;
 
 function workspaceFromPath(pathname: string): Workspace | null {
@@ -127,6 +133,74 @@ export function AppShell() {
 
   useGlobalCommands({ onRefresh: handleRefresh });
 
+  // Minimum supported width. The state never rises over an open dialog, and
+  // a dismissal lasts until the page reloads.
+  const viewportWidth = useViewportWidth();
+  const [blocked, setBlocked] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const pendingDialogRef = useRef<HTMLElement | null>(null);
+
+  // The open-dialog check reads the committed DOM, so this cannot be derived
+  // during render.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (viewportWidth >= MIN_SUPPORTED_WIDTH) {
+      setBlocked(false);
+      return;
+    }
+    if (!dismissed && document.querySelector(MODAL_SELECTOR) === null) setBlocked(true);
+  }, [viewportWidth, pathname, dismissed]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // A workspace dialog opened under the state (for example from the palette)
+  // takes over: the state gives way without counting as a dismissal. Scoped
+  // to the workspace wrapper so the palette's own aria-modal does not count.
+  useEffect(() => {
+    if (!blocked) return;
+    const wrapper = workspaceRef.current;
+    if (!wrapper) return;
+    const check = () => {
+      const dialog = wrapper.querySelector<HTMLElement>(MODAL_SELECTOR);
+      if (!dialog) return;
+      pendingDialogRef.current = dialog;
+      setBlocked(false);
+    };
+    const observer = new MutationObserver(check);
+    observer.observe(wrapper, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['aria-modal'],
+    });
+    check();
+    return () => observer.disconnect();
+  }, [blocked]);
+
+  // The dialog's focus trap ran while the wrapper was inert and could not
+  // take focus, so move it in once the wrapper is live again.
+  useEffect(() => {
+    if (blocked) return;
+    const dialog = pendingDialogRef.current;
+    pendingDialogRef.current = null;
+    if (!dialog || !dialog.isConnected || dialog.contains(document.activeElement)) return;
+    const target = dialog.querySelector<HTMLElement>(FOCUSABLE_SELECTOR) ?? dialog;
+    target.focus();
+  }, [blocked]);
+
+  const continueAnyway = useCallback(() => {
+    setDismissed(true);
+    setBlocked(false);
+    // tabindex lives only while <main> holds focus: a permanent one would make
+    // clicks on blank workspace area focus <main> and take list keys away.
+    const main = mainRef.current;
+    if (!main) return;
+    main.setAttribute('tabindex', '-1');
+    main.addEventListener('blur', () => main.removeAttribute('tabindex'), { once: true });
+    main.focus();
+  }, []);
+
   return (
     <div
       className="h-screen w-screen overflow-hidden bg-background"
@@ -138,14 +212,18 @@ export function AppShell() {
     >
       <Header onRefresh={handleRefresh} isRefreshing={isRefreshing} />
 
-      <main className="relative overflow-hidden" style={{ minHeight: 100 }}>
+      <main ref={mainRef} className="relative overflow-hidden" style={{ minHeight: 100 }}>
         {/* Contain a workspace render throw so the shell (header, nav, status
             bar) stays mounted and the user can navigate away. Resetting on the
             route path lets navigation recover a crashed workspace without a
-            full reload. */}
-        <ErrorBoundary variant="inline" resetKey={pathname}>
-          <Outlet />
-        </ErrorBoundary>
+            full reload. The wrapper is always rendered so toggling inert
+            never remounts the workspace. */}
+        <div ref={workspaceRef} className="contents" inert={blocked}>
+          <ErrorBoundary variant="inline" resetKey={pathname}>
+            <Outlet />
+          </ErrorBoundary>
+        </div>
+        {blocked && <MinWidthState onContinue={continueAnyway} />}
       </main>
 
       <StatusBar />

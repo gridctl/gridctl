@@ -1,4 +1,4 @@
-import { useState, useEffect, useSyncExternalStore } from 'react';
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, X } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { copyTextToClipboard } from '../../lib/clipboard';
@@ -212,6 +212,14 @@ export function ToastContainer() {
   };
 
   const visible = modalOpen ? toasts.filter((t) => !t.deferWhileModal) : toasts;
+  const regionRef = useRef<HTMLDivElement>(null);
+  const lastId = visible.length > 0 ? visible[visible.length - 1].id : null;
+
+  // In a short window the stack scrolls; keep the newest toast in view.
+  useEffect(() => {
+    const region = regionRef.current;
+    if (region) region.scrollTop = region.scrollHeight;
+  }, [visible.length, lastId]);
 
   return (
     <div
@@ -219,7 +227,8 @@ export function ToastContainer() {
       aria-label="Notifications"
       aria-live="polite"
       aria-atomic="false"
-      className="fixed bottom-10 right-4 z-toast space-y-2 max-w-sm"
+      ref={regionRef}
+      className="fixed bottom-10 right-4 z-toast space-y-2 max-w-[min(24rem,calc(100vw-2rem))] max-sm:max-h-[33vh] max-sm:overflow-y-auto max-sm:max-w-[calc(100vw-1rem)] max-sm:p-2 max-sm:-m-2"
     >
       {visible.map((toast) => {
         const showDetailsToggle = hasDetails(toast);
@@ -240,7 +249,7 @@ export function ToastContainer() {
             }}
             className={cn(
               'px-4 py-2.5 rounded-lg text-xs font-medium shadow-lg',
-              'glass-panel-elevated animate-slide-in-right max-w-sm',
+              'glass-panel-elevated animate-slide-in-right max-w-[min(24rem,calc(100vw-2rem))]',
               toast.type === 'success' && 'text-status-running',
               toast.type === 'error' && 'text-status-error',
               toast.type === 'warning' && 'text-status-pending',
@@ -250,7 +259,7 @@ export function ToastContainer() {
               {toast.type === 'success' && <CheckCircle size={14} />}
               {toast.type === 'error' && <XCircle size={14} />}
               {toast.type === 'warning' && <AlertTriangle size={14} />}
-              <span className="flex-1" title={toast.detail}>{toast.message}</span>
+              <span className="flex-1 min-w-0 break-words" title={toast.detail}>{toast.message}</span>
               {showDetailsToggle && (
                 <button
                   type="button"

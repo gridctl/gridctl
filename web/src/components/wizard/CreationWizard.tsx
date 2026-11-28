@@ -902,7 +902,7 @@ function TypePicker({
           Choose a resource type to begin building your spec
         </p>
       </div>
-      <div className="grid grid-cols-3 gap-3 max-w-2xl mx-auto">
+      <div className="grid grid-cols-1 min-[400px]:grid-cols-2 md:grid-cols-3 gap-3 max-w-2xl mx-auto">
         {resourceTypes.map((rt, i) => {
           const Icon = rt.icon;
           const isSelected = selected === rt.type;

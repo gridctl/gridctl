@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { LogsWorkspace } from '../components/workspaces/LogsWorkspace';
@@ -354,7 +354,12 @@ describe('LogsWorkspace', () => {
 });
 
 describe('LogsWorkspace follow-tail', () => {
-  function scrollUp() {
+  // Settle pending fetch renders and the pin's frame first, so a late
+  // re-pin cannot swallow the simulated upward scroll under load.
+  async function scrollUp() {
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
     const el = screen.getByRole('grid', { name: 'Log entries' }).parentElement as HTMLElement;
     const set = (m: Record<string, number>) => {
       for (const [k, v] of Object.entries(m)) {
@@ -376,7 +381,7 @@ describe('LogsWorkspace follow-tail', () => {
     expect(status).toHaveTextContent(/^Live$/);
     expect(screen.getByText('latest')).toBeInTheDocument();
 
-    scrollUp();
+    await scrollUp();
     expect(pill()).toBe(status);
     expect(status).toHaveTextContent(/^Live · not following$/);
     expect(jump()).toHaveTextContent(/^Jump to latest$/);
@@ -401,7 +406,7 @@ describe('LogsWorkspace follow-tail', () => {
   it('reads Live with no button while a refresh fails, and restores not following on recovery', async () => {
     renderAt('/logs');
     await screen.findByText('gateway listening');
-    scrollUp();
+    await scrollUp();
     expect(pill()).toHaveTextContent('Live · not following');
 
     vi.mocked(fetchGatewayLogs).mockRejectedValue(new Error('Gateway connection unavailable'));
@@ -421,7 +426,7 @@ describe('LogsWorkspace follow-tail', () => {
   it('follows again after the list empties while not following and refills', async () => {
     renderAt('/logs');
     await screen.findByText('gateway listening');
-    scrollUp();
+    await scrollUp();
     expect(pill()).toHaveTextContent('Live · not following');
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear this view (server buffer unchanged)' }));
