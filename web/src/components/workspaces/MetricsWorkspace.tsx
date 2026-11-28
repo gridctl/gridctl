@@ -756,8 +756,8 @@ function EmptyScopeNote({ text }: { text: string }) {
 
 function LoadingState() {
   return (
-    <div className="space-y-4 max-w-7xl animate-pulse">
-      <div className="grid grid-cols-4 gap-3">
+    <div className="@container space-y-4 max-w-7xl animate-pulse">
+      <div className="grid grid-cols-2 @2xl:grid-cols-4 gap-3">
         {[1, 2, 3, 4].map((i) => (
           <div key={i} className="h-16 rounded-lg bg-surface-elevated/60 border border-border/30" />
         ))}

@@ -261,26 +261,28 @@ function InlineResourceForm({
 
 function ResourcePresetPicker({ onSelect }: { onSelect: (preset: ResourcePreset | null) => void }) {
   return (
-    <div className="grid grid-cols-5 gap-1.5 mb-3">
-      {RESOURCE_PRESETS.map((preset) => (
+    <div className="@container mb-3">
+      <div className="grid grid-cols-2 @xs:grid-cols-3 @md:grid-cols-5 gap-1.5">
+        {RESOURCE_PRESETS.map((preset) => (
+          <button
+            key={preset.id}
+            type="button"
+            onClick={() => onSelect(preset)}
+            className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border-subtle bg-surface-overlay-1 hover:bg-surface-overlay-3 hover:border-border transition-all duration-200 text-center"
+          >
+            <Database size={12} className="text-secondary" />
+            <span className="text-3xs text-text-primary font-medium">{preset.name}</span>
+          </button>
+        ))}
         <button
-          key={preset.id}
           type="button"
-          onClick={() => onSelect(preset)}
+          onClick={() => onSelect(null)}
           className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border-subtle bg-surface-overlay-1 hover:bg-surface-overlay-3 hover:border-border transition-all duration-200 text-center"
         >
-          <Database size={12} className="text-secondary" />
-          <span className="text-3xs text-text-primary font-medium">{preset.name}</span>
+          <Plus size={12} className="text-text-muted" />
+          <span className="text-3xs text-text-muted font-medium">Custom</span>
         </button>
-      ))}
-      <button
-        type="button"
-        onClick={() => onSelect(null)}
-        className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border-subtle bg-surface-overlay-1 hover:bg-surface-overlay-3 hover:border-border transition-all duration-200 text-center"
-      >
-        <Plus size={12} className="text-text-muted" />
-        <span className="text-3xs text-text-muted font-medium">Custom</span>
-      </button>
+      </div>
     </div>
   );
 }
