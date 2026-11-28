@@ -577,6 +577,37 @@ describe('MetricsWorkspace breakdown columns and export', () => {
     await waitFor(() => expect(cellsOf('github')[2]).toBe('77'));
   });
 
+  it('never shows the previous or a zero window value while a range switch is pending', async () => {
+    mockSeries({
+      ...seededTokenSeries,
+      per_server: { github: [{ timestamp: 't', input_tokens: 5, output_tokens: 6, total_tokens: 11 }] },
+    });
+    renderAt('/metrics?scope=servers');
+    await screen.findByText('Per-Server · session totals');
+    expect(cellsOf('github')[2]).toBe('11');
+
+    let resolveSwitch: (r: TokenMetricsResponse) => void = () => {};
+    vi.mocked(fetchTokenMetrics).mockImplementation(
+      () => new Promise<TokenMetricsResponse>((resolve) => { resolveSwitch = resolve; }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '1h' }));
+    await waitFor(() => expect(vi.mocked(fetchTokenMetrics)).toHaveBeenLastCalledWith('1h'));
+    // The unresolved series holds the loading skeleton: no window cell
+    // renders, so neither the stale 11 nor a placeholder 0 can appear.
+    expect(screen.queryByText('Per-Server · session totals')).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: /tokens$/ })).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveSwitch({
+        ...seededTokenSeries,
+        range: '1h',
+        per_server: { github: [{ timestamp: 't', input_tokens: 70, output_tokens: 7, total_tokens: 77 }] },
+      });
+    });
+    expect(await screen.findByRole('columnheader', { name: /Last 1h tokens/ })).toBeInTheDocument();
+    expect(cellsOf('github')[2]).toBe('77');
+  });
+
   it('renders a dash, never 0, in window cells while the series is unresolved', () => {
     render(
       <BreakdownTable
@@ -694,6 +725,23 @@ describe('MetricsWorkspace breakdown columns and export', () => {
         useStackStore.setState({ tokenUsage: { ...tokenUsage } });
       });
       expect(scrollSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
+  it('scrolls a ?selected= deep-linked row into view on first render', async () => {
+    const scrollSpy = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollSpy;
+    try {
+      renderAt('/metrics?scope=servers&selected=github');
+      await screen.findByText('Per-Server · session totals');
+      const github = dataRows().find((r) => r.textContent?.includes('github'));
+      expect(github).toHaveAttribute('aria-selected', 'true');
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalledTimes(1));
+      expect(scrollSpy).toHaveBeenCalledWith({ block: 'nearest' });
+      expect(scrollSpy.mock.contexts[0]).toBe(github);
     } finally {
       Element.prototype.scrollIntoView = original;
     }
