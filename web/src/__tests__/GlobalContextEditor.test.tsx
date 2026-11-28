@@ -3,6 +3,7 @@ import '@testing-library/jest-dom';
 import { act, render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { CommandRegistryProvider, useCommandRegistry } from '../hooks/useCommandRegistry';
+import { useGlobalCommands } from '../hooks/useGlobalCommands';
 import { ContextWorkspace } from '../components/context/ContextWorkspace';
 import { useContextStore } from '../stores/useContextStore';
 import { useNavigationGuardStore } from '../stores/useNavigationGuardStore';
@@ -110,12 +111,18 @@ function CommandProbe() {
   );
 }
 
+function GlobalCommandsMount() {
+  useGlobalCommands();
+  return null;
+}
+
 function renderContext(
   options: {
     url?: string;
     onKindChange?: (kind: RegistryKind) => void;
     withGuardHost?: boolean;
     withCommands?: boolean;
+    withGlobalCommands?: boolean;
   } = {},
 ) {
   const {
@@ -123,6 +130,7 @@ function renderContext(
     onKindChange = vi.fn(),
     withGuardHost = false,
     withCommands = false,
+    withGlobalCommands = false,
   } = options;
   const result = render(
     <CommandRegistryProvider>
@@ -133,6 +141,7 @@ function renderContext(
             element={
               <>
                 <ContextWorkspace onKindChange={onKindChange} />
+                {withGlobalCommands && <GlobalCommandsMount />}
                 {withCommands && <CommandProbe />}
               </>
             }
@@ -618,6 +627,28 @@ describe('ContextWorkspace navigation guard', () => {
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
     await waitFor(() => expect(saveGlobalContext).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(useNavigationGuardStore.getState().guards).toHaveLength(0));
+  });
+
+  it('does not prompt or drop the draft when Go to Global Context runs inside a dirty editor', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
+    renderContext({ withGuardHost: true, withCommands: true, withGlobalCommands: true });
+    const editor = await screen.findByLabelText('Canonical global context');
+
+    fireEvent.change(editor, { target: { value: '# Edited rules\n' } });
+    const store = useNavigationGuardStore.getState();
+    expect(store.isBlocked('/library?kind=context')).toBe(false);
+    expect(store.isBlocked('/library?kind=context&fragment=00-default.md')).toBe(false);
+    expect(store.isBlocked('?kind=context&tab=details')).toBe(false);
+    expect(store.isBlocked({ pathname: '/library', search: '?kind=context' })).toBe(false);
+    expect(store.isBlocked('/library')).toBe(true);
+    expect(store.isBlocked('/library?kind=skill')).toBe(true);
+    expect(store.isBlocked('/pins?kind=context')).toBe(true);
+
+    fireEvent.click(screen.getByTestId('cmd:navigate:library-context'));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(useNavigationGuardStore.getState().pending).toBeNull();
+    expect(editor).toHaveValue('# Edited rules\n');
+    expect(screen.getByTestId('location')).toHaveTextContent('/library?kind=context');
   });
 });
 

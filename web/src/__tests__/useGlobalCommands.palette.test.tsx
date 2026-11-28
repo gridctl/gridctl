@@ -487,6 +487,13 @@ describe('palette navigation guard', () => {
     expect(useNavigationGuardStore.getState().pending).toBeNull();
   });
 
+  it('keeps the URL when Go to Global Context runs inside the Context segment', async () => {
+    await renderAt('/library?kind=context&fragment=00-default.md');
+    select('navigate:library-context');
+    expect(location()).toBe('/library?kind=context&fragment=00-default.md');
+    expect(useNavigationGuardStore.getState().pending).toBeNull();
+  });
+
   it('opens the reset dialog without navigating when Connections is open', async () => {
     await renderAt('/connections?client=claude');
     select('system:reset-gridctl');

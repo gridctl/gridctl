@@ -1,7 +1,8 @@
 import { createElement, useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useSearchParams, type To } from 'react-router';
 import { Bot, CloudUpload, FileDiff, List, Package, RefreshCw, Webhook } from 'lucide-react';
 import { useContextStore } from '../../stores/useContextStore';
+import { pathnameOf } from '../../stores/useNavigationGuardStore';
 import { useCommandRegistry } from '../../hooks/useCommandRegistry';
 import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import type { RegistryKind } from '../../lib/registryKind';
@@ -17,6 +18,24 @@ import {
   SetupView,
   type ContextViewActions,
 } from './GlobalContextEditor';
+
+// True when a navigation target stays inside the Library Context segment
+// (/library?kind=context...), so ContextWorkspace remains mounted and the
+// shared discard confirm must not claim a discard that does not happen.
+function staysInContextSegment(to: To): boolean {
+  const path = pathnameOf(to);
+  if (path !== null && path !== '/library') return false;
+  const search =
+    typeof to === 'string'
+      ? (() => {
+          const q = to.indexOf('?');
+          if (q === -1) return '';
+          const hash = to.indexOf('#', q);
+          return hash === -1 ? to.slice(q + 1) : to.slice(q + 1, hash);
+        })()
+      : (to.search ?? '');
+  return new URLSearchParams(search).get('kind') === 'context';
+}
 
 interface ContextWorkspaceProps {
   onKindChange: (kind: RegistryKind) => void;
@@ -112,9 +131,14 @@ export function ContextWorkspace({ onKindChange }: ContextWorkspaceProps) {
     );
   }, [clientParam, doc, setSearchParams]);
 
-  // Unmount drops the draft; no blocks predicate because leaving the Context
-  // segment (even to /library) unmounts the editor.
-  useNavigationGuard({ dirty, label: 'Global Context' });
+  // Unmount drops the draft; block every guarded navigation that leaves the
+  // Context segment (including /library, which switches to Skills), while
+  // letting same-segment targets through without a false discard prompt.
+  useNavigationGuard({
+    dirty,
+    label: 'Global Context',
+    blocks: (to) => !staysInContextSegment(to),
+  });
 
   const handleKindChange = useCallback(
     (next: RegistryKind) => {

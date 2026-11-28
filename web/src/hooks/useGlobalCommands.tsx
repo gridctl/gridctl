@@ -100,7 +100,13 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
         section: 'global',
         icon: <Globe size={14} />,
         keywords: ['context', 'agents.md', 'rules', 'fragments', 'global', 'library'],
-        onSelect: () => go('/library?kind=context'),
+        onSelect: () => {
+          const { pathname, search } = locationRef.current;
+          if (pathname === '/library' && new URLSearchParams(search).get('kind') === 'context') {
+            return;
+          }
+          go('/library?kind=context');
+        },
       },
       {
         id: 'navigate:spec',
