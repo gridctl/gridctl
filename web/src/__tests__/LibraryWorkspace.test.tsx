@@ -16,7 +16,7 @@ import {
   disableRegistrySkill,
 } from '../lib/api';
 import { showToast } from '../components/ui/Toast';
-import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
+import { CommandRegistryProvider, useCommandRegistry } from '../hooks/useCommandRegistry';
 import type { AgentSkill, SkillSourceStatus } from '../types';
 
 vi.mock('../hooks/usePolling', () => ({
@@ -57,6 +57,15 @@ vi.mock('../lib/api', () => ({
   fetchRegistrySkill: vi.fn().mockResolvedValue({
     name: 'incident-triage', description: '', state: 'active', fileCount: 0, body: '',
   }),
+  fetchGlobalContext: vi.fn().mockResolvedValue({
+    canonical: { path: '/home/u/.gridctl/context/AGENTS.md', exists: true, content: '# Rules\n' },
+    needs_sync: false,
+    clients: [],
+  }),
+  fetchRegistryAgents: vi.fn().mockResolvedValue([]),
+  fetchAgentProjectionStatus: vi.fn().mockResolvedValue([]),
+  fetchRegistryHooks: vi.fn().mockResolvedValue({ hooks: [], unsupported_clients: [] }),
+  fetchHookProjectionStatus: vi.fn().mockResolvedValue([]),
 }));
 
 // SkillEditor is heavy and unrelated to the workspace's URL-state behavior.
@@ -938,6 +947,85 @@ describe('LibraryWorkspace', () => {
           expect.objectContaining({ action: expect.objectContaining({ label: 'Details' }) }),
         ),
       );
+    });
+  });
+
+  describe('Global Context segment routing', () => {
+    it('renders the Context segment on /library?kind=context with Global Context pressed', async () => {
+      renderAt('/library?kind=context');
+      expect(await screen.findByLabelText('Canonical global context')).toBeInTheDocument();
+      const btn = screen.getByRole('button', { name: 'Global Context' });
+      expect(btn).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('leaves /library?kind=context&selected=x unchanged when Escape is pressed', async () => {
+      let latestSearch = '';
+      renderAt('/library?kind=context&selected=x', (search) => {
+        latestSearch = search;
+      });
+      await screen.findByLabelText('Canonical global context');
+      expect(latestSearch).toBe('?kind=context&selected=x');
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(latestSearch).toBe('?kind=context&selected=x');
+    });
+
+    it.each([
+      ['Skills', '/library'],
+      ['Agents', '/library?kind=agent'],
+      ['Hooks', '/library?kind=hook'],
+      ['Packs', '/library?kind=pack'],
+      ['Proposals', '/library?kind=proposal'],
+    ])('exposes a Global Context switch button on the %s segment', async (_name, url) => {
+      let latestSearch = '';
+      renderAt(url, (search) => {
+        latestSearch = search;
+      });
+      const btn = screen.getByRole('button', { name: 'Global Context' });
+      expect(btn).toHaveAttribute('aria-pressed', 'false');
+      fireEvent.click(btn);
+      await waitFor(() => expect(latestSearch).toBe('?kind=context'));
+      expect(await screen.findByLabelText('Canonical global context')).toBeInTheDocument();
+    });
+
+    it.each([
+      ['Skills', '/library'],
+      ['Agents', '/library?kind=agent'],
+      ['Hooks', '/library?kind=hook'],
+      ['Packs', '/library?kind=pack'],
+      ['Proposals', '/library?kind=proposal'],
+    ])('registers a Library: View Context command on the %s segment', async (_name, url) => {
+      let latestSearch = '';
+      function PaletteRunner() {
+        const { commands } = useCommandRegistry();
+        const cmd = commands.find((c) => c.label === 'Library: View Context');
+        return cmd ? (
+          <button data-testid="run-view-context" onClick={cmd.onSelect}>
+            run
+          </button>
+        ) : null;
+      }
+      render(
+        <CommandRegistryProvider>
+          <MemoryRouter initialEntries={[url]}>
+            <Routes>
+              <Route
+                path="/library"
+                element={
+                  <>
+                    <LibraryWorkspace />
+                    <LocationProbe onChange={(s) => { latestSearch = s; }} />
+                    <PaletteRunner />
+                  </>
+                }
+              />
+            </Routes>
+          </MemoryRouter>
+        </CommandRegistryProvider>,
+      );
+      const trigger = await screen.findByTestId('run-view-context');
+      fireEvent.click(trigger);
+      await waitFor(() => expect(latestSearch).toBe('?kind=context'));
     });
   });
 });

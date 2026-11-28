@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
+import { ExternalLink } from 'lucide-react';
 import { describeError, isCancellation } from '../../lib/describeError';
 import { cn } from '../../lib/cn';
 import { escapeNonPrintable } from '../../lib/nonPrintable';
 import { fetchContextPins, resetContextPin, type ContextPin } from '../../lib/api';
+import { contextPinsUrl } from '../../lib/contextGovernance';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { usePinsStore } from '../../stores/usePinsStore';
 import { Modal } from '../ui/Modal';
 import { FailedState } from '../ui/EmptyState';
@@ -41,6 +45,7 @@ export function ContextPinReviewModal({
   name: string;
   onClose: () => void;
 }) {
+  const navigate = useGuardedNavigate();
   // The pin renders from the store so an approve inside the detail (which
   // refreshes the store) updates the status, history, and title here.
   const storePin = usePinsStore((s) => s.contextPins?.[name]);
@@ -67,8 +72,24 @@ export function ContextPinReviewModal({
   const pin: ContextPin | null | undefined = loaded ? (storePin ?? null) : undefined;
   const shown = escapeNonPrintable(name);
   const title = pin?.status === 'drift' ? `${shown} changed since its pin` : `Pin for ${shown}`;
+  const pinsHref = contextPinsUrl(name, pin?.status === 'drift' ? 'drift' : undefined);
   return (
     <Modal isOpen onClose={onClose} title={title} size="wide">
+      <div className="flex justify-end pb-2">
+        <Link
+          to={pinsHref}
+          onClick={(e) => {
+            if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            e.preventDefault();
+            onClose();
+            navigate(pinsHref);
+          }}
+          className="inline-flex items-center gap-1 text-2xs text-primary hover:text-primary-light underline underline-offset-2"
+        >
+          Open in Pins
+          <ExternalLink size={11} aria-hidden="true" />
+        </Link>
+      </div>
       {pin ? (
         <PinsContextDetail
           name={name}

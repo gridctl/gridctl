@@ -13,6 +13,7 @@ import {
   Flame,
   Server,
   FileCode,
+  Globe,
   Plus,
   Sun,
   Moon,
@@ -93,6 +94,20 @@ export function useGlobalCommands({ onRefresh }: GlobalCommandsOptions = {}) {
   useEffect(() => {
     const commands: PaletteCommand[] = [
       ...buildWorkspaceNavCommands((target) => go(target)),
+      {
+        id: 'navigate:library-context',
+        label: 'Go to Global Context',
+        section: 'global',
+        icon: <Globe size={14} />,
+        keywords: ['context', 'agents.md', 'rules', 'fragments', 'global', 'library'],
+        onSelect: () => {
+          const { pathname, search } = locationRef.current;
+          if (pathname === '/library' && new URLSearchParams(search).get('kind') === 'context') {
+            return;
+          }
+          go('/library?kind=context');
+        },
+      },
       {
         id: 'navigate:spec',
         label: 'Open spec',

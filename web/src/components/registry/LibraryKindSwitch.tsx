@@ -3,11 +3,12 @@ import { SEGMENT_GROUP_CLASS, segmentClass } from '../ui/segment';
 import type { RegistryKind } from '../../lib/registryKind';
 import { usePendingProposalCount } from './proposals/usePendingProposalCount';
 
-const KIND_OPTIONS: { key: RegistryKind; label: string }[] = [
+const KIND_OPTIONS: { key: RegistryKind; label: string; ariaLabel?: string; title?: string }[] = [
   { key: 'skill', label: 'Skills' },
   { key: 'agent', label: 'Agents' },
   { key: 'hook', label: 'Hooks' },
   { key: 'pack', label: 'Packs' },
+  { key: 'context', label: 'Context', ariaLabel: 'Global Context', title: 'Global Context' },
   { key: 'proposal', label: 'Proposals' },
 ];
 
@@ -41,6 +42,8 @@ export function LibraryKindSwitch({
           type="button"
           onClick={() => onChange(opt.key)}
           aria-pressed={kind === opt.key}
+          aria-label={opt.ariaLabel}
+          title={opt.title}
           className={cn(segmentClass(kind === opt.key), 'inline-flex items-center gap-1.5')}
         >
           {opt.label}

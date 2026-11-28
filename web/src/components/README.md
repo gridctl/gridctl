@@ -13,7 +13,7 @@ The encrypted store itself is the variable store. Lock state reads "Variables lo
 
 Secret-flagged variable values are secrets or secret values. That wording is allowed only when naming values with the secret flag, never as a navigation or section title. A stored variable chosen for auth is "a stored variable", not "a vault secret".
 
-The skills, agents, and packs workspace is Library. "Registry" is reserved for the external MCP Registry in `wizard/CatalogPicker.tsx` (including its lowercase `registry` tier badge) and for the on-disk `~/.gridctl/registry` directory named in `system/ResetDialog.tsx`. Every Library segment's header is titled "Library", with the kind switch beside the title and a summary that counts the segment's loaded items ("12 skills", "3 packs"); the summary is omitted while the list is loading.
+The skills, agents, hooks, packs, context, and proposals workspace is Library. "Registry" is reserved for the external MCP Registry in `wizard/CatalogPicker.tsx` (including its lowercase `registry` tier badge) and for the on-disk `~/.gridctl/registry` directory named in `system/ResetDialog.tsx`. Every Library segment's header is titled "Library", with the kind switch beside the title; list segments include a summary that counts their loaded items ("12 skills", "3 packs") and omit it while loading.
 
 A server in the stack is an MCP server. Title-case labels use "MCP Server". Not "Server", and not bare "MCP".
 
@@ -201,9 +201,9 @@ Use a container query (`@container` with `@md:` and similar variants) or
 resizable panel, because the pane is not the viewport's width. Reserve
 viewport breakpoints (`sm:`, `md:`) for viewport-sized surfaces such as the
 wizard modal, the toast stack, and the minimum-width state. The Library
-header is the measured case: `LibraryHeaderActions` moves Import, Global
-Context, Sync sources, Refresh, and the popout into a More actions
-`HeaderMenu` when its row is narrower than
+header is the measured case: `LibraryHeaderActions` moves Import, Sync
+sources, Refresh, and the popout into a More actions `HeaderMenu` when its
+row is narrower than
 `LIBRARY_ACTIONS_COLLAPSE_BELOW` in `lib/libraryHeader.ts` (990 px with a
 pending update pill, 850 px without). A width of 0 means unknown and keeps
 the full cluster.
@@ -241,7 +241,7 @@ store:
 - Stack     → `useStackStore`
 - Library   → `useRegistryStore`
 
-Several supporting stores (`useSpecStore`, `useAuthStore`, `usePinsStore`,
+Several supporting stores (`useSpecStore`, `useAuthStore`, `useContextStore`, `usePinsStore`,
 `useTelemetryStore`, `useTracesStore`, `useVaultStore`, `useWizardStore`,
 `useCanvasActionsStore`, `useShellActionsStore`, `useShellNavStore`) sit alongside the workspace stores. `useCanvasActionsStore`
 holds fit and zoom until `graph/Canvas.tsx` registers them, so the shell does
@@ -471,6 +471,7 @@ web/src/components/
 ├── graph/            Stack Canvas + custom node types
 ├── stack/            Stack toolbar, table view, and Access Lens
 ├── registry/         Library workspace (LibraryGrid, SkillEditor, …)
+├── context/          Library Context segment (ContextWorkspace, GlobalContextEditor, ContextInspector)
 ├── palette/          CommandPalette (workspace-scoped via useCommandRegistry)
 └── ui/               Badge, Toast, IconButton, Field, EmptyState, Tabs, …
 ```

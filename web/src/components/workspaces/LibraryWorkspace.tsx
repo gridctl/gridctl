@@ -27,7 +27,7 @@ import { LibraryGrid, type GroupMode } from '../registry/LibraryGrid';
 import { LibraryTable } from '../registry/LibraryTable';
 import { SkillDetailPanel } from '../registry/SkillDetailPanel';
 import { DriftSyncDialog } from '../registry/DriftSyncDialog';
-import { GlobalContextDialog } from '../context/GlobalContextDialog';
+import { ContextWorkspace } from '../context/ContextWorkspace';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { Modal } from '../ui/Modal';
 import { showToast } from '../ui/Toast';
@@ -433,8 +433,6 @@ export function LibraryWorkspace() {
 
   // Editor + delete confirm state
   const [showEditor, setShowEditor] = useState(false);
-  // Global Context management surface (canonical AGENTS.md sync).
-  const [showGlobalContext, setShowGlobalContext] = useState(false);
   const [editingSkill, setEditingSkill] = useState<AgentSkill | undefined>();
   const [bodyRevision, setBodyRevision] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -502,12 +500,12 @@ export function LibraryWorkspace() {
 
   // Esc clears an active multi-selection first, then (on a second press) closes
   // the inspector. Ignored while a modal is open or focus is in a text input
-  // (the search box keeps its own clear affordance). Inert on the Agents
-  // segment: AgentsWorkspace owns Esc there — this handler would otherwise
-  // clear the shared ?selected param behind the agents dialogs, or silently
-  // eat a press on an invisible skills multi-selection.
+  // (the search box keeps its own clear affordance). Inert on non-skill
+  // segments: each segment owns Escape there; this handler would otherwise
+  // clear ?selected behind another segment's view or dialogs, or silently eat
+  // a press on an invisible skills multi-selection.
   useEffect(() => {
-    if (kind === 'agent' || kind === 'hook' || kind === 'pack' || kind === 'proposal') return;
+    if (kind !== 'skill') return;
     if (!selectedName && selectedNames.size === 0) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || showEditor) return;
@@ -860,6 +858,9 @@ export function LibraryWorkspace() {
   if (kind === 'pack') {
     return <PacksWorkspace onKindChange={setKind} />;
   }
+  if (kind === 'context') {
+    return <ContextWorkspace onKindChange={setKind} />;
+  }
   if (kind === 'proposal') {
     return <ProposalsWorkspace onKindChange={setKind} />;
   }
@@ -899,7 +900,6 @@ export function LibraryWorkspace() {
             kindSwitch={<LibraryKindSwitch kind="skill" onChange={setKind} />}
             onNewSkill={handleNewSkill}
             onImportSkill={handleImportSkill}
-            onGlobalContext={() => setShowGlobalContext(true)}
             onRefresh={refreshRegistry}
             onSync={handleSyncAll}
             sources={sources ?? []}
@@ -1177,11 +1177,6 @@ export function LibraryWorkspace() {
         onSaved={refreshAll}
         skill={editingSkill}
         source={editingSkill ? sourceMap.get(editingSkill.name) : undefined}
-      />
-
-      <GlobalContextDialog
-        isOpen={showGlobalContext}
-        onClose={() => setShowGlobalContext(false)}
       />
 
       <DriftSyncDialog
@@ -1508,7 +1503,6 @@ interface LibraryHeaderProps {
   kindSwitch: React.ReactNode;
   onNewSkill: () => void;
   onImportSkill: () => void;
-  onGlobalContext: () => void;
   onRefresh: () => void;
   onSync: () => void;
   sources: SkillSourceStatus[];
@@ -1537,7 +1531,7 @@ interface LibraryHeaderProps {
   compact: boolean;
 }
 
-function LibraryHeader({ headingId, skillCount, kindSwitch, onNewSkill, onImportSkill, onGlobalContext, onRefresh, onSync, sources, syncing, onPopout, counts, activeTab, onSelectFilter, usageTracked, neverUsedCount, coldCaveat, usageFilterActive, onToggleNeverUsed, staleCount, staleUnknownReason, staleFilterActive, onToggleStale, compact }: LibraryHeaderProps) {
+function LibraryHeader({ headingId, skillCount, kindSwitch, onNewSkill, onImportSkill, onRefresh, onSync, sources, syncing, onPopout, counts, activeTab, onSelectFilter, usageTracked, neverUsedCount, coldCaveat, usageFilterActive, onToggleNeverUsed, staleCount, staleUnknownReason, staleFilterActive, onToggleStale, compact }: LibraryHeaderProps) {
   const registryDetached = useUIStore((s) => s.registryDetached);
   const hasSources = sources.length > 0;
   const updateCount = sources.filter((s) => s.updateAvailable).length;
@@ -1565,7 +1559,6 @@ function LibraryHeader({ headingId, skillCount, kindSwitch, onNewSkill, onImport
         <LibraryHeaderActions
           onNewSkill={onNewSkill}
           onImportSkill={onImportSkill}
-          onGlobalContext={onGlobalContext}
           onRefresh={onRefresh}
           onSync={onSync}
           onPopout={onPopout}

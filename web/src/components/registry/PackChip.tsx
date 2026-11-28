@@ -1,9 +1,8 @@
-import { useNavigate } from 'react-router';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { cn } from '../../lib/cn';
 import { useRegistryStore } from '../../stores/useRegistryStore';
 
-/** The chip's visual treatment, shared with non-navigating variants
- *  (the Global Context dialog renders a static span inside its modal). */
+/** The chip's visual treatment, shared across pack provenance badges. */
 export const PACK_CHIP_CLASS =
   'text-3xs font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-secondary/30 bg-secondary/10 text-secondary flex-shrink-0';
 
@@ -30,7 +29,7 @@ export function PackChip({
   source?: string;
   className?: string;
 }) {
-  const navigate = useNavigate();
+  const navigate = useGuardedNavigate();
   const packs = useRegistryStore((s) => s.packs);
   const name =
     pack ?? (source ? (packs ?? []).find((p) => p.origin.source === source)?.name ?? null : null);

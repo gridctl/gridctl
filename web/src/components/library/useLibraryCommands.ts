@@ -11,7 +11,7 @@ import {
   PowerOff,
   RefreshCw,
 } from 'lucide-react';
-import { Bot, FileDiff, Package, Webhook } from 'lucide-react';
+import { Bot, FileDiff, Globe, Package, Webhook } from 'lucide-react';
 import { useCommandRegistry } from '../../hooks/useCommandRegistry';
 import type { PaletteCommand } from '../../types/palette';
 import type { GroupMode } from '../registry/LibraryGrid';
@@ -184,6 +184,15 @@ export function useLibraryCommands({
           icon: createElement(Package, { size: 14 }),
           keywords: ['packs', 'pack', 'segment', 'switch', 'kind'],
           onSelect: () => onSwitchKind('pack'),
+        },
+        {
+          id: 'library:view-context-kind',
+          label: 'Library: View Context',
+          section: 'registry',
+          workspaces: ['library'],
+          icon: createElement(Globe, { size: 14 }),
+          keywords: ['context', 'global', 'agents.md', 'rules', 'segment', 'switch', 'kind'],
+          onSelect: () => onSwitchKind('context'),
         },
         {
           id: 'library:view-proposals-kind',

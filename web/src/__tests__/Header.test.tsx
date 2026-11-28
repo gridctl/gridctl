@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { act, render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useLocation } from 'react-router';
 import { Header } from '../components/layout/Header';
 import { useStackStore } from '../stores/useStackStore';
 import { useAuthStore } from '../stores/useAuthStore';
@@ -435,5 +435,26 @@ describe('Header', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     await act(async () => { resolveHealth(HEALTH); });
     expect(useSpecStore.getState().health).toBeNull();
+  });
+
+  it('navigates to /library?kind=context when the wizard Global Context tile is chosen', async () => {
+    function LocationProbe() {
+      const location = useLocation();
+      return <div data-testid="header-location">{location.pathname + location.search}</div>;
+    }
+    useWizardStore.setState({ isOpen: true, currentStep: 'type' });
+    render(
+      <MemoryRouter initialEntries={['/stack']}>
+        <Header />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+    const tile = await screen.findByText('Global Context');
+    fireEvent.click(tile);
+    await waitFor(() => {
+      expect(screen.getByTestId('header-location')).toHaveTextContent('/library?kind=context');
+    });
+    expect(useWizardStore.getState().isOpen).toBe(false);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

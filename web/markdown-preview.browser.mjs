@@ -38,8 +38,10 @@ const rates = (process.env.MD_PREVIEW_RATES || '1,4').split(',').map((n) => Numb
 const fence = '```';
 const fixtureSource = `import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { MemoryRouter } from 'react-router';
+import { CommandRegistryProvider } from './src/hooks/useCommandRegistry.tsx';
 import { SkillEditor } from './src/components/registry/SkillEditor.tsx';
-import { GlobalContextDialog } from './src/components/context/GlobalContextDialog.tsx';
+import { ContextWorkspace } from './src/components/context/ContextWorkspace.tsx';
 import './src/index.css';
 
 function buildDocument() {
@@ -128,7 +130,15 @@ if (editor === 'skill') {
   );
 } else {
   createRoot(rootEl).render(
-    React.createElement(GlobalContextDialog, { isOpen: true, onClose: () => {} }),
+    React.createElement(
+      MemoryRouter,
+      { initialEntries: ['/library?kind=context'] },
+      React.createElement(
+        CommandRegistryProvider,
+        null,
+        React.createElement(ContextWorkspace, { onKindChange: () => {} }),
+      ),
+    ),
   );
 }
 `;

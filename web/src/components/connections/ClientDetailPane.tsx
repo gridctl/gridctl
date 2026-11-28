@@ -41,12 +41,11 @@ interface ClientDetailPaneProps {
 
 /**
  * The selected client's health pane: what did gridctl configure on this
- * client, and is it still true? A summary surface in the ClientsStrip
- * grammar — collapsible sections that auto-expand on attention — with
- * heavy content deep-linked to the surfaces that own it (Tools for
- * scope, the Global Context dialog for fragment review, the Library for
- * agent bodies). Ownership state and live activity are two separately
- * labeled axes, never one merged health light.
+ * client, and is it still true? Collapsible sections that auto-expand on
+ * attention, with heavy content deep-linked to the surfaces that own it
+ * (Tools for scope, the Library's Context segment for fragment review, the
+ * Library for agent bodies). Ownership state and live activity are two
+ * separately labeled axes, never one merged health light.
  */
 export function ClientDetailPane({
   client,
@@ -577,9 +576,9 @@ function AxisBadge({
 }
 
 /**
- * One collapsible detail section in the ClientsStrip grammar: a one-line
- * summary when collapsed, auto-expanded when its content needs the
- * user's attention. Never force-closes a strip the user opened.
+ * One collapsible detail section: a one-line summary when collapsed,
+ * auto-expanded when its content needs the user's attention. Never
+ * force-closes a section the user opened.
  */
 function Section({
   icon,

@@ -27,7 +27,6 @@ import { showToast } from '../ui/Toast';
 import { describeError, isCancellation } from '../../lib/describeError';
 import { EmptyState, FailedState } from '../ui/EmptyState';
 import { WorkspaceHeader } from '../ui/WorkspaceHeader';
-import { GlobalContextDialog } from '../context/GlobalContextDialog';
 import { ResetDialog } from '../system/ResetDialog';
 import { useUIStore } from '../../stores/useUIStore';
 import { WorkspaceShell } from '../layout/WorkspaceShell';
@@ -61,6 +60,7 @@ import { agentClientName, statusesByClient } from '../registry/agents/agentModel
  */
 export default function ConnectionsWorkspace() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useGuardedNavigate();
   const clients = useStackStore((s) => s.clients);
   const sessionEntries = useStackStore((s) => s.sessionEntries);
   const contextDoc = useContextStore((s) => s.doc);
@@ -76,10 +76,6 @@ export default function ConnectionsWorkspace() {
   const [staged, setStaged] = useState<StagedChanges>({});
   const [reviewing, setReviewing] = useState(false);
   const [applying, setApplying] = useState(false);
-  const [showContextDialog, setShowContextDialog] = useState(false);
-  // The client whose drift review the dialog should open on (the pane's
-  // Review action); null for a plain open.
-  const [contextReviewSlug, setContextReviewSlug] = useState<string | null>(null);
 
   // ---- Data: wiring + agent projections + context, refreshed together. ----
   const resetDialogOpen = useUIStore((s) => s.resetDialogOpen);
@@ -477,8 +473,10 @@ export default function ConnectionsWorkspace() {
                 healthFailed={healthError !== null}
                 onRefresh={refreshHealth}
                 onReviewContext={() => {
-                  setContextReviewSlug(selectedSlug);
-                  setShowContextDialog(true);
+                  const target = selectedSlug
+                    ? `/library?kind=context&client=${encodeURIComponent(selectedSlug)}`
+                    : '/library?kind=context';
+                  navigate(target);
                 }}
               />
             </div>
@@ -533,16 +531,6 @@ export default function ConnectionsWorkspace() {
       <ResetDialog
         isOpen={resetDialogOpen}
         onClose={() => useUIStore.getState().setResetDialogOpen(false)}
-      />
-
-      <GlobalContextDialog
-        isOpen={showContextDialog}
-        initialDriftSlug={contextReviewSlug}
-        onClose={() => {
-          setShowContextDialog(false);
-          setContextReviewSlug(null);
-          void refreshHealth();
-        }}
       />
     </div>
   );

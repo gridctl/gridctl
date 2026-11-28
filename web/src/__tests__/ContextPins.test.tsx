@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { CommandRegistryProvider, useCommandRegistry } from '../hooks/useCommandRegistry';
@@ -269,11 +269,24 @@ describe('context pin approve', () => {
 });
 
 describe('ContextPinReviewModal', () => {
+  function renderModal(name = 'style', onClose = vi.fn()) {
+    return {
+      onClose,
+      ...render(
+        <MemoryRouter initialEntries={['/library?kind=context']}>
+          <ContextPinReviewModal name={name} onClose={onClose} />
+          <Routes>
+            <Route path="*" element={<LocationProbe />} />
+          </Routes>
+        </MemoryRouter>,
+      ),
+    };
+  }
+
   it('resets the pin when the confirm dialog is accepted', async () => {
     vi.spyOn(api, 'fetchContextPins').mockResolvedValue({ style: pin('drift') });
     const reset = vi.spyOn(api, 'resetContextPin').mockResolvedValue();
-    const onClose = vi.fn();
-    render(<ContextPinReviewModal name="style" onClose={onClose} />);
+    const { onClose } = renderModal('style');
     fireEvent.click(await screen.findByRole('button', { name: 'Reset pin for style' }));
     // ConfirmDialog's confirm button carries the same label.
     const buttons = screen.getAllByRole('button', { name: 'Reset pin for style' });
@@ -287,14 +300,14 @@ describe('ContextPinReviewModal', () => {
 
   it('shows a loading line, not a missing record, while the fetch is pending', () => {
     vi.spyOn(api, 'fetchContextPins').mockReturnValue(new Promise(() => {}));
-    render(<ContextPinReviewModal name="style" onClose={vi.fn()} />);
+    renderModal('style');
     expect(screen.getByText('Loading pin record…')).toBeInTheDocument();
     expect(screen.queryByText(/No pin record/)).not.toBeInTheDocument();
   });
 
   it('shows a failed state with Retry when the fetch fails', async () => {
     const fetch = vi.spyOn(api, 'fetchContextPins').mockRejectedValue(new Error('offline'));
-    render(<ContextPinReviewModal name="style" onClose={vi.fn()} />);
+    renderModal('style');
     expect(await screen.findByText('Pin record unavailable')).toBeInTheDocument();
     expect(screen.getByText('Load pin record failed: offline.')).toBeInTheDocument();
     expect(screen.queryByText(/No pin record/)).not.toBeInTheDocument();
@@ -305,10 +318,37 @@ describe('ContextPinReviewModal', () => {
     expect(screen.queryByText('Pin record unavailable')).not.toBeInTheDocument();
   });
 
-  it('says there is no pin record only after a successful load without one', async () => {
+  it('says there is no pin record only after a successful load without one, titled Pin for style', async () => {
     vi.spyOn(api, 'fetchContextPins').mockResolvedValue({});
-    render(<ContextPinReviewModal name="style" onClose={vi.fn()} />);
+    const { onClose } = renderModal('style');
     expect(await screen.findByText('No pin record for style.')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Pin for style' })).toBeInTheDocument();
+
+    const openLink = screen.getByRole('link', { name: 'Open in Pins' });
+    expect(openLink).toHaveAttribute('href', '/pins?kind=context&fragment=style');
+    fireEvent.click(openLink);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('location')).toHaveTextContent('/pins?kind=context&fragment=style');
+  });
+
+  it('titles pinned and drifted records accurately and links Open in Pins to the drift view', async () => {
+    vi.spyOn(api, 'fetchContextPins').mockResolvedValue({ style: pin('pinned') });
+    renderModal('style');
+    expect(await screen.findByRole('dialog', { name: 'Pin for style' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open in Pins' })).toHaveAttribute(
+      'href',
+      '/pins?kind=context&fragment=style',
+    );
+    cleanup();
+
+    vi.spyOn(api, 'fetchContextPins').mockResolvedValue({ style: pin('drift') });
+    const { onClose } = renderModal('style');
+    expect(await screen.findByRole('dialog', { name: 'style changed since its pin' })).toBeInTheDocument();
+    const openLink = screen.getByRole('link', { name: 'Open in Pins' });
+    expect(openLink).toHaveAttribute('href', '/pins?kind=context&fragment=style&view=drift');
+    fireEvent.click(openLink);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('location')).toHaveTextContent('/pins?kind=context&fragment=style&view=drift');
   });
 });
 
@@ -648,7 +688,11 @@ describe('ContextPinReviewModal detail', () => {
       .spyOn(api, 'fetchContextPins')
       .mockResolvedValueOnce({ style: pin('drift') })
       .mockResolvedValue({ style: pin('pinned') });
-    render(<ContextPinReviewModal name="style" onClose={vi.fn()} />);
+    render(
+      <MemoryRouter initialEntries={['/library?kind=context']}>
+        <ContextPinReviewModal name="style" onClose={vi.fn()} />
+      </MemoryRouter>,
+    );
     expect(await screen.findByText('style changed since its pin')).toBeInTheDocument();
     await screen.findByText(/2 lines changed/);
     for (const id of [APPROVE_BUTTON_ID, DRIFT_SECTION_ID, RESET_BUTTON_ID, TOOLS_SECTION_ID]) {

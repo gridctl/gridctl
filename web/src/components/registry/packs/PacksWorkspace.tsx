@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, createElement } from 'react';
 import { useSearchParams } from 'react-router';
-import { Copy, Download, List, Package, RefreshCw, Bot, Webhook, FileDiff } from 'lucide-react';
+import { Copy, Download, List, Package, RefreshCw, Bot, Webhook, FileDiff, Globe } from 'lucide-react';
 import { cn } from '../../../lib/cn';
 import { WORKSPACE_LABELS } from '../../../types/workspace';
 import { IconButton } from '../../ui/IconButton';
@@ -161,6 +161,15 @@ export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
         icon: createElement(Bot, { size: 14 }),
         keywords: ['agents', 'segment', 'switch', 'kind'],
         onSelect: () => onKindChange('agent'),
+      },
+      {
+        id: 'library:view-context',
+        label: 'Library: View Context',
+        section: 'registry',
+        workspaces: ['library'],
+        icon: createElement(Globe, { size: 14 }),
+        keywords: ['context', 'global', 'agents.md', 'rules', 'segment', 'switch', 'kind'],
+        onSelect: () => onKindChange('context'),
       },
       {
         id: 'library:view-proposals',

@@ -1,11 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { act, render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
-import { GlobalContextDialog } from '../components/context/GlobalContextDialog';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
+import { CommandRegistryProvider, useCommandRegistry } from '../hooks/useCommandRegistry';
+import { useGlobalCommands } from '../hooks/useGlobalCommands';
+import { ContextWorkspace } from '../components/context/ContextWorkspace';
 import { useContextStore } from '../stores/useContextStore';
 import { useNavigationGuardStore } from '../stores/useNavigationGuardStore';
 import { NavigationGuardDialog } from '../components/shell/NavigationGuardDialog';
 import type { ContextDoc } from '../lib/api';
+import type { RegistryKind } from '../lib/registryKind';
+import connectionsSource from '../components/workspaces/ConnectionsWorkspace.tsx?raw';
+import headerSource from '../components/layout/Header.tsx?raw';
 
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
@@ -19,6 +25,7 @@ vi.mock('../lib/api', async () => {
     adoptGlobalContext: vi.fn(),
     unsyncGlobalContext: vi.fn(),
     fetchGlobalContextDiff: vi.fn(),
+    fetchProposals: vi.fn().mockResolvedValue({ schema_version: 1, proposals: [], skipped: [], truncated: false }),
   };
 });
 
@@ -32,6 +39,7 @@ import {
   scanGlobalContext,
   syncGlobalContext,
 } from '../lib/api';
+import * as toastMod from '../components/ui/Toast';
 
 const emptyDoc: ContextDoc = {
   canonical: { path: '/home/u/.gridctl/context/AGENTS.md', exists: false, content: '' },
@@ -85,25 +93,100 @@ const readyDoc: ContextDoc = {
   ],
 };
 
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname + location.search}</div>;
+}
+
+function CommandProbe() {
+  const { commands } = useCommandRegistry();
+  return (
+    <div data-testid="commands">
+      {commands.map((c) => (
+        <button key={c.id} data-testid={`cmd:${c.id}`} onClick={c.onSelect}>
+          {c.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function GlobalCommandsMount() {
+  useGlobalCommands();
+  return null;
+}
+
+function renderContext(
+  options: {
+    url?: string;
+    onKindChange?: (kind: RegistryKind) => void;
+    withGuardHost?: boolean;
+    withCommands?: boolean;
+    withGlobalCommands?: boolean;
+  } = {},
+) {
+  const {
+    url = '/library?kind=context',
+    onKindChange = vi.fn(),
+    withGuardHost = false,
+    withCommands = false,
+    withGlobalCommands = false,
+  } = options;
+  const result = render(
+    <CommandRegistryProvider>
+      <MemoryRouter initialEntries={[url]}>
+        <Routes>
+          <Route
+            path="/library"
+            element={
+              <>
+                <ContextWorkspace onKindChange={onKindChange} />
+                {withGlobalCommands && <GlobalCommandsMount />}
+                {withCommands && <CommandProbe />}
+              </>
+            }
+          />
+          <Route path="*" element={<div data-testid="other-route" />} />
+        </Routes>
+        <LocationProbe />
+        {withGuardHost && <NavigationGuardDialog />}
+      </MemoryRouter>
+    </CommandRegistryProvider>,
+  );
+  return { ...result, onKindChange };
+}
+
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
   useContextStore.setState({ doc: null, loading: false, error: null });
 });
 
-describe('GlobalContextDialog', () => {
-  it('shows the adoption-first setup view when no canonical file exists', async () => {
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('ContextWorkspace single-file mode', () => {
+  it('shows a loading state with no inspector before the first fetch resolves', () => {
+    vi.mocked(fetchGlobalContext).mockReturnValue(new Promise(() => {}));
+    renderContext();
+    expect(screen.getByText('Loading global context…')).toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Global context inspector' })).not.toBeInTheDocument();
+  });
+
+  it('shows the adoption-first setup view with no inspector when no canonical file exists', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(emptyDoc);
     vi.mocked(scanGlobalContext).mockResolvedValue([
       { slug: 'claude-code', name: 'Claude Code', path: '/home/u/.claude/CLAUDE.md', exists: true, size: 42 },
       { slug: 'gemini', name: 'Gemini CLI', path: '/home/u/.gemini/GEMINI.md', exists: false, size: 0 },
     ]);
 
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderContext();
 
     await waitFor(() => {
       expect(screen.getByText('Set up your global context')).toBeInTheDocument();
     });
+    expect(screen.queryByRole('complementary', { name: 'Global context inspector' })).not.toBeInTheDocument();
     // Existing file offered for import; non-existing one is not.
     expect(screen.getByText('Import from Claude Code')).toBeInTheDocument();
     expect(screen.queryByText('Import from Gemini CLI')).not.toBeInTheDocument();
@@ -119,7 +202,7 @@ describe('GlobalContextDialog', () => {
     ]);
     vi.mocked(initGlobalContext).mockResolvedValue(readyDoc);
 
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderContext();
     await waitFor(() => {
       expect(screen.getByText('Import from Claude Code')).toBeInTheDocument();
     });
@@ -143,7 +226,7 @@ describe('GlobalContextDialog', () => {
     ]);
     vi.mocked(initGlobalContext).mockResolvedValue(readyDoc);
 
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderContext();
     await waitFor(() => {
       expect(screen.getByText('Import from Claude Code')).toBeInTheDocument();
     });
@@ -164,7 +247,7 @@ describe('GlobalContextDialog', () => {
     ]);
     vi.mocked(initGlobalContext).mockResolvedValue(readyDoc);
 
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderContext();
     await waitFor(() => {
       expect(screen.getByText('Import')).toBeInTheDocument();
     });
@@ -184,23 +267,133 @@ describe('GlobalContextDialog', () => {
     });
   });
 
-  it('renders per-client state chips and drift review action', async () => {
+  it('renders per-client state chips and drift review action in the Clients inspector tab', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
 
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderContext();
+
+    const inspector = await screen.findByRole('complementary', { name: 'Global context inspector' });
+    expect(within(inspector).getByRole('tab', { name: 'Clients' })).toHaveAttribute('aria-selected', 'true');
+    expect(within(inspector).getByText('1 client needs attention')).toBeInTheDocument();
+    expect(within(inspector).getByText('Claude Code')).toBeInTheDocument();
+    expect(within(inspector).getByText('in-sync')).toBeInTheDocument();
+    expect(within(inspector).getByText('never-synced')).toBeInTheDocument();
+    expect(within(inspector).getByText('drifted')).toBeInTheDocument();
+    expect(within(inspector).getByText('unsupported')).toBeInTheDocument();
+    // Drifted client gets a Review action; unsupported client shows its reason.
+    expect(within(inspector).getByText('Review')).toBeInTheDocument();
+    expect(within(inspector).getByText(/app-internal storage/)).toBeInTheDocument();
+    // No collapsible Clients strip toggle remains above the editor.
+    expect(screen.queryByRole('button', { name: /Clients/i })).not.toBeInTheDocument();
+  });
+
+  it('switches inspector tabs, reflects tab=details in the URL, and links to Pins', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue({
+      ...readyDoc,
+      pins: { drifted: ['AGENTS.md'], unpinned: [], missing: [] },
+    });
+
+    renderContext({ url: '/library?kind=context&tab=details' });
+
+    const inspector = await screen.findByRole('complementary', { name: 'Global context inspector' });
+    const detailsTab = within(inspector).getByRole('tab', { name: 'Details' });
+    const clientsTab = within(inspector).getByRole('tab', { name: 'Clients' });
+    expect(detailsTab).toHaveAttribute('aria-selected', 'true');
+    expect(clientsTab).toHaveAttribute('aria-selected', 'false');
+
+    const panel = within(inspector).getByRole('tabpanel', { name: 'Details' });
+    expect(panel).toHaveTextContent('/home/u/.gridctl/context/AGENTS.md');
+    expect(panel).toHaveTextContent('Pin drift');
+    const pinsLink = within(panel).getByRole('link', { name: 'Review in Pins' });
+    expect(pinsLink).toHaveAttribute('href', '/pins?kind=context&fragment=AGENTS.md&view=drift');
+
+    fireEvent.click(clientsTab);
+    expect(clientsTab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('location').textContent).toBe('/library?kind=context');
+
+    fireEvent.click(detailsTab);
+    expect(detailsTab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('location').textContent).toBe('/library?kind=context&tab=details');
+  });
+
+  it('drops a stale fragment parameter silently in single-file mode', async () => {
+    const toastSpy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
+    vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
+
+    renderContext({ url: '/library?kind=context&fragment=10-style' });
+    await screen.findByLabelText('Canonical global context');
 
     await waitFor(() => {
-      expect(screen.getByText('Claude Code')).toBeInTheDocument();
+      expect(screen.getByTestId('location').textContent).toBe('/library?kind=context');
     });
-    expect(screen.getByText('in-sync')).toBeInTheDocument();
-    expect(screen.getByText('never-synced')).toBeInTheDocument();
-    expect(screen.getByText('drifted')).toBeInTheDocument();
-    expect(screen.getByText('unsupported')).toBeInTheDocument();
-    // Drifted client gets a Review action; unsupported client shows its reason.
-    expect(screen.getByText('Review')).toBeInTheDocument();
-    expect(
-      screen.getByText(/app-internal storage/),
-    ).toBeInTheDocument();
+    expect(toastSpy).not.toHaveBeenCalled();
+  });
+
+  it('handles ?client= deep links for drifted, clean, and unknown clients', async () => {
+    const toastSpy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
+    vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
+    vi.mocked(fetchGlobalContextDiff).mockResolvedValue('@@ -1 +1 @@\n-a\n+b\n');
+
+    // Drifted client opens drift review and removes client from the URL.
+    renderContext({ url: '/library?kind=context&tab=details&client=opencode' });
+    expect(await screen.findByText('OpenCode was edited')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/library?kind=context');
+    });
+    expect(screen.getByRole('tab', { name: 'Clients' })).toHaveAttribute('aria-selected', 'true');
+    cleanup();
+
+    // Non-drifted client spotlights its row, selects Clients, and opens no dialog.
+    useContextStore.setState({ doc: null, loading: false, error: null });
+    renderContext({ url: '/library?kind=context&tab=details&client=claude-code' });
+    await screen.findByLabelText('Canonical global context');
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/library?kind=context');
+    });
+    expect(screen.getByRole('tab', { name: 'Clients' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const claudeItem = screen.getByText('Claude Code').closest('li');
+    expect(claudeItem).toHaveAttribute('data-spotlight', 'true');
+    cleanup();
+
+    // Unknown slug toasts once and is removed.
+    useContextStore.setState({ doc: null, loading: false, error: null });
+    renderContext({ url: '/library?kind=context&client=missing-client' });
+    await screen.findByLabelText('Canonical global context');
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/library?kind=context');
+    });
+    expect(toastSpy).toHaveBeenCalledWith('error', 'Client "missing-client" not found');
+  });
+
+  it('links to Pins from the save toast when the canonical pin drifts', async () => {
+    const toastSpy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
+    vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
+    vi.mocked(saveGlobalContext).mockResolvedValue({
+      ...readyDoc,
+      canonical: { ...readyDoc.canonical, content: '# Edited\n' },
+      pin_status: 'drift',
+    });
+
+    renderContext();
+    const editor = await screen.findByLabelText('Canonical global context');
+    fireEvent.change(editor, { target: { value: '# Edited\n' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => {
+      expect(toastSpy).toHaveBeenCalledWith(
+        'success',
+        'Canonical context saved. Run a sync to propagate. Pin drift: review and approve in Pins.',
+        expect.objectContaining({
+          action: expect.objectContaining({ label: 'Review in Pins' }),
+        }),
+      );
+    });
+    const opts = toastSpy.mock.calls.find((c) => c[0] === 'success')?.[2];
+    act(() => {
+      opts?.action?.onClick();
+    });
+    expect(screen.getByTestId('location').textContent).toBe('/pins?kind=context&fragment=AGENTS.md&view=drift');
   });
 
   it('sync all calls the API and summarizes results', async () => {
@@ -219,7 +412,7 @@ describe('GlobalContextDialog', () => {
       ],
     });
 
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderContext();
     await waitFor(() => {
       expect(screen.getByText('Sync all')).toBeInTheDocument();
     });
@@ -230,43 +423,43 @@ describe('GlobalContextDialog', () => {
     });
   });
 
-  it('confirms before discarding canonical edits', async () => {
+  it('confirms before discarding canonical edits on kind switch', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
-    const onClose = vi.fn();
-    render(<GlobalContextDialog isOpen onClose={onClose} />);
+    const onKindChange = vi.fn();
+    renderContext({ onKindChange });
     const editor = await screen.findByLabelText('Canonical global context');
 
     fireEvent.change(editor, { target: { value: '# Edited rules\n' } });
-    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
 
-    expect(onClose).not.toHaveBeenCalled();
+    expect(onKindChange).not.toHaveBeenCalled();
     expect(screen.getByRole('alertdialog')).toHaveTextContent(/unsaved edits/i);
     expect(screen.getByLabelText('Canonical global context')).toHaveValue('# Edited rules\n');
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(onClose).not.toHaveBeenCalled();
+    expect(onKindChange).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Canonical global context')).toHaveValue('# Edited rules\n');
 
-    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onKindChange).toHaveBeenCalledWith('skill');
   });
 
-  it('closes directly when the canonical editor has no edits', async () => {
+  it('switches kind directly when the canonical editor has no edits', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
-    const onClose = vi.fn();
-    render(<GlobalContextDialog isOpen onClose={onClose} />);
+    const onKindChange = vi.fn();
+    renderContext({ onKindChange });
     await screen.findByLabelText('Canonical global context');
 
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+    expect(onKindChange).toHaveBeenCalledWith('skill');
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
 
-  it('closes the import dialog alone on Escape', async () => {
+  it('closes the import dialog alone on Escape without leaving the editor', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
-    const onClose = vi.fn();
-    render(<GlobalContextDialog isOpen onClose={onClose} />);
+    const onKindChange = vi.fn();
+    renderContext({ onKindChange });
     await screen.findByLabelText('Canonical global context');
 
     fireEvent.click(screen.getByRole('button', { name: /^import$/i }));
@@ -276,17 +469,13 @@ describe('GlobalContextDialog', () => {
     fireEvent.keyDown(button as HTMLElement, { key: 'Escape' });
 
     expect(screen.queryByRole('dialog', { name: 'Import global context' })).not.toBeInTheDocument();
-    expect(screen.getByRole('dialog', { name: 'Global Context' })).toBeInTheDocument();
-    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Canonical global context')).toBeInTheDocument();
+    expect(onKindChange).not.toHaveBeenCalled();
   });
 
-  it('prevents unload while canonical edits are pending', async () => {
+  it('prevents unload while canonical edits are pending and clears on unmount', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
-    let open = true;
-    const onClose = vi.fn(() => {
-      open = false;
-    });
-    const { rerender } = render(<GlobalContextDialog isOpen={open} onClose={onClose} />);
+    const { unmount } = renderContext();
     const editor = await screen.findByLabelText('Canonical global context');
 
     const clean = new Event('beforeunload', { cancelable: true });
@@ -298,30 +487,64 @@ describe('GlobalContextDialog', () => {
     window.dispatchEvent(dirty);
     expect(dirty.defaultPrevented).toBe(true);
 
-    fireEvent.keyDown(document, { key: 'Escape' });
-    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
-    expect(onClose).toHaveBeenCalledTimes(1);
-    // Real callers flip isOpen false. The guard drops on that transition,
-    // not on a dirty clear that has not committed yet.
-    rerender(<GlobalContextDialog isOpen={open} onClose={onClose} />);
+    unmount();
     const after = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(after);
     expect(after.defaultPrevented).toBe(false);
   });
+
+  it('registers segment palette commands and guards dirty sync and kind switches', async () => {
+    const toastSpy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
+    vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
+    vi.mocked(syncGlobalContext).mockResolvedValue({ dry_run: false, has_failures: false, results: [] });
+    const onKindChange = vi.fn();
+    renderContext({ onKindChange, withCommands: true });
+    const editor = await screen.findByLabelText('Canonical global context');
+
+    expect(screen.getByTestId('cmd:library:context-refresh')).toHaveTextContent('Library: Refresh Global Context');
+    expect(screen.getByTestId('cmd:library:context-sync-all')).toHaveTextContent(
+      'Library: Sync Global Context to All Clients',
+    );
+    expect(screen.getByTestId('cmd:library:view-skills')).toBeInTheDocument();
+    expect(screen.getByTestId('cmd:library:view-agents')).toBeInTheDocument();
+    expect(screen.getByTestId('cmd:library:view-hooks')).toBeInTheDocument();
+    expect(screen.getByTestId('cmd:library:view-packs')).toBeInTheDocument();
+    expect(screen.getByTestId('cmd:library:view-proposals')).toBeInTheDocument();
+
+    // Sync while dirty warns instead of syncing.
+    fireEvent.change(editor, { target: { value: '# Dirty\n' } });
+    fireEvent.click(screen.getByTestId('cmd:library:context-sync-all'));
+    expect(syncGlobalContext).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith('warning', 'Save or revert your changes before syncing');
+
+    // Palette kind switch while dirty opens the discard confirm.
+    fireEvent.click(screen.getByTestId('cmd:library:view-agents'));
+    expect(onKindChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(/unsaved edits/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(onKindChange).toHaveBeenCalledWith('agent');
+  });
+
+  it('keeps ConnectionsWorkspace and Header free of editor and markdown imports', () => {
+    expect(connectionsSource).not.toMatch(/GlobalContextEditor|MarkdownPreview/);
+    expect(headerSource).not.toMatch(/GlobalContextEditor|MarkdownPreview/);
+  });
 });
 
-describe('GlobalContextDialog load failures', () => {
+describe('ContextWorkspace load failures', () => {
   it('shows a failed state with Retry on the first load, then recovers', async () => {
     vi.mocked(fetchGlobalContext).mockRejectedValueOnce(new Error('offline'));
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderContext();
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Global context unavailable');
     expect(alert).toHaveTextContent('Load global context failed: offline.');
     expect(screen.queryByText('Loading global context…')).not.toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Global context inspector' })).not.toBeInTheDocument();
 
     vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(fetchGlobalContext).toHaveBeenCalledTimes(2);
     expect(screen.queryByText('Global context unavailable')).not.toBeInTheDocument();
     expect(await screen.findByText('Claude Code')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -330,14 +553,14 @@ describe('GlobalContextDialog load failures', () => {
   it('never shows the loading line and the failed state together', async () => {
     useContextStore.setState({ doc: null, loading: true, error: 'Load global context failed: offline.' });
     vi.mocked(fetchGlobalContext).mockReturnValue(new Promise(() => {}));
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderContext();
     expect(screen.getByText('Loading global context…')).toBeInTheDocument();
     expect(screen.queryByText('Global context unavailable')).not.toBeInTheDocument();
   });
 
   it('describes a credential failure instead of the raw message', async () => {
     vi.mocked(fetchGlobalContext).mockRejectedValueOnce(new AuthError('Authentication required'));
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderContext();
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Load global context paused. Verify your gateway credential to resume.');
@@ -347,7 +570,7 @@ describe('GlobalContextDialog load failures', () => {
   it('keeps the editor under a banner with Retry when a refresh fails', async () => {
     useContextStore.setState({ doc: readyDoc, loading: false, error: null });
     vi.mocked(fetchGlobalContext).mockRejectedValueOnce(new Error('offline'));
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderContext();
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Load global context failed: offline.');
@@ -362,7 +585,7 @@ describe('GlobalContextDialog load failures', () => {
   });
 });
 
-describe('GlobalContextDialog navigation guard', () => {
+describe('ContextWorkspace navigation guard', () => {
   beforeEach(() => {
     useNavigationGuardStore.setState({ guards: [], hosts: 0, pending: null });
   });
@@ -371,37 +594,23 @@ describe('GlobalContextDialog navigation guard', () => {
     useNavigationGuardStore.setState({ guards: [], hosts: 0, pending: null });
   });
 
-  it('registers a blocking guard while edited and drops it on close', async () => {
+  it('registers a blocking guard labelled Global Context while edited and drops it on unmount', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
-    let open = true;
-    const onClose = vi.fn(() => {
-      open = false;
-    });
-    const { rerender } = render(
-      <>
-        <GlobalContextDialog isOpen={open} onClose={onClose} />
-        <NavigationGuardDialog />
-      </>,
-    );
+    const { unmount } = renderContext({ withGuardHost: true });
     const editor = await screen.findByLabelText('Canonical global context');
     expect(useNavigationGuardStore.getState().guards).toHaveLength(0);
 
     fireEvent.change(editor, { target: { value: '# Edited rules\n' } });
     expect(useNavigationGuardStore.getState().isBlocked('/logs')).toBe(true);
+    expect(useNavigationGuardStore.getState().isBlocked('/library')).toBe(true);
 
     const proceed = vi.fn();
     act(() => useNavigationGuardStore.getState().guard('/logs', proceed));
     expect(screen.getByText(/unsaved changes in Global Context/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Discard & leave' }));
-    expect(onClose).toHaveBeenCalledTimes(1);
     expect(proceed).toHaveBeenCalledTimes(1);
 
-    rerender(
-      <>
-        <GlobalContextDialog isOpen={open} onClose={onClose} />
-        <NavigationGuardDialog />
-      </>,
-    );
+    unmount();
     expect(useNavigationGuardStore.getState().guards).toHaveLength(0);
   });
 
@@ -409,7 +618,7 @@ describe('GlobalContextDialog navigation guard', () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
     const saved: ContextDoc = { ...readyDoc, canonical: { ...readyDoc.canonical, content: '# Edited rules\n' } };
     vi.mocked(saveGlobalContext).mockResolvedValue(saved);
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderContext();
     const editor = await screen.findByLabelText('Canonical global context');
 
     fireEvent.change(editor, { target: { value: '# Edited rules\n' } });
@@ -418,6 +627,28 @@ describe('GlobalContextDialog navigation guard', () => {
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
     await waitFor(() => expect(saveGlobalContext).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(useNavigationGuardStore.getState().guards).toHaveLength(0));
+  });
+
+  it('does not prompt or drop the draft when Go to Global Context runs inside a dirty editor', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
+    renderContext({ withGuardHost: true, withCommands: true, withGlobalCommands: true });
+    const editor = await screen.findByLabelText('Canonical global context');
+
+    fireEvent.change(editor, { target: { value: '# Edited rules\n' } });
+    const store = useNavigationGuardStore.getState();
+    expect(store.isBlocked('/library?kind=context')).toBe(false);
+    expect(store.isBlocked('/library?kind=context&fragment=00-default.md')).toBe(false);
+    expect(store.isBlocked('?kind=context&tab=details')).toBe(false);
+    expect(store.isBlocked({ pathname: '/library', search: '?kind=context' })).toBe(false);
+    expect(store.isBlocked('/library')).toBe(true);
+    expect(store.isBlocked('/library?kind=skill')).toBe(true);
+    expect(store.isBlocked('/pins?kind=context')).toBe(true);
+
+    fireEvent.click(screen.getByTestId('cmd:navigate:library-context'));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(useNavigationGuardStore.getState().pending).toBeNull();
+    expect(editor).toHaveValue('# Edited rules\n');
+    expect(screen.getByTestId('location')).toHaveTextContent('/library?kind=context');
   });
 });
 
@@ -434,7 +665,7 @@ function deferred<T>() {
 describe('single-file drift review evidence', () => {
   async function openReview() {
     vi.mocked(fetchGlobalContext).mockResolvedValue(readyDoc);
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderContext();
     fireEvent.click(await screen.findByText('Review'));
     await screen.findByText('OpenCode was edited');
   }
