@@ -436,6 +436,7 @@ export default function ConnectionsWorkspace() {
           workspace="connections"
           defaultLeftPct={26}
           minLeftPx={240}
+          leftKey={selectedSlug}
           left={
             <ConnectionsRail
               clients={visibleClients}

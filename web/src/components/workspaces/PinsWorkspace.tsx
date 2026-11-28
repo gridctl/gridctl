@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Loader2, Pin } from 'lucide-react';
 import { requestGatewayPoll } from '../../hooks/usePolling';
@@ -273,8 +273,13 @@ export function PinsWorkspace() {
   const selectionParamName =
     kind === 'server' ? 'server' : kind === 'skill' ? 'skill' : kind === 'context' ? 'fragment' : 'hook';
 
+  // Counts explicit pin choices. activeName also moves on a kind switch or a
+  // filter change, which must not close the navigation drawer.
+  const [pinChoice, setPinChoice] = useState(0);
+
   const applySelection = useCallback(
     (name: string) => {
+      setPinChoice((n) => n + 1);
       updateParams((p) => {
         p.set(selectionParamName, name);
         // ?view= is a one-shot landing intent from a deep link; an explicit
@@ -526,6 +531,7 @@ export function PinsWorkspace() {
           />
         }
         minLeftPx={220}
+        leftKey={String(pinChoice)}
       >
         <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
           <WorkspaceHeader

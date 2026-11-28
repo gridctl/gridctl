@@ -71,7 +71,7 @@ export function LogsWorkspace() {
 
   return (
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
-      <WorkspaceShell workspace="logs" defaultLeftPct={16} left={leftRail} minLeftPx={180}>
+      <WorkspaceShell workspace="logs" defaultLeftPct={16} left={leftRail} leftKey={source ?? null} minLeftPx={180}>
         <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
           <WorkspaceHeader
             title={WORKSPACE_LABELS.logs}

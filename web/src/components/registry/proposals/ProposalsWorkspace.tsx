@@ -147,6 +147,7 @@ export function ProposalsWorkspace({ onKindChange }: ProposalsWorkspaceProps) {
         workspace="library"
         defaultRightPct={40}
         minRightPx={340}
+        rightKey={selected?.id ?? null}
         right={(
           <ProposalDetailPanel
             key={selected?.id ?? 'none'}

@@ -208,7 +208,7 @@ export function PacksWorkspace({ onKindChange }: PacksWorkspaceProps) {
 
   return (
     <div className="absolute inset-0 flex flex-col bg-background text-text-primary overflow-hidden">
-      <WorkspaceShell workspace="library" defaultRightPct={42} minRightPx={380} right={inspector}>
+      <WorkspaceShell workspace="library" defaultRightPct={42} minRightPx={380} right={inspector} rightKey={selectedName}>
         <section aria-labelledby={headingId} className="flex flex-col h-full overflow-hidden">
           <WorkspaceHeader
             title={WORKSPACE_LABELS.library}

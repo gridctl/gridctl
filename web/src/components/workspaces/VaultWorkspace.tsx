@@ -697,6 +697,8 @@ export function VaultWorkspace() {
         defaultRightPct={30}
         left={leftRail}
         right={inspector}
+        leftKey={activeSet}
+        rightKey={selectedVariable?.key ?? null}
         minLeftPx={200}
         minRightPx={300}
       >
