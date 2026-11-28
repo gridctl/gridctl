@@ -296,18 +296,86 @@ export function breakdownRowsToCsv(
   return lines.join('\r\n') + '\r\n';
 }
 
-// One chart-time label format for every metrics series, so a focused entity
-// series and its fleet context always merge on identical keys.
-function chartTime(timestamp: string): string {
-  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+function bucketDurationMs(interval?: string): number | undefined {
+  if (interval === '1m') return 60_000;
+  if (interval === '1h') return 3_600_000;
+  return undefined;
 }
 
-// Bare point mapper — the single place a raw data point becomes a chart row.
-// The full-response builder below and the inspector sparklines all sit on
-// this, so the mapping is defined exactly once.
+function parseTimestamp(timestamp: string): Date | null {
+  if (!timestamp) return null;
+  const ms = Date.parse(timestamp);
+  return Number.isNaN(ms) ? null : new Date(ms);
+}
+
+// Range-aware x-axis tick label. Short ranges stay HH:MM; 24h adds weekday;
+// 7d and any other range add month and day so multi-day buckets do not repeat.
+export function formatChartTick(
+  timestamp: string,
+  range?: string,
+  locale?: string,
+  timeZone?: string,
+): string {
+  const date = parseTimestamp(timestamp);
+  if (!date) return timestamp;
+  const options: Intl.DateTimeFormatOptions =
+    range === '30m' || range === '1h' || range === '6h'
+      ? { hour: '2-digit', minute: '2-digit', timeZone }
+      : range === '24h'
+        ? { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone }
+        : { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone };
+  return new Intl.DateTimeFormat(locale, options).format(date);
+}
+
+// Full local date with bucket start and end time for the series table and
+// tooltip header. Unknown intervals omit the end time.
+export function formatChartBucket(
+  timestamp: string,
+  interval?: string,
+  locale?: string,
+  timeZone?: string,
+): string {
+  const start = parseTimestamp(timestamp);
+  if (!start) return timestamp;
+  const startText = new Intl.DateTimeFormat(locale, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone,
+  }).format(start);
+  const durationMs = bucketDurationMs(interval);
+  if (durationMs === undefined) return startText;
+  const end = new Date(start.getTime() + durationMs);
+  const endText = new Intl.DateTimeFormat(locale, {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone,
+  }).format(end);
+  return `${startText} – ${endText}`;
+}
+
+// Tooltip title: full bucket range plus the interval suffix when known.
+export function formatChartTooltipTitle(
+  timestamp: string,
+  interval?: string,
+  locale?: string,
+  timeZone?: string,
+): string {
+  if (!parseTimestamp(timestamp)) return timestamp;
+  const bucket = formatChartBucket(timestamp, interval, locale, timeZone);
+  if (bucketDurationMs(interval) === undefined) return bucket;
+  return `${bucket} · ${interval} interval`;
+}
+
+// Bare point mapper: the single place a raw data point becomes a chart row.
+// Rows keep the raw RFC 3339 timestamp as `time`, with formatting applied at
+// display time so multi-day buckets never collide.
 export function toTokenPoints(dps: TokenDataPoint[]) {
   return dps.map((dp) => ({
-    time: chartTime(dp.timestamp),
+    time: dp.timestamp,
     'Input Tokens': dp.input_tokens,
     'Output Tokens': dp.output_tokens,
   }));
@@ -322,13 +390,13 @@ export function buildTokenChartData(metricsData: TokenMetricsResponse | null) {
 export const FLEET_TOKEN_CATEGORY = 'Fleet Total';
 
 // Focused chart rows: the selected entity's series merged with the fleet
-// series as context, on the fleet's time spine. The join key is the RAW
-// bucket timestamp — both rings bucket identically (same minute keys, same
-// hour truncation on downsampled ranges), while the HH:MM display label
-// repeats across days on 24h/7d and would collide. Every write lands in both
-// the global and the per-entity ring, so entity buckets are a subset of
-// global buckets; a fleet bucket missing from the entity series means the
-// entity was idle then — a true zero, not an unknown — so it renders as 0
+// series as context, on the fleet's time spine. Both the join and the output
+// `time` key use the raw bucket timestamp (both rings bucket identically with
+// the same minute keys and hour truncation on downsampled ranges), leaving
+// display formatting to the chart axes, tooltips, and series table. Every write
+// lands in both the global and the per-entity ring, so entity buckets are a
+// subset of global buckets; a fleet bucket missing from the entity series means
+// the entity was idle then (a true zero, not an unknown), so it renders as 0
 // rather than a gap. (One edge: a wrapped global ring can start later than a
 // sparse entity's oldest in-window bucket, dropping those entity points from
 // the spine; the fleet ring covers ~7 busy days, so this only affects the far
@@ -342,7 +410,7 @@ export function buildFocusedTokenChartData(
   return (metricsData?.data_points ?? []).map((dp) => {
     const entity = byStamp.get(dp.timestamp);
     return {
-      time: chartTime(dp.timestamp),
+      time: dp.timestamp,
       'Input Tokens': entity?.input_tokens ?? 0,
       'Output Tokens': entity?.output_tokens ?? 0,
       [FLEET_TOKEN_CATEGORY]: dp.total_tokens,

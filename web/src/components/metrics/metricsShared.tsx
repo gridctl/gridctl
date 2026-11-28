@@ -1,4 +1,4 @@
-import { type ComponentType, type ReactNode, useEffect, useRef } from 'react';
+import { type ComponentType, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown, Download, Recycle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
@@ -13,6 +13,9 @@ import type { TokenMetricsResponse } from '../../types';
 import {
   avgTokensPerCall,
   breakdownRowsToCsv,
+  formatChartBucket,
+  formatChartTick,
+  formatChartTooltipTitle,
   SERVER_AVG_NOTE,
   TOKEN_COLUMNS,
   windowColumnCaption,
@@ -136,8 +139,8 @@ export function WindowEmptyNote({
 type ChartRow = { time: string } & Record<string, number | string>;
 
 // Exposes a role="img" + aria-label summary, since the underlying Recharts SVG
-// has no accessible description. The breakdown tables remain the full data
-// fallback for assistive tech.
+// has no accessible description. TokenChart's "View as table" toggle provides
+// the full data fallback for assistive tech.
 function ChartFrame({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div role="img" aria-label={label}>
@@ -186,36 +189,107 @@ export function TokenChart({
   chartType?: 'stacked' | 'default';
   dashedCategories?: string[];
 }) {
+  const [showTable, setShowTable] = useState(false);
+  const range = metricsData?.range;
+  const interval = metricsData?.interval;
+  const formatTick = useCallback((value: string) => formatChartTick(value, range), [range]);
+  const formatTooltipLabel = useCallback((value: string) => formatChartTooltipTitle(value, interval), [interval]);
   const title = subject ? `${subject} · Token Usage` : 'Token Usage Over Time';
   const peak = peakFor(data, categories, chartType === 'stacked', dashedCategories);
   const summary = `Token usage over time${subject ? ` for ${subject}` : ''}: ${data.length} points, peak ${formatCompactNumber(peak)} tokens per interval.`;
   return (
     <div className="rounded-lg bg-surface-elevated/60 border border-border/30 p-3">
-      <div className="flex items-center justify-between mb-1">
+      <div className="flex items-center justify-between gap-2 mb-1">
         <span className="text-2xs font-medium text-text-secondary">{title}</span>
-        {metricsData && (
-          <span className="text-3xs text-text-muted font-mono">
-            {metricsData.data_points?.length ?? 0} points &middot; {metricsData.interval} interval
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {metricsData && (
+            <span className="text-3xs text-text-muted font-mono">
+              {metricsData.data_points?.length ?? 0} points &middot; {metricsData.interval} interval
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowTable((v) => !v)}
+            className="text-3xs font-medium text-primary hover:underline"
+          >
+            {showTable ? 'View as chart' : 'View as table'}
+          </button>
+        </div>
       </div>
-      <ChartFrame label={summary}>
-        <AreaChart
-          data={data}
-          index="time"
-          categories={categories}
-          colors={colors}
-          type={chartType}
-          dashedCategories={dashedCategories}
-          fill="gradient"
-          showLegend
-          showGridLines
-          showYAxis
-          yAxisWidth={48}
-          valueFormatter={(v: number) => formatCompactNumber(v)}
-          className={heightClass}
-        />
-      </ChartFrame>
+      {showTable ? (
+        <div className={cn(heightClass, 'overflow-y-auto overflow-x-auto scrollbar-dark')}>
+          <table className="w-full text-xs border-separate border-spacing-0">
+            <caption className="sr-only">{title}</caption>
+            <thead>
+              <tr>
+                <th
+                  scope="col"
+                  className="sticky top-0 z-sticky bg-surface-elevated border-b border-border/30 px-2 py-1.5 text-left font-medium text-text-muted whitespace-nowrap"
+                >
+                  Time
+                </th>
+                {categories.map((category) => (
+                  <th
+                    key={category}
+                    scope="col"
+                    className="sticky top-0 z-sticky bg-surface-elevated border-b border-border/30 px-2 py-1.5 text-right font-medium text-text-muted whitespace-nowrap"
+                  >
+                    {category}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.length === 0 ? (
+                <tr>
+                  <td colSpan={categories.length + 1} className="px-2 py-3 text-center text-text-muted">
+                    No data in this window.
+                  </td>
+                </tr>
+              ) : (
+                data.map((row, rowIdx) => (
+                  <tr key={`${row.time}-${rowIdx}`} className="group hover:bg-surface-highlight/30 transition-colors">
+                    <th
+                      scope="row"
+                      className="border-b border-border/20 group-last:border-b-0 px-2 py-1.5 text-left font-normal font-mono text-text-primary whitespace-nowrap"
+                    >
+                      {formatChartBucket(row.time, interval)}
+                    </th>
+                    {categories.map((category) => (
+                      <td
+                        key={category}
+                        className="border-b border-border/20 group-last:border-b-0 px-2 py-1.5 text-right tabular-nums text-text-primary whitespace-nowrap"
+                      >
+                        {(Number(row[category]) || 0).toLocaleString()}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <ChartFrame label={summary}>
+          <AreaChart
+            data={data}
+            index="time"
+            categories={categories}
+            colors={colors}
+            type={chartType}
+            dashedCategories={dashedCategories}
+            fill="gradient"
+            showLegend
+            showGridLines
+            showYAxis
+            yAxisWidth={48}
+            valueFormatter={(v: number) => formatCompactNumber(v)}
+            indexFormatter={formatTick}
+            tooltipLabelFormatter={formatTooltipLabel}
+            className={heightClass}
+          />
+        </ChartFrame>
+      )}
     </div>
   );
 }
