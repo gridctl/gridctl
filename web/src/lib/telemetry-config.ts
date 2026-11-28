@@ -112,6 +112,31 @@ export function effectiveSignal(
 }
 
 /**
+ * Count servers whose explicit per-server override for a signal diverges from
+ * the stack-global default. Absent global values are treated as false, matching
+ * effectiveSignal, and null or absent overrides are ignored. Server names in
+ * `exclude` (such as disabled servers, which have no telemetry writers) are
+ * skipped.
+ */
+export function overrideDivergence(
+  cfg: ResolvedTelemetry,
+  signal: TelemetrySignal,
+  exclude?: ReadonlySet<string>,
+): { on: number; off: number } {
+  const globalOn = cfg.global[signal] ?? false;
+  let on = 0;
+  let off = 0;
+  for (const [name, overrides] of Object.entries(cfg.servers)) {
+    if (exclude?.has(name)) continue;
+    const override = overrides?.[signal];
+    if (typeof override !== 'boolean') continue;
+    if (override && !globalOn) on++;
+    else if (!override && globalOn) off++;
+  }
+  return { on, off };
+}
+
+/**
  * Convenience: are any signals effectively persisted for this server?
  * Drives the graph node dot indicator and the sidebar "active" pill.
  */

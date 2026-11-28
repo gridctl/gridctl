@@ -3,6 +3,7 @@ import { useAuthStore } from '../stores/useAuthStore';
 import { useTelemetryStore } from '../stores/useTelemetryStore';
 import {
   effectiveSignal,
+  overrideDivergence,
   parseStackTelemetry,
   readTriState,
   triStateToPatch,
@@ -90,6 +91,62 @@ describe('effectiveSignal — inheritance', () => {
   });
 });
 
+describe('overrideDivergence', () => {
+  it('counts overrides turning a signal on while global is off or absent', () => {
+    const cfgExplicitOff: ResolvedTelemetry = {
+      global: { metrics: false },
+      servers: { github: { metrics: true } },
+    };
+    const cfgAbsentGlobal: ResolvedTelemetry = {
+      global: {},
+      servers: { github: { metrics: true } },
+    };
+    expect(overrideDivergence(cfgExplicitOff, 'metrics')).toEqual({ on: 1, off: 0 });
+    expect(overrideDivergence(cfgAbsentGlobal, 'metrics')).toEqual({ on: 1, off: 0 });
+  });
+
+  it('counts overrides turning a signal off while global is on', () => {
+    const cfg: ResolvedTelemetry = {
+      global: { metrics: true },
+      servers: { github: { metrics: false } },
+    };
+    expect(overrideDivergence(cfg, 'metrics')).toEqual({ on: 0, off: 1 });
+  });
+
+  it('ignores overrides equal to global, null overrides, and absent overrides', () => {
+    const cfgOff: ResolvedTelemetry = {
+      global: { metrics: false },
+      servers: {
+        a: { metrics: false },
+        b: { metrics: null },
+        c: { logs: true },
+      },
+    };
+    const cfgOn: ResolvedTelemetry = {
+      global: { metrics: true },
+      servers: {
+        a: { metrics: true },
+        b: { metrics: null },
+        c: {},
+      },
+    };
+    expect(overrideDivergence(cfgOff, 'metrics')).toEqual({ on: 0, off: 0 });
+    expect(overrideDivergence(cfgOn, 'metrics')).toEqual({ on: 0, off: 0 });
+  });
+
+  it('skips server names listed in exclude', () => {
+    const cfg: ResolvedTelemetry = {
+      global: { metrics: false },
+      servers: {
+        github: { metrics: true },
+        jira: { metrics: true },
+      },
+    };
+    expect(overrideDivergence(cfg, 'metrics', new Set(['jira']))).toEqual({ on: 1, off: 0 });
+    expect(overrideDivergence(cfg, 'metrics', new Set(['github', 'jira']))).toEqual({ on: 0, off: 0 });
+  });
+});
+
 describe('readTriState + triStateToPatch', () => {
   let cfg: ResolvedTelemetry;
 
@@ -137,6 +194,19 @@ describe('buildPillLabel — header pill formatting', () => {
     expect(buildPillLabel({ logs: true, metrics: true, traces: true })).toBe(
       'Persistence: Logs+Metrics+Traces',
     );
+  });
+
+  it('renders Per-server when no global signal is on and an override is on', () => {
+    expect(buildPillLabel({}, true)).toBe('Persistence: Per-server');
+    expect(buildPillLabel({ logs: false, metrics: false, traces: false }, true)).toBe(
+      'Persistence: Per-server',
+    );
+    expect(buildPillLabel({}, false)).toBe('Persistence: Off');
+  });
+
+  it('keeps stack-global signal names when global signals and overrides are both on', () => {
+    expect(buildPillLabel({ logs: true }, true)).toBe('Persistence: Logs');
+    expect(buildPillLabel({ logs: true, metrics: true }, true)).toBe('Persistence: Logs+Metrics');
   });
 });
 
