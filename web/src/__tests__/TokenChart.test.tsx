@@ -43,9 +43,8 @@ describe('TokenChart', () => {
     expect(headers.map((h) => h.textContent)).toEqual(['Time', 'Input Tokens', 'Output Tokens']);
     for (const h of headers) {
       expect(h).toHaveAttribute('scope', 'col');
-      expect(h.className).toContain('sticky');
-      expect(h.className).toContain('top-0');
-      expect(h.className).toContain('bg-surface-elevated');
+      expect(h).toHaveClass('sticky', 'top-0', 'bg-surface-elevated');
+      expect(h.className).not.toMatch(/\bbg-\S+\//);
     }
 
     const rowHeaders = within(table).getAllByRole('rowheader');
