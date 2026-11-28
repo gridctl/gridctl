@@ -79,6 +79,14 @@ export function usePollingRefresh(): () => Promise<void> {
   return useCallback(() => refreshImpl?.() ?? Promise.resolve(), []);
 }
 
+// Status snapshot only (the fast lane), for surfaces that must show the
+// effect of a write without waiting for the next tick.
+let statusRefreshImpl: (() => Promise<void>) | null = null;
+
+export function usePollingStatusRefresh(): () => Promise<void> {
+  return useCallback(() => statusRefreshImpl?.() ?? Promise.resolve(), []);
+}
+
 function failureMessage(err: unknown): string {
   return err instanceof Error ? err.message : 'Unknown error';
 }
@@ -444,6 +452,13 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
       if (refreshImpl === refresh) refreshImpl = null;
     };
   }, [refresh]);
+
+  useEffect(() => {
+    statusRefreshImpl = runFast;
+    return () => {
+      if (statusRefreshImpl === runFast) statusRefreshImpl = null;
+    };
+  }, [runFast]);
 
   useEffect(() => {
     if (authRequired) startedRef.current = false;

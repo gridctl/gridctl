@@ -3,7 +3,13 @@ import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router';
-import { requestGatewayPoll, resetPinAlertBaseline, usePolling, usePollingRefresh } from '../hooks/usePolling';
+import {
+  requestGatewayPoll,
+  resetPinAlertBaseline,
+  usePolling,
+  usePollingRefresh,
+  usePollingStatusRefresh,
+} from '../hooks/usePolling';
 import * as api from '../lib/api';
 import { HTTPError } from '../lib/api';
 import { GatewayRequestError } from '../lib/gatewayRequest';
@@ -81,6 +87,29 @@ describe('usePolling retry registration', () => {
     const after = vi.mocked(api.fetchStatus).mock.calls.length;
     requestGatewayPoll();
     expect(api.fetchStatus).toHaveBeenCalledTimes(after);
+  });
+
+  it('refreshes only the fast status lane via usePollingStatusRefresh and resolves when unmounted', async () => {
+    stubPoll();
+    const unmounted = renderHook(() => usePollingStatusRefresh(), { wrapper });
+    await expect(unmounted.result.current()).resolves.toBeUndefined();
+    expect(api.fetchStatus).not.toHaveBeenCalled();
+
+    useAuthStore.setState({ authRequired: false, generation: Symbol() });
+    const poller = renderHook(() => usePolling(), { wrapper });
+    await waitFor(() => expect(api.fetchStatus).toHaveBeenCalledTimes(1));
+    expect(api.fetchToolCatalog).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await unmounted.result.current();
+    });
+    expect(api.fetchStatus).toHaveBeenCalledTimes(2);
+    expect(api.fetchToolCatalog).toHaveBeenCalledTimes(1);
+
+    poller.unmount();
+    await expect(unmounted.result.current()).resolves.toBeUndefined();
+    expect(api.fetchStatus).toHaveBeenCalledTimes(2);
+    unmounted.unmount();
   });
 
   it('propagates a status connection failure to pins and the registry', async () => {
