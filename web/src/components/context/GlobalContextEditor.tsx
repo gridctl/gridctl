@@ -1,10 +1,8 @@
-import { useCallback, useDeferredValue, useEffect, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Bold,
   Check,
-  ChevronDown,
-  ChevronRight,
   Code2,
   CloudUpload,
   Eye,
@@ -15,23 +13,21 @@ import {
   Heading,
   Layers,
   List,
-  MonitorSmartphone,
   Plus,
-  RefreshCw,
   Trash2,
 } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
-import { FailedState, FailureBanner } from '../ui/EmptyState';
+import { FailureBanner } from '../ui/EmptyState';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
-import { IconButton } from '../ui/IconButton';
 import { StatePill } from '../ui/StatePill';
-import { PACK_CHIP_CLASS } from '../registry/PackChip';
 import { showToast } from '../ui/Toast';
+import { ContextFrame } from './ContextFrame';
+import { ContextInspector, type ContextInspectorTab } from './ContextInspector';
 import { ContextPinChip, ContextPinReviewModal } from './ContextPinChip';
-import { contextPinStatus } from '../../lib/contextGovernance';
-import { useNavigationGuard } from '../../hooks/useNavigationGuard';
+import { contextPinsUrl, contextPinStatus } from '../../lib/contextGovernance';
+import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { useSplitPane } from '../../hooks/useSplitPane';
 import { SplitPaneHandle } from '../ui/SplitPane';
 import { MarkdownPreview } from '../registry/MarkdownPreview';
@@ -42,6 +38,7 @@ import { escapeNonPrintable } from '../../lib/nonPrintable';
 import { contextDriftCliHints } from '../../lib/contextDriftHints';
 import { useLoadedEvidence, type LoadedEvidence } from '../../hooks/useLoadedEvidence';
 import { UnifiedDiffView } from '../ui/UnifiedDiffView';
+import type { RegistryKind } from '../../lib/registryKind';
 import {
   adoptGlobalContext,
   deleteContextFragment,
@@ -52,15 +49,17 @@ import {
   saveGlobalContext,
   scanGlobalContext,
   syncGlobalContext,
-  unsyncGlobalContext,
   type ContextClientStatus,
   type ContextDoc,
   type ContextFragment,
-  type ContextFragmentStatus,
   type ContextScanEntry,
-  type ContextState,
   type ContextSyncResult,
 } from '../../lib/api';
+
+export interface ContextViewActions {
+  refresh: () => void;
+  syncAll: () => void;
+}
 
 // Mirrors pkg/contexts/fragment_render.go: only Claude Code's rule-file
 // dialect is a byte-identical projection of the source fragments, so only
@@ -76,16 +75,6 @@ const RESERVED_MARKERS = [
   '<!-- Managed by gridctl.',
 ];
 
-interface GlobalContextDialogProps {
-  isOpen: boolean;
-  /** Land on this client's drift review once the doc loads (the
-   *  Connections hub's Review deep link). In fragments mode the client's
-   *  row is spotlighted, and the review opens directly when the target
-   *  is unambiguous (compiled, or exactly one drifted fragment). */
-  initialDriftSlug?: string | null;
-  onClose: () => void;
-}
-
 /**
  * Render-time deep-link seeding: run the seed exactly once per distinct
  * non-null initial value, during render, so the first paint already
@@ -99,99 +88,6 @@ function useDriftSeed(initial: string | null | undefined, seed: (slug: string) =
     setSeeded(value);
     if (value) seed(value);
   }
-}
-
-/**
- * Global Context management surface: one canonical AGENTS.md, edited here
- * and projected into each linked client's global context file. When no
- * canonical file exists yet, an adoption-first setup view scans the known
- * client locations and offers import-or-template — nothing is written
- * until the user chooses. Per-project AGENTS.md files are out of scope
- * (they stay version-controlled in each repo).
- *
- * The editor mirrors SkillEditor's grammar: collapsible strip, formatting
- * toolbar, resizable markdown/preview split, and a status bar.
- */
-export function GlobalContextDialog({ isOpen, onClose, initialDriftSlug = null }: GlobalContextDialogProps) {
-  const doc = useContextStore((s) => s.doc);
-  const loading = useContextStore((s) => s.loading);
-  const error = useContextStore((s) => s.error);
-  const refresh = useContextStore((s) => s.refresh);
-  const [dirty, setDirty] = useState(false);
-  const [confirmDiscard, setConfirmDiscard] = useState(false);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-
-  // Views unmount only when the Modal returns null, so a close that does not
-  // remount them still has to drop the dirty flag itself.
-  const [wasOpen, setWasOpen] = useState(isOpen);
-  if (wasOpen !== isOpen) {
-    setWasOpen(isOpen);
-    if (!isOpen) {
-      setDirty(false);
-      setConfirmDiscard(false);
-      setDeleteConfirmOpen(false);
-    }
-  }
-
-  const requestClose = useCallback(() => {
-    if (confirmDiscard || deleteConfirmOpen) return;
-    if (dirty) {
-      setConfirmDiscard(true);
-      return;
-    }
-    onClose();
-  }, [confirmDiscard, deleteConfirmOpen, dirty, onClose]);
-
-  useNavigationGuard({ dirty: isOpen && dirty, label: 'Global Context', onDiscard: onClose });
-
-  useEffect(() => {
-    if (isOpen) void refresh();
-  }, [isOpen, refresh]);
-
-  return (
-    <Modal isOpen={isOpen} onClose={requestClose} title="Global Context" size="full" expandable>
-      {loading && !doc && (
-        <div className="h-40 flex items-center justify-center text-sm text-text-muted">
-          Loading global context…
-        </div>
-      )}
-      {error && !doc && !loading && (
-        <FailedState feature="Global context" message={error} onRetry={() => void refresh()} inline />
-      )}
-      {/* Fragments mode replaces the canonical file entirely, so it must
-          route before the exists check (the store is a directory now). */}
-      {doc && doc.fragments_active && (
-        <FragmentsView
-          doc={doc}
-          refreshError={error}
-          initialDriftSlug={initialDriftSlug}
-          onDirtyChange={setDirty}
-          onDeleteConfirmChange={setDeleteConfirmOpen}
-        />
-      )}
-      {doc && !doc.fragments_active && !doc.canonical.exists && <SetupView />}
-      {doc && !doc.fragments_active && doc.canonical.exists && (
-        <EditorView
-          doc={doc}
-          refreshError={error}
-          initialDriftSlug={initialDriftSlug}
-          onDirtyChange={setDirty}
-        />
-      )}
-      <ConfirmDialog
-        isOpen={confirmDiscard && !deleteConfirmOpen}
-        onClose={() => setConfirmDiscard(false)}
-        onConfirm={() => {
-          setConfirmDiscard(false);
-          onClose();
-        }}
-        title="Discard changes"
-        message={<p>The global context has unsaved edits. Discard them?</p>}
-        confirmLabel="Discard"
-        variant="danger"
-      />
-    </Modal>
-  );
 }
 
 /**
@@ -290,7 +186,7 @@ function SourceOptions({
  * starter template. Defaults to the first existing file so adoption is
  * the primary path, not the template.
  */
-function SetupView() {
+export function SetupView() {
   const setDoc = useContextStore((s) => s.setDoc);
   const entries = useContextScan();
   const [choice, setChoice] = useState<string | null>(null);
@@ -320,14 +216,15 @@ function SetupView() {
 
   if (entries === null) {
     return (
-      <div className="h-40 flex items-center justify-center text-sm text-text-muted">
+      <div className="flex-1 flex items-center justify-center text-sm text-text-muted">
         Scanning client context files…
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-4 max-w-2xl">
+    <div className="flex-1 overflow-y-auto scrollbar-dark p-6">
+      <div className="flex flex-col gap-4 max-w-2xl">
       <div className="flex items-start gap-3">
         <div className="p-3 rounded-xl bg-surface-elevated/50 border border-border/30">
           <FileText size={22} className="text-text-muted" />
@@ -358,6 +255,7 @@ function SetupView() {
         >
           {busy ? 'Creating…' : 'Create canonical file'}
         </button>
+      </div>
       </div>
     </div>
   );
@@ -445,21 +343,30 @@ function ImportSourceDialog({
 }
 
 /**
- * SkillEditor-grade editing surface: action header, collapsible clients
- * strip, resizable markdown/preview split with a formatting toolbar, and
- * a status bar with live marker validation and line/char counts.
+ * SkillEditor-grade editing surface: action header, resizable markdown and
+ * preview split with a formatting toolbar, status bar with live marker
+ * validation and line/char counts, and the right-rail ContextInspector.
  */
-function EditorView({
+export function EditorView({
   doc,
   refreshError,
   initialDriftSlug = null,
+  tab,
+  onTabChange,
+  onKindChange,
   onDirtyChange,
+  onRegisterActions,
 }: {
   doc: ContextDoc;
   refreshError: string | null;
   initialDriftSlug?: string | null;
+  tab: ContextInspectorTab;
+  onTabChange: (tab: ContextInspectorTab) => void;
+  onKindChange: (kind: RegistryKind) => void;
   onDirtyChange?: (dirty: boolean) => void;
+  onRegisterActions?: (actions: ContextViewActions | null) => void;
 }) {
+  const navigate = useGuardedNavigate();
   const setDoc = useContextStore((s) => s.setDoc);
   const refresh = useContextStore((s) => s.refresh);
   // null draft = pristine (textarea mirrors the canonical content), so a
@@ -468,10 +375,14 @@ function EditorView({
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [driftSlug, setDriftSlug] = useState<string | null>(null);
-  // Seed the drift review once from a caller's deep link; only when that
-  // client is actually drifted, so a stale link never opens an empty review.
+  const [spotlightSlug, setSpotlightSlug] = useState<string | null>(null);
+  // Seed the deep link once per non-null slug: spotlight the client row, and
+  // open the drift review only when that client is actually drifted.
   useDriftSeed(initialDriftSlug, (slug) => {
-    if (doc.clients.some((c) => c.slug === slug && c.state === 'drifted')) {
+    const c = doc.clients.find((cl) => cl.slug === slug);
+    if (!c) return;
+    setSpotlightSlug(slug);
+    if (c.state === 'drifted') {
       setDriftSlug(slug);
     }
   });
@@ -507,12 +418,20 @@ function EditorView({
       // Only clear the draft if nothing was typed while the PUT was in
       // flight; otherwise those keystrokes would be discarded.
       setDraft((d) => (d === toSave ? null : d));
-      showToast(
-        'success',
-        next.pin_status === 'drift'
-          ? 'Canonical context saved. Run a sync to propagate. Pin drift: review and approve in Pins'
-          : 'Canonical context saved. Run a sync to propagate.',
-      );
+      if (next.pin_status === 'drift') {
+        showToast(
+          'success',
+          'Canonical context saved. Run a sync to propagate. Pin drift: review and approve in Pins.',
+          {
+            action: {
+              label: 'Review in Pins',
+              onClick: () => navigate(contextPinsUrl('AGENTS.md', 'drift')),
+            },
+          },
+        );
+      } else {
+        showToast('success', 'Canonical context saved. Run a sync to propagate.');
+      }
     } catch (err) {
       if (!isCancellation(err)) {
         const described = describeError(err, 'Save');
@@ -521,7 +440,7 @@ function EditorView({
     } finally {
       setSaving(false);
     }
-  }, [dirty, draft, markerIssue, setDoc]);
+  }, [dirty, draft, markerIssue, setDoc, navigate]);
 
   const handleSyncAll = useCallback(async () => {
     setSyncing(true);
@@ -538,6 +457,20 @@ function EditorView({
       setSyncing(false);
     }
   }, [refresh]);
+
+  useEffect(() => {
+    onRegisterActions?.({
+      refresh: () => void refresh(),
+      syncAll: () => {
+        if (dirty) {
+          showToast('warning', 'Save or revert your changes before syncing');
+          return;
+        }
+        void handleSyncAll();
+      },
+    });
+    return () => onRegisterActions?.(null);
+  }, [onRegisterActions, refresh, dirty, handleSyncAll]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -577,199 +510,212 @@ function EditorView({
     preview.scrollTop = (ta.scrollTop / srcMax) * dstMax;
   }, []);
 
+  const inspector = (
+    <ContextInspector
+      clients={doc.clients}
+      tab={tab}
+      onTabChange={onTabChange}
+      onReviewDrift={(slug) => setDriftSlug(slug)}
+      spotlightSlug={spotlightSlug}
+      details={{
+        mode: 'single-file',
+        canonicalPath: doc.canonical.path,
+        lineCount,
+        charCount,
+        pinStatus: contextPinStatus('AGENTS.md', doc.pins),
+      }}
+    />
+  );
+
   return (
-    // Escape the Modal body padding so the panes run edge to edge, exactly
-    // like SkillEditor.
-    <div className="flex flex-col h-[calc(100%+2rem)] -mx-6 -my-4">
-      {/* Action header */}
-      <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border/30 flex-shrink-0">
-        <span
-          className="text-2xs text-text-muted font-mono truncate min-w-0"
-          title={doc.canonical.path}
-        >
-          {doc.canonical.path}
-        </span>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            type="button"
-            onClick={() => setShowPreview((p) => !p)}
-            title={showPreview ? 'Hide preview' : 'Show preview'}
-            aria-label={showPreview ? 'Hide preview' : 'Show preview'}
-            className={cn(
-              'p-1.5 rounded-lg transition-all duration-200',
-              showPreview
-                ? 'text-text-muted hover:text-primary hover:bg-primary/10'
-                : 'text-primary bg-primary/10',
-            )}
+    <ContextFrame
+      onKindChange={onKindChange}
+      onRefresh={() => void refresh()}
+      inspector={inspector}
+      inspectorKey={spotlightSlug}
+    >
+      <div className="flex flex-col flex-1 min-h-0">
+        {/* Action header */}
+        <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border/30 flex-shrink-0">
+          <span
+            className="text-2xs text-text-muted font-mono truncate min-w-0"
+            title={doc.canonical.path}
           >
-            {showPreview ? <Eye size={14} /> : <EyeOff size={14} />}
-          </button>
-          <IconButton
-            icon={RefreshCw}
-            onClick={() => void refresh()}
-            tooltip="Refresh status"
-            size="sm"
-            variant="ghost"
-          />
-          <button
-            onClick={() => setShowSplit(true)}
-            title="Split the canonical file into rule fragments"
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-text-muted border border-border/40 hover:bg-surface-highlight rounded-lg transition-colors"
-          >
-            <Layers size={12} aria-hidden="true" />
-            Fragments
-          </button>
-          <button
-            onClick={() => setShowImport(true)}
-            title="Replace the canonical context from an existing client file"
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-text-muted border border-border/40 hover:bg-surface-highlight rounded-lg transition-colors"
-          >
-            <FileDown size={12} aria-hidden="true" />
-            Import
-          </button>
-          <button
-            onClick={() => void handleSyncAll()}
-            disabled={syncing || dirty}
-            title={dirty ? 'Save before syncing' : 'Sync every available client'}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-status-running border border-status-running/25 hover:bg-status-running/10 rounded-lg transition-colors disabled:opacity-50"
-          >
-            <CloudUpload size={12} aria-hidden="true" className={syncing ? 'animate-pulse' : undefined} />
-            {syncing ? 'Syncing…' : 'Sync all'}
-          </button>
-          <button
-            onClick={() => void handleSave()}
-            disabled={!dirty || saving || !!markerIssue}
-            className={cn(
-              'px-4 py-2 text-xs font-medium rounded-lg transition-all',
-              'bg-primary text-background hover:bg-primary/90',
-              (!dirty || saving || !!markerIssue) && 'opacity-50 cursor-not-allowed',
-            )}
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      </div>
-
-      {refreshError && (
-        <FailureBanner
-          message={refreshError}
-          onRetry={() => void refresh()}
-          className="mx-5 mt-2 mb-2 flex-shrink-0"
-        />
-      )}
-
-      <ClientsStrip clients={doc.clients} onReviewDrift={setDriftSlug} />
-
-      {/* Editor area: split pane when preview on, full-width when off */}
-      <div ref={containerRef} className="flex-1 flex min-h-0 group/split">
-        <div
-          className={cn('flex flex-col min-w-0 min-h-0', showPreview && 'border-r border-border/30')}
-          style={showPreview ? { width: `${ratio * 100}%` } : { width: '100%' }}
-        >
-          <div className="flex items-center justify-between gap-2 px-4 py-1.5 border-b border-border/20 flex-shrink-0">
-            <span className="text-xs text-text-muted uppercase tracking-wider flex items-center gap-2">
-              Markdown
-              <ContextPinChip
-                status={contextPinStatus('AGENTS.md', doc.pins)}
-                onReview={() => setReviewPin(true)}
-              />
-            </span>
-            <div className="flex items-center gap-0.5">
-              <EditorToolbarButton icon={Bold} label="Bold" onClick={() => applyMarkdown('bold')} />
-              <EditorToolbarButton icon={Heading} label="Heading" onClick={() => applyMarkdown('heading')} />
-              <EditorToolbarButton icon={List} label="List item" onClick={() => applyMarkdown('list')} />
-              <EditorToolbarButton icon={Code2} label="Code block" onClick={() => applyMarkdown('code')} />
-            </div>
+            {doc.canonical.path}
+          </span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowPreview((p) => !p)}
+              title={showPreview ? 'Hide preview' : 'Show preview'}
+              aria-label={showPreview ? 'Hide preview' : 'Show preview'}
+              className={cn(
+                'p-1.5 rounded-lg transition-all duration-200',
+                showPreview
+                  ? 'text-text-muted hover:text-primary hover:bg-primary/10'
+                  : 'text-primary bg-primary/10',
+              )}
+            >
+              {showPreview ? <Eye size={14} /> : <EyeOff size={14} />}
+            </button>
+            <button
+              onClick={() => setShowSplit(true)}
+              title="Split the canonical file into rule fragments"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-text-muted border border-border/40 hover:bg-surface-highlight rounded-lg transition-colors"
+            >
+              <Layers size={12} aria-hidden="true" />
+              Fragments
+            </button>
+            <button
+              onClick={() => setShowImport(true)}
+              title="Replace the canonical context from an existing client file"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-text-muted border border-border/40 hover:bg-surface-highlight rounded-lg transition-colors"
+            >
+              <FileDown size={12} aria-hidden="true" />
+              Import
+            </button>
+            <button
+              onClick={() => void handleSyncAll()}
+              disabled={syncing || dirty}
+              title={dirty ? 'Save before syncing' : 'Sync every available client'}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-status-running border border-status-running/25 hover:bg-status-running/10 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <CloudUpload size={12} aria-hidden="true" className={syncing ? 'animate-pulse' : undefined} />
+              {syncing ? 'Syncing…' : 'Sync all'}
+            </button>
+            <button
+              onClick={() => void handleSave()}
+              disabled={!dirty || saving || !!markerIssue}
+              className={cn(
+                'px-4 py-2 text-xs font-medium rounded-lg transition-all',
+                'bg-primary text-background hover:bg-primary/90',
+                (!dirty || saving || !!markerIssue) && 'opacity-50 cursor-not-allowed',
+              )}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
           </div>
-          <textarea
-            ref={bodyRef}
-            value={content}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onScroll={handleEditorScroll}
-            aria-label="Canonical global context"
-            placeholder={'# Global Agent Context\n\nDurable cross-project preferences only...\n\n## Coding Style\n\n- Prefer clarity over cleverness.'}
-            className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted resize-none leading-relaxed"
-            spellCheck={false}
-          />
         </div>
 
-        {showPreview && (
-          <>
-            <SplitPaneHandle onPointerDown={handlePointerDown} isDragging={isDragging} />
-            <div className="flex flex-col min-w-0 min-h-0" style={{ width: `${(1 - ratio) * 100}%` }}>
-              <div className="px-4 py-2 border-b border-border/20 flex-shrink-0">
-                <span className="text-xs text-text-muted uppercase tracking-wider">Preview</span>
+        {refreshError && (
+          <FailureBanner
+            message={refreshError}
+            onRetry={() => void refresh()}
+            className="mx-5 mt-2 mb-2 flex-shrink-0"
+          />
+        )}
+
+        {/* Editor area: split pane when preview on, full-width when off */}
+        <div ref={containerRef} className="flex-1 flex min-h-0 group/split">
+          <div
+            className={cn('flex flex-col min-w-0 min-h-0', showPreview && 'border-r border-border/30')}
+            style={showPreview ? { width: `${ratio * 100}%` } : { width: '100%' }}
+          >
+            <div className="flex items-center justify-between gap-2 px-4 py-1.5 border-b border-border/20 flex-shrink-0">
+              <span className="text-xs text-text-muted uppercase tracking-wider flex items-center gap-2">
+                Markdown
+                <ContextPinChip
+                  status={contextPinStatus('AGENTS.md', doc.pins)}
+                  onReview={() => setReviewPin(true)}
+                />
+              </span>
+              <div className="flex items-center gap-0.5">
+                <EditorToolbarButton icon={Bold} label="Bold" onClick={() => applyMarkdown('bold')} />
+                <EditorToolbarButton icon={Heading} label="Heading" onClick={() => applyMarkdown('heading')} />
+                <EditorToolbarButton icon={List} label="List item" onClick={() => applyMarkdown('list')} />
+                <EditorToolbarButton icon={Code2} label="Code block" onClick={() => applyMarkdown('code')} />
               </div>
-              <div ref={previewRef} className="flex-1 overflow-y-auto scrollbar-dark">
-                <div className="px-5 py-4">
-                  <MarkdownPreview content={deferredContent} emptyHint="Canonical context preview" />
+            </div>
+            <textarea
+              ref={bodyRef}
+              value={content}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onScroll={handleEditorScroll}
+              aria-label="Canonical global context"
+              placeholder={'# Global Agent Context\n\nDurable cross-project preferences only...\n\n## Coding Style\n\n- Prefer clarity over cleverness.'}
+              className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted resize-none leading-relaxed"
+              spellCheck={false}
+            />
+          </div>
+
+          {showPreview && (
+            <>
+              <SplitPaneHandle onPointerDown={handlePointerDown} isDragging={isDragging} />
+              <div className="flex flex-col min-w-0 min-h-0" style={{ width: `${(1 - ratio) * 100}%` }}>
+                <div className="px-4 py-2 border-b border-border/20 flex-shrink-0">
+                  <span className="text-xs text-text-muted uppercase tracking-wider">Preview</span>
+                </div>
+                <div ref={previewRef} className="flex-1 overflow-y-auto scrollbar-dark">
+                  <div className="px-5 py-4">
+                    <MarkdownPreview content={deferredContent} emptyHint="Canonical context preview" />
+                  </div>
                 </div>
               </div>
-            </div>
-          </>
+            </>
+          )}
+        </div>
+
+        {/* Bottom status bar */}
+        <div className="flex items-center justify-between px-5 py-2 border-t border-border/30 bg-surface/50 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            {markerIssue ? (
+              <span className="text-xs flex items-center gap-1 text-status-error">
+                <AlertCircle size={12} />
+                contains the reserved gridctl marker {markerIssue}
+              </span>
+            ) : (
+              <span className="text-xs flex items-center gap-1 text-status-running">
+                <Check size={12} />
+                Valid
+              </span>
+            )}
+            {dirty && !markerIssue && (
+              <span className="text-xs text-text-muted">Unsaved changes</span>
+            )}
+          </div>
+          <div className="flex items-center gap-4 text-xs text-text-muted font-mono">
+            <span>{lineCount} lines</span>
+            <span>{charCount} chars</span>
+          </div>
+        </div>
+
+        {showImport && (
+          <ImportSourceDialog
+            dirty={dirty}
+            onClose={() => setShowImport(false)}
+            onImported={(next) => {
+              setShowImport(false);
+              setDoc(next);
+              // The import replaced the canon; any draft is now stale.
+              setDraft(null);
+            }}
+          />
+        )}
+
+        {showSplit && <SplitIntoFragmentsDialog dirty={dirty} onClose={() => setShowSplit(false)} />}
+        {reviewPin && <ContextPinReviewModal name="AGENTS.md" onClose={() => setReviewPin(false)} />}
+
+        {driftSlug && (
+          <DriftResolveDialog
+            slug={driftSlug}
+            name={doc.clients.find((c) => c.slug === driftSlug)?.name ?? driftSlug}
+            onClose={() => setDriftSlug(null)}
+            onResolved={(next) => {
+              setDriftSlug(null);
+              if (next) {
+                setDoc(next);
+                // Adopting changed the canon; keep any unsaved typing rather
+                // than silently discarding it.
+                if (!dirty) setDraft(null);
+              } else {
+                void refresh();
+              }
+            }}
+          />
         )}
       </div>
-
-      {/* Bottom status bar */}
-      <div className="flex items-center justify-between px-5 py-2 border-t border-border/30 bg-surface/50 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          {markerIssue ? (
-            <span className="text-xs flex items-center gap-1 text-status-error">
-              <AlertCircle size={12} />
-              contains the reserved gridctl marker {markerIssue}
-            </span>
-          ) : (
-            <span className="text-xs flex items-center gap-1 text-status-running">
-              <Check size={12} />
-              Valid
-            </span>
-          )}
-          {dirty && !markerIssue && (
-            <span className="text-xs text-text-muted">Unsaved changes</span>
-          )}
-        </div>
-        <div className="flex items-center gap-4 text-xs text-text-muted font-mono">
-          <span>{lineCount} lines</span>
-          <span>{charCount} chars</span>
-        </div>
-      </div>
-
-      {showImport && (
-        <ImportSourceDialog
-          dirty={dirty}
-          onClose={() => setShowImport(false)}
-          onImported={(next) => {
-            setShowImport(false);
-            setDoc(next);
-            // The import replaced the canon; any draft is now stale.
-            setDraft(null);
-          }}
-        />
-      )}
-
-      {showSplit && <SplitIntoFragmentsDialog dirty={dirty} onClose={() => setShowSplit(false)} />}
-      {reviewPin && <ContextPinReviewModal name="AGENTS.md" onClose={() => setReviewPin(false)} />}
-
-      {driftSlug && (
-        <DriftResolveDialog
-          slug={driftSlug}
-          name={doc.clients.find((c) => c.slug === driftSlug)?.name ?? driftSlug}
-          onClose={() => setDriftSlug(null)}
-          onResolved={(next) => {
-            setDriftSlug(null);
-            if (next) {
-              setDoc(next);
-              // Adopting changed the canon; keep any unsaved typing rather
-              // than silently discarding it.
-              if (!dirty) setDraft(null);
-            } else {
-              void refresh();
-            }
-          }}
-        />
-      )}
-    </div>
+    </ContextFrame>
   );
 }
 
@@ -790,266 +736,6 @@ function EditorToolbarButton({
       className="p-1.5 rounded-md text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
     >
       <Icon size={13} />
-    </button>
-  );
-}
-
-// States that make the clients strip open itself: the user must act.
-const ATTENTION_STATES: ContextState[] = ['drifted', 'stale', 'target-missing'];
-
-/**
- * Collapsible per-client strip, modeled on SkillEditor's frontmatter and
- * files strips: a one-line summary when collapsed, the actionable client
- * rows when expanded. Auto-expands when any client needs attention.
- */
-function ClientsStrip({
-  clients,
-  onReviewDrift,
-  spotlightSlug = null,
-}: {
-  clients: ContextClientStatus[];
-  onReviewDrift: (slug: string, fragment?: string) => void;
-  /** Deep-link target: this client's row starts expanded and scrolled into view. */
-  spotlightSlug?: string | null;
-}) {
-  const needsAttention = clients.some((c) => ATTENTION_STATES.includes(c.state));
-  const [expanded, setExpanded] = useState(needsAttention);
-  // Re-open when attention appears after a refresh (e.g. drift detected);
-  // never force-close a strip the user opened.
-  const [prevAttention, setPrevAttention] = useState(needsAttention);
-  if (needsAttention !== prevAttention) {
-    setPrevAttention(needsAttention);
-    if (needsAttention) setExpanded(true);
-  }
-
-  const counts = clients.reduce<Record<string, number>>((acc, c) => {
-    acc[c.state] = (acc[c.state] ?? 0) + 1;
-    return acc;
-  }, {});
-  const summary = (['in-sync', 'stale', 'drifted', 'target-missing', 'never-synced', 'unsupported'] as const)
-    .filter((s) => counts[s])
-    .map((s) => `${counts[s]} ${s}`)
-    .join(' · ');
-
-  return (
-    <div className="border-b border-border/30 bg-surface/40 flex-shrink-0">
-      <button
-        onClick={() => setExpanded((e) => !e)}
-        aria-expanded={expanded}
-        className="w-full flex items-center gap-2 px-5 py-2 text-left hover:bg-surface-highlight/40 transition-colors"
-      >
-        {expanded ? (
-          <ChevronDown size={13} className="text-text-muted flex-shrink-0" />
-        ) : (
-          <ChevronRight size={13} className="text-text-muted flex-shrink-0" />
-        )}
-        <MonitorSmartphone size={13} className="text-text-muted flex-shrink-0" aria-hidden="true" />
-        <span className="text-xs text-text-muted uppercase tracking-wider">Clients</span>
-        <span className="text-2xs text-text-muted truncate">{summary}</span>
-        {needsAttention && !expanded && (
-          <span className="flex-shrink-0 text-3xs font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-status-pending/30 bg-status-pending/10 text-status-pending">
-            Needs attention
-          </span>
-        )}
-      </button>
-      {expanded && (
-        <ul className="divide-y divide-border/20 max-h-56 overflow-y-auto scrollbar-dark border-t border-border/20">
-          {clients.map((c) => (
-            <ClientRow
-              key={c.slug}
-              client={c}
-              onReviewDrift={onReviewDrift}
-              spotlight={c.slug === spotlightSlug}
-            />
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-/**
- * One client's row with inline actions. In fragments mode a multi-file
- * row with non-synced fragments grows a chevron that expands one line per
- * fragment (StatePill, name, and Review on drifted lines), so a drifted
- * fragment can never hide a stale one behind the summary.
- */
-function ClientRow({
-  client: c,
-  onReviewDrift,
-  spotlight = false,
-}: {
-  client: ContextClientStatus;
-  onReviewDrift: (slug: string, fragment?: string) => void;
-  spotlight?: boolean;
-}) {
-  const refresh = useContextStore((s) => s.refresh);
-  const [busy, setBusy] = useState(false);
-  const fragments = c.fragments ?? [];
-  const [expanded, setExpanded] = useState(spotlight && fragments.length > 0);
-  // A spotlighted row whose fragments arrive after mount (the deep link
-  // landed on a stale doc) still expands when the refresh delivers them.
-  const [hadFragments, setHadFragments] = useState(fragments.length > 0);
-  if ((fragments.length > 0) !== hadFragments) {
-    setHadFragments(fragments.length > 0);
-    if (spotlight && fragments.length > 0) setExpanded(true);
-  }
-  const rowRef = useRef<HTMLLIElement>(null);
-  useEffect(() => {
-    if (spotlight) rowRef.current?.scrollIntoView?.({ block: 'nearest' });
-  }, [spotlight]);
-
-  const act = useCallback(
-    async (fn: () => Promise<unknown>, okMessage: string) => {
-      setBusy(true);
-      try {
-        await fn();
-        showToast('success', okMessage);
-        await refresh();
-      } catch (err) {
-        if (!isCancellation(err)) {
-          const described = describeError(err, 'Action');
-          showToast('error', described.text, { detail: described.fullDetail });
-        }
-      } finally {
-        setBusy(false);
-      }
-    },
-    [refresh],
-  );
-
-  return (
-    <li ref={rowRef} className="px-5 py-2">
-      <div className="flex items-center gap-2.5">
-      {fragments.length > 0 && (
-        <button
-          onClick={() => setExpanded((e) => !e)}
-          aria-expanded={expanded}
-          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${c.name} fragments`}
-          className="p-0.5 -ml-1 rounded text-text-muted hover:text-text-primary transition-colors flex-shrink-0"
-        >
-          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        </button>
-      )}
-      <StatePill state={c.state} />
-      {c.mode && (
-        <span
-          title="How this client receives the context in fragments mode"
-          className="text-3xs px-1.5 py-0.5 rounded border border-border/40 bg-background/40 text-text-muted font-mono whitespace-nowrap"
-        >
-          {c.mode}
-        </span>
-      )}
-      <span className="text-xs text-text-primary whitespace-nowrap">
-        {c.name}
-        {c.unofficial && c.supported && (
-          <span
-            className="ml-1 text-3xs text-text-secondary"
-            title="Path sourced unofficially; it may move without an upstream release note"
-          >
-            (unofficial path)
-          </span>
-        )}
-      </span>
-      <span className="text-2xs text-text-muted font-mono truncate flex-1" title={c.target_path ?? c.detail}>
-        {c.supported ? c.target_path : c.detail}
-        {c.supported && !c.available && c.state === 'never-synced' && ' (client not detected)'}
-      </span>
-      <span className="flex items-center gap-1.5">
-        {c.state === 'drifted' && (
-          <ClientAction label="Review" onClick={() => onReviewDrift(c.slug)} disabled={busy} />
-        )}
-        {(c.state === 'stale' || c.state === 'target-missing' || (c.state === 'never-synced' && c.available)) && (
-          <ClientAction
-            label={busy ? 'Syncing…' : 'Sync'}
-            disabled={busy}
-            onClick={() => void act(() => syncGlobalContext({ clients: [c.slug] }), `${c.name} synced`)}
-          />
-        )}
-        {(c.state === 'in-sync' || c.state === 'stale' || c.state === 'drifted') && (
-          <ClientAction
-            label="Unsync"
-            subtle
-            disabled={busy}
-            onClick={() => void act(() => unsyncGlobalContext(c.slug), `${c.name} unsynced`)}
-          />
-        )}
-      </span>
-      </div>
-      {expanded && fragments.length > 0 && (
-        <ul className="mt-1.5 ml-6 flex flex-col gap-1" aria-label={`${c.name} fragments`}>
-          {fragments.map((f) => (
-            <FragmentStatusLine
-              key={`${c.slug}:${f.name}`}
-              clientSlug={c.slug}
-              fragment={f}
-              busy={busy}
-              onReviewDrift={onReviewDrift}
-            />
-          ))}
-        </ul>
-      )}
-    </li>
-  );
-}
-
-/** One non-synced fragment line under an expanded multi-file client row. */
-function FragmentStatusLine({
-  clientSlug,
-  fragment: f,
-  busy,
-  onReviewDrift,
-}: {
-  clientSlug: string;
-  fragment: ContextFragmentStatus;
-  busy: boolean;
-  onReviewDrift: (slug: string, fragment?: string) => void;
-}) {
-  return (
-    <li className="flex items-center gap-2">
-      <StatePill state={f.state} />
-      <span className="text-2xs text-text-secondary font-mono truncate flex-1">{f.name}</span>
-      {f.pack && (
-        // Static inside the modal: navigating under an open dialog would
-        // change the route invisibly, so provenance here is display only.
-        <span title={`Applied by pack ${f.pack}`} className={PACK_CHIP_CLASS}>
-          pack: {f.pack}
-        </span>
-      )}
-      {f.state === 'drifted' && (
-        <ClientAction
-          label="Review"
-          disabled={busy}
-          onClick={() => onReviewDrift(clientSlug, f.name)}
-        />
-      )}
-    </li>
-  );
-}
-
-function ClientAction({
-  label,
-  onClick,
-  disabled,
-  subtle,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  subtle?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={cn(
-        'px-2 py-0.5 rounded-md text-2xs font-medium border transition-colors disabled:opacity-50',
-        subtle
-          ? 'text-text-muted border-border/40 hover:bg-surface-highlight'
-          : 'text-primary border-primary/25 hover:bg-primary/10',
-      )}
-    >
-      {label}
     </button>
   );
 }
@@ -1582,31 +1268,45 @@ interface FragmentDraft {
 /**
  * Fragments-mode surface: a left rail of rule fragments in composition
  * order (adapting SkillFileTree's grammar) feeding the same editor and
- * preview split the single-file view uses, over the shared clients strip.
+ * preview split the single-file view uses, beside the right-rail inspector.
  */
-function FragmentsView({
+export function FragmentsView({
   doc,
   refreshError,
   initialDriftSlug = null,
+  fragmentParam,
+  onFragmentParamChange,
+  tab,
+  onTabChange,
+  onKindChange,
   onDirtyChange,
-  onDeleteConfirmChange,
+  onRegisterActions,
 }: {
   doc: ContextDoc;
   refreshError: string | null;
   initialDriftSlug?: string | null;
+  fragmentParam: string | null;
+  onFragmentParamChange: (name: string | null) => void;
+  tab: ContextInspectorTab;
+  onTabChange: (tab: ContextInspectorTab) => void;
+  onKindChange: (kind: RegistryKind) => void;
   onDirtyChange?: (dirty: boolean) => void;
-  onDeleteConfirmChange?: (open: boolean) => void;
+  onRegisterActions?: (actions: ContextViewActions | null) => void;
 }) {
+  const navigate = useGuardedNavigate();
   const refresh = useContextStore((s) => s.refresh);
   const [fragments, setFragments] = useState<ContextFragment[] | null>(null);
   const [fragmentsError, setFragmentsError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
   // The draft carries the name of the fragment it was typed in, so a change
-  // of selection can never re-target unsaved text at another fragment. The
-  // refs mirror the latest values for decisions made after an await.
+  // of selection or URL can never re-target unsaved text at another fragment.
+  // The refs mirror the latest values for decisions made after an await.
   const [draft, setDraft] = useState<FragmentDraft | null>(null);
   const draftRef = useRef<FragmentDraft | null>(null);
   const fragmentsRef = useRef<ContextFragment[] | null>(null);
+  const fragmentParamRef = useRef<string | null>(fragmentParam);
+  useLayoutEffect(() => {
+    fragmentParamRef.current = fragmentParam;
+  });
   const [revertOpen, setRevertOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -1625,8 +1325,8 @@ function FragmentsView({
   useDriftSeed(initialDriftSlug, (slug) => {
     const c = doc.clients.find((cl) => cl.slug === slug);
     if (!c) return;
+    setSpotlightSlug(slug);
     if (c.mode === 'multi-file') {
-      setSpotlightSlug(slug);
       const drifted = (c.fragments ?? []).filter((f) => f.state === 'drifted');
       if (drifted.length === 1) setDriftTarget({ slug, fragment: drifted[0].name });
     } else if (c.state === 'drifted') {
@@ -1649,41 +1349,49 @@ function FragmentsView({
 
   // Resolves to the name of a fragment whose unsaved draft kept the
   // selection in place of selectName, or null.
-  const loadFragments = useCallback(async (selectName?: string): Promise<string | null> => {
-    try {
-      const res = await fetchContextFragments();
-      setFragments(res.fragments);
-      setFragmentsError(null);
-      // A draft whose fragment is gone is dropped rather than applied to
-      // whichever fragment the fallback below selects.
-      const d = draftRef.current;
-      if (d && !res.fragments.some((f) => f.name === d.name)) {
-        const wasDirty = d.value !== fragmentsRef.current?.find((f) => f.name === d.name)?.content;
-        draftRef.current = null;
-        setDraft(null);
-        if (wasDirty) {
-          showToast(
-            'warning',
-            `Fragment "${d.name}" was removed outside the dialog. Its unsaved edits were discarded.`,
-          );
+  const loadFragments = useCallback(
+    async (selectName?: string): Promise<string | null> => {
+      try {
+        const res = await fetchContextFragments();
+        setFragments(res.fragments);
+        setFragmentsError(null);
+        // A draft whose fragment is gone is dropped rather than applied to
+        // whichever fragment the fallback below selects.
+        const d = draftRef.current;
+        if (d && !res.fragments.some((f) => f.name === d.name)) {
+          const wasDirty = d.value !== fragmentsRef.current?.find((f) => f.name === d.name)?.content;
+          draftRef.current = null;
+          setDraft(null);
+          if (wasDirty) {
+            showToast(
+              'warning',
+              `Fragment "${d.name}" was removed outside the editor. Its unsaved edits were discarded.`,
+            );
+          }
         }
+        // Edits typed while this fetch was pending own the selection, so a
+        // requested switch cannot hide them from the dirty guards.
+        const live = draftRef.current;
+        const liveFragment = live ? res.fragments.find((f) => f.name === live.name) : undefined;
+        const held = live && liveFragment && live.value !== liveFragment.content ? live.name : null;
+        const currentParam = fragmentParamRef.current;
+        if (held) {
+          if (currentParam !== held && (currentParam !== null || res.fragments[0]?.name !== held)) {
+            onFragmentParamChange(held);
+          }
+        } else if (selectName && res.fragments.some((f) => f.name === selectName)) {
+          onFragmentParamChange(selectName);
+        } else if (currentParam && !res.fragments.some((f) => f.name === currentParam)) {
+          onFragmentParamChange(null);
+        }
+        return held !== null && selectName !== undefined && held !== selectName ? held : null;
+      } catch (err) {
+        if (!isCancellation(err)) setFragmentsError(describeError(err, 'Load fragments').text);
+        return null;
       }
-      // Edits typed while this fetch was pending own the selection, so a
-      // requested switch cannot hide them from the dirty guards.
-      const live = draftRef.current;
-      const liveFragment = live ? res.fragments.find((f) => f.name === live.name) : undefined;
-      const held = live && liveFragment && live.value !== liveFragment.content ? live.name : null;
-      setSelected((prev) => {
-        const want = held ?? selectName ?? prev;
-        if (want && res.fragments.some((f) => f.name === want)) return want;
-        return res.fragments[0]?.name ?? null;
-      });
-      return held !== null && selectName !== undefined && held !== selectName ? held : null;
-    } catch (err) {
-      if (!isCancellation(err)) setFragmentsError(describeError(err, 'Load fragments').text);
-      return null;
-    }
-  }, []);
+    },
+    [onFragmentParamChange],
+  );
 
   // Initial load uses a raw promise chain (the useContextScan pattern) so
   // no setState is reachable from the effect body itself.
@@ -1694,11 +1402,6 @@ function FragmentsView({
         if (cancelled) return;
         setFragments(res.fragments);
         setFragmentsError(null);
-        setSelected((prev) =>
-          prev && res.fragments.some((f) => f.name === prev)
-            ? prev
-            : (res.fragments[0]?.name ?? null),
-        );
       })
       .catch((err) => {
         if (cancelled) return;
@@ -1708,6 +1411,59 @@ function FragmentsView({
       cancelled = true;
     };
   }, []);
+
+  // A live dirty draft pins selection to its own fragment so no URL change
+  // can ever display or save unsaved text under another fragment.
+  const liveDirtyName = useMemo(() => {
+    if (!draft || !fragments) return null;
+    const match = fragments.find((f) => f.name === draft.name);
+    if (!match || draft.value === match.content) return null;
+    return draft.name;
+  }, [draft, fragments]);
+
+  const selected = useMemo(() => {
+    if (!fragments) return null;
+    if (liveDirtyName) return liveDirtyName;
+    if (fragmentParam && fragments.some((f) => f.name === fragmentParam)) return fragmentParam;
+    return fragments[0]?.name ?? null;
+  }, [fragments, liveDirtyName, fragmentParam]);
+
+  // Snap the URL back to the dirty fragment if an external URL edit or
+  // history move tries to point ?fragment= somewhere else.
+  const dirtySnapMismatch =
+    liveDirtyName !== null &&
+    (fragmentParam !== null
+      ? fragmentParam !== liveDirtyName
+      : (fragments?.[0]?.name ?? null) !== liveDirtyName);
+  const lastSnappedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!dirtySnapMismatch || !liveDirtyName) {
+      lastSnappedRef.current = null;
+      return;
+    }
+    const key = `${liveDirtyName}->${fragmentParam ?? ''}`;
+    if (lastSnappedRef.current === key) return;
+    lastSnappedRef.current = key;
+    onFragmentParamChange(liveDirtyName);
+    showToast('warning', 'Save or revert your changes before switching fragments');
+  }, [dirtySnapMismatch, liveDirtyName, fragmentParam, onFragmentParamChange]);
+
+  // Deep-link contract for ?fragment=: wait for the list load, toast once
+  // and clear on a miss (mirrors PacksWorkspace).
+  const lastResolvedFragmentRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!fragmentParam) {
+      lastResolvedFragmentRef.current = null;
+      return;
+    }
+    if (fragments === null || dirtySnapMismatch) return;
+    if (lastResolvedFragmentRef.current === fragmentParam) return;
+    lastResolvedFragmentRef.current = fragmentParam;
+    if (!fragments.some((f) => f.name === fragmentParam)) {
+      showToast('error', `Fragment "${fragmentParam}" not found`);
+      onFragmentParamChange(null);
+    }
+  }, [fragmentParam, fragments, dirtySnapMismatch, onFragmentParamChange]);
 
   const current = fragments?.find((f) => f.name === selected) ?? null;
   const ownDraft = current !== null && draft !== null && draft.name === current.name ? draft : null;
@@ -1722,11 +1478,6 @@ function FragmentsView({
     return () => onDirtyChange?.(false);
   }, [dirty, onDirtyChange]);
 
-  useEffect(() => {
-    onDeleteConfirmChange?.(pendingDelete !== null || revertOpen);
-    return () => onDeleteConfirmChange?.(false);
-  }, [pendingDelete, revertOpen, onDeleteConfirmChange]);
-
   const lineCount = content.split('\n').length;
   const charCount = content.length;
   const fragmentPath = current
@@ -1740,10 +1491,10 @@ function FragmentsView({
         showToast('warning', 'Save or revert your changes before switching fragments');
         return;
       }
-      setSelected(name);
       commitDraft(null);
+      onFragmentParamChange(name);
     },
-    [selected, dirty, commitDraft],
+    [selected, dirty, commitDraft, onFragmentParamChange],
   );
 
   const handleSave = useCallback(async () => {
@@ -1765,12 +1516,20 @@ function FragmentsView({
       // Text typed while the PUT was in flight stays as the draft.
       const latest = draftRef.current;
       if (latest && latest.name === savedName && latest.value === toSave) commitDraft(null);
-      showToast(
-        'success',
-        saved.pin_status === 'drift'
-          ? 'Fragment saved. Run a sync to propagate. Pin drift: review and approve in Pins'
-          : 'Fragment saved. Run a sync to propagate.',
-      );
+      if (saved.pin_status === 'drift') {
+        showToast(
+          'success',
+          'Fragment saved. Run a sync to propagate. Pin drift: review and approve in Pins.',
+          {
+            action: {
+              label: 'Review in Pins',
+              onClick: () => navigate(contextPinsUrl(savedName, 'drift')),
+            },
+          },
+        );
+      } else {
+        showToast('success', 'Fragment saved. Run a sync to propagate.');
+      }
       // No name: the user may have switched to another fragment meanwhile.
       await loadFragments();
       await refresh();
@@ -1782,7 +1541,7 @@ function FragmentsView({
     } finally {
       setSaving(false);
     }
-  }, [dirty, ownDraft, markerIssue, commitDraft, loadFragments, refresh]);
+  }, [dirty, ownDraft, markerIssue, commitDraft, loadFragments, refresh, navigate]);
 
   const handleSyncAll = useCallback(async () => {
     setSyncing(true);
@@ -1809,6 +1568,25 @@ function FragmentsView({
       setSyncing(false);
     }
   }, [refresh]);
+
+  const handleRefreshAll = useCallback(() => {
+    void loadFragments();
+    void refresh();
+  }, [loadFragments, refresh]);
+
+  useEffect(() => {
+    onRegisterActions?.({
+      refresh: handleRefreshAll,
+      syncAll: () => {
+        if (dirty) {
+          showToast('warning', 'Save or revert your changes before syncing');
+          return;
+        }
+        void handleSyncAll();
+      },
+    });
+    return () => onRegisterActions?.(null);
+  }, [onRegisterActions, handleRefreshAll, dirty, handleSyncAll]);
 
   const handleAdd = useCallback(
     async (name: string): Promise<boolean> => {
@@ -1847,13 +1625,16 @@ function FragmentsView({
         await deleteContextFragment(name);
         showToast('success', `Fragment "${name}" removed (backup saved). Run a sync to drop its projections.`);
         // Drop the draft before the reload so it is not reported as removed
-        // outside the dialog.
+        // outside the editor.
         if (draftRef.current?.name === name) commitDraft(null);
+        // Remove the URL parameter before the reload so the not-found
+        // resolver never toasts for a fragment the user just removed.
+        if (name === selected || name === fragmentParamRef.current) {
+          onFragmentParamChange(null);
+        }
         // Drop the entry locally so a failed reload below cannot leave the
         // removed fragment listed and editable.
-        const remaining = fragments?.filter((f) => f.name !== name) ?? null;
         setFragments((prev) => prev?.filter((f) => f.name !== name) ?? prev);
-        if (name === selected) setSelected(remaining?.[0]?.name ?? null);
         await loadFragments();
         await refresh();
       } catch (err) {
@@ -1863,7 +1644,7 @@ function FragmentsView({
         }
       }
     },
-    [selected, fragments, commitDraft, loadFragments, refresh],
+    [selected, commitDraft, onFragmentParamChange, loadFragments, refresh],
   );
 
   const handleDriftResolved = useCallback(() => {
@@ -1913,246 +1694,253 @@ function FragmentsView({
     preview.scrollTop = (ta.scrollTop / srcMax) * dstMax;
   }, []);
 
+  const outOfSync = useMemo(() => fragmentOutOfSync(doc.clients), [doc.clients]);
+
+  const inspector = (
+    <ContextInspector
+      clients={doc.clients}
+      tab={tab}
+      onTabChange={onTabChange}
+      onReviewDrift={(slug, fragment) => setDriftTarget({ slug, fragment: fragment ?? null })}
+      spotlightSlug={spotlightSlug}
+      details={{
+        mode: 'fragments',
+        fragment: current,
+        fragmentPath: current ? fragmentPath : null,
+        outOfSyncClients: current ? (outOfSync.get(current.name) ?? []) : [],
+        pinStatus: current ? contextPinStatus(current.name, doc.pins) : null,
+      }}
+    />
+  );
+
   return (
-    <div className="flex flex-col h-[calc(100%+2rem)] -mx-6 -my-4">
-      {/* Action header */}
-      <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border/30 flex-shrink-0">
-        <span className="text-2xs text-text-muted font-mono truncate min-w-0" title={fragmentPath}>
-          {fragmentPath}
-        </span>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            type="button"
-            onClick={() => setShowPreview((p) => !p)}
-            title={showPreview ? 'Hide preview' : 'Show preview'}
-            aria-label={showPreview ? 'Hide preview' : 'Show preview'}
-            className={cn(
-              'p-1.5 rounded-lg transition-all duration-200',
-              showPreview
-                ? 'text-text-muted hover:text-primary hover:bg-primary/10'
-                : 'text-primary bg-primary/10',
-            )}
-          >
-            {showPreview ? <Eye size={14} /> : <EyeOff size={14} />}
-          </button>
-          <IconButton
-            icon={RefreshCw}
-            onClick={() => {
-              void loadFragments();
-              void refresh();
-            }}
-            tooltip="Refresh status"
-            size="sm"
-            variant="ghost"
-          />
-          <button
-            onClick={() => void handleSyncAll()}
-            disabled={syncing || dirty}
-            title={dirty ? 'Save before syncing' : 'Sync every available client'}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-status-running border border-status-running/25 hover:bg-status-running/10 rounded-lg transition-colors disabled:opacity-50"
-          >
-            <CloudUpload size={12} aria-hidden="true" className={syncing ? 'animate-pulse' : undefined} />
-            {syncing ? 'Syncing…' : 'Sync all'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setRevertOpen(true)}
-            disabled={!dirty || saving}
-            title="Discard unsaved changes to this fragment"
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-text-secondary border border-border/40 hover:bg-surface-highlight/50 rounded-lg transition-colors disabled:opacity-50"
-          >
-            Revert
-          </button>
-          <button
-            onClick={() => void handleSave()}
-            disabled={!dirty || saving || !!markerIssue}
-            className={cn(
-              'px-4 py-2 text-xs font-medium rounded-lg transition-all',
-              'bg-primary text-background hover:bg-primary/90',
-              (!dirty || saving || !!markerIssue) && 'opacity-50 cursor-not-allowed',
-            )}
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+    <ContextFrame
+      onKindChange={onKindChange}
+      onRefresh={handleRefreshAll}
+      inspector={inspector}
+      inspectorKey={spotlightSlug}
+    >
+      <div className="flex flex-col flex-1 min-h-0">
+        {/* Action header */}
+        <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border/30 flex-shrink-0">
+          <span className="text-2xs text-text-muted font-mono truncate min-w-0" title={fragmentPath}>
+            {fragmentPath}
+          </span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowPreview((p) => !p)}
+              title={showPreview ? 'Hide preview' : 'Show preview'}
+              aria-label={showPreview ? 'Hide preview' : 'Show preview'}
+              className={cn(
+                'p-1.5 rounded-lg transition-all duration-200',
+                showPreview
+                  ? 'text-text-muted hover:text-primary hover:bg-primary/10'
+                  : 'text-primary bg-primary/10',
+              )}
+            >
+              {showPreview ? <Eye size={14} /> : <EyeOff size={14} />}
+            </button>
+            <button
+              onClick={() => void handleSyncAll()}
+              disabled={syncing || dirty}
+              title={dirty ? 'Save before syncing' : 'Sync every available client'}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-status-running border border-status-running/25 hover:bg-status-running/10 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <CloudUpload size={12} aria-hidden="true" className={syncing ? 'animate-pulse' : undefined} />
+              {syncing ? 'Syncing…' : 'Sync all'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setRevertOpen(true)}
+              disabled={!dirty || saving}
+              title="Discard unsaved changes to this fragment"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-text-secondary border border-border/40 hover:bg-surface-highlight/50 rounded-lg transition-colors disabled:opacity-50"
+            >
+              Revert
+            </button>
+            <button
+              onClick={() => void handleSave()}
+              disabled={!dirty || saving || !!markerIssue}
+              className={cn(
+                'px-4 py-2 text-xs font-medium rounded-lg transition-all',
+                'bg-primary text-background hover:bg-primary/90',
+                (!dirty || saving || !!markerIssue) && 'opacity-50 cursor-not-allowed',
+              )}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
         </div>
-      </div>
 
-      {refreshError && (
-        <FailureBanner
-          message={refreshError}
-          onRetry={() => {
-            void loadFragments();
-            void refresh();
-          }}
-          className="mx-5 mt-2 mb-2 flex-shrink-0"
-        />
-      )}
-
-      <ClientsStrip
-        clients={doc.clients}
-        onReviewDrift={(slug, fragment) => setDriftTarget({ slug, fragment: fragment ?? null })}
-        spotlightSlug={spotlightSlug}
-      />
-
-      <div className="flex-1 flex min-h-0">
-        <FragmentRail
-          fragments={fragments}
-          error={fragmentsError}
-          onRetry={() => {
-            if (fragments === null) setFragmentsError(null);
-            void loadFragments();
-          }}
-          selected={selected}
-          onSelect={handleSelect}
-          onAdd={handleAdd}
-          onDelete={setPendingDelete}
-          outOfSync={fragmentOutOfSync(doc.clients)}
-          pins={doc.pins}
-          onReviewPin={setReviewFragment}
-        />
-        {reviewFragment && (
-          <ContextPinReviewModal name={reviewFragment} onClose={() => setReviewFragment(null)} />
+        {refreshError && (
+          <FailureBanner
+            message={refreshError}
+            onRetry={handleRefreshAll}
+            className="mx-5 mt-2 mb-2 flex-shrink-0"
+          />
         )}
 
-        {/* Editor area, identical grammar to the single-file view */}
-        <div ref={containerRef} className="flex-1 flex min-w-0 min-h-0 group/split">
-          {current === null ? (
-            <div className="flex-1 flex items-center justify-center text-sm text-text-muted">
-              {fragments === null
-                ? fragmentsError
-                  ? 'Fragments unavailable'
-                  : 'Loading fragments…'
-                : 'Add a fragment to start.'}
-            </div>
-          ) : (
-            <>
-              <div
-                className={cn('flex flex-col min-w-0 min-h-0', showPreview && 'border-r border-border/30')}
-                style={showPreview ? { width: `${ratio * 100}%` } : { width: '100%' }}
-              >
-                <div className="flex items-center justify-between gap-2 px-4 py-1.5 border-b border-border/20 flex-shrink-0">
-                  <span className="text-xs text-text-muted uppercase tracking-wider">Markdown</span>
-                  <div className="flex items-center gap-0.5">
-                    <EditorToolbarButton icon={Bold} label="Bold" onClick={() => applyMarkdown('bold')} />
-                    <EditorToolbarButton icon={Heading} label="Heading" onClick={() => applyMarkdown('heading')} />
-                    <EditorToolbarButton icon={List} label="List item" onClick={() => applyMarkdown('list')} />
-                    <EditorToolbarButton icon={Code2} label="Code block" onClick={() => applyMarkdown('code')} />
-                  </div>
-                </div>
-                <textarea
-                  ref={bodyRef}
-                  value={content}
-                  onChange={(e) => editDraft(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  onScroll={handleEditorScroll}
-                  aria-label={`Fragment ${current.name}`}
-                  placeholder={'---\ndescription: what this rule covers\npaths:\n  - "**/*.go"\n---\n\n# Rules\n'}
-                  className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted resize-none leading-relaxed"
-                  spellCheck={false}
-                />
-              </div>
+        <div className="flex-1 flex min-h-0">
+          <FragmentRail
+            fragments={fragments}
+            error={fragmentsError}
+            onRetry={() => {
+              if (fragments === null) setFragmentsError(null);
+              void loadFragments();
+            }}
+            selected={selected}
+            onSelect={handleSelect}
+            onAdd={handleAdd}
+            onDelete={setPendingDelete}
+            outOfSync={outOfSync}
+            pins={doc.pins}
+            onReviewPin={setReviewFragment}
+          />
+          {reviewFragment && (
+            <ContextPinReviewModal name={reviewFragment} onClose={() => setReviewFragment(null)} />
+          )}
 
-              {showPreview && (
-                <>
-                  <SplitPaneHandle onPointerDown={handlePointerDown} isDragging={isDragging} />
-                  <div className="flex flex-col min-w-0 min-h-0" style={{ width: `${(1 - ratio) * 100}%` }}>
-                    <div className="px-4 py-2 border-b border-border/20 flex-shrink-0">
-                      <span className="text-xs text-text-muted uppercase tracking-wider">Preview</span>
+          {/* Editor area, identical grammar to the single-file view */}
+          <div ref={containerRef} className="flex-1 flex min-w-0 min-h-0 group/split">
+            {current === null ? (
+              <div className="flex-1 flex items-center justify-center text-sm text-text-muted">
+                {fragments === null
+                  ? fragmentsError
+                    ? 'Fragments unavailable'
+                    : 'Loading fragments…'
+                  : 'Add a fragment to start.'}
+              </div>
+            ) : (
+              <>
+                <div
+                  className={cn('flex flex-col min-w-0 min-h-0', showPreview && 'border-r border-border/30')}
+                  style={showPreview ? { width: `${ratio * 100}%` } : { width: '100%' }}
+                >
+                  <div className="flex items-center justify-between gap-2 px-4 py-1.5 border-b border-border/20 flex-shrink-0">
+                    <span className="text-xs text-text-muted uppercase tracking-wider">Markdown</span>
+                    <div className="flex items-center gap-0.5">
+                      <EditorToolbarButton icon={Bold} label="Bold" onClick={() => applyMarkdown('bold')} />
+                      <EditorToolbarButton icon={Heading} label="Heading" onClick={() => applyMarkdown('heading')} />
+                      <EditorToolbarButton icon={List} label="List item" onClick={() => applyMarkdown('list')} />
+                      <EditorToolbarButton icon={Code2} label="Code block" onClick={() => applyMarkdown('code')} />
                     </div>
-                    <div ref={previewRef} className="flex-1 overflow-y-auto scrollbar-dark">
-                      <div className="px-5 py-4">
-                        <MarkdownPreview content={deferredContent} emptyHint="Fragment preview" />
+                  </div>
+                  <textarea
+                    ref={bodyRef}
+                    value={content}
+                    onChange={(e) => editDraft(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    onScroll={handleEditorScroll}
+                    aria-label={`Fragment ${current.name}`}
+                    placeholder={'---\ndescription: what this rule covers\npaths:\n  - "**/*.go"\n---\n\n# Rules\n'}
+                    className="flex-1 w-full bg-background/40 px-5 py-4 text-sm font-mono text-text-primary placeholder:text-text-muted resize-none leading-relaxed"
+                    spellCheck={false}
+                  />
+                </div>
+
+                {showPreview && (
+                  <>
+                    <SplitPaneHandle onPointerDown={handlePointerDown} isDragging={isDragging} />
+                    <div className="flex flex-col min-w-0 min-h-0" style={{ width: `${(1 - ratio) * 100}%` }}>
+                      <div className="px-4 py-2 border-b border-border/20 flex-shrink-0">
+                        <span className="text-xs text-text-muted uppercase tracking-wider">Preview</span>
+                      </div>
+                      <div ref={previewRef} className="flex-1 overflow-y-auto scrollbar-dark">
+                        <div className="px-5 py-4">
+                          <MarkdownPreview content={deferredContent} emptyHint="Fragment preview" />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </>
-              )}
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom status bar */}
+        <div className="flex items-center justify-between px-5 py-2 border-t border-border/30 bg-surface/50 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            {markerIssue ? (
+              <span className="text-xs flex items-center gap-1 text-status-error">
+                <AlertCircle size={12} />
+                contains the reserved gridctl marker {markerIssue}
+              </span>
+            ) : (
+              <span className="text-xs flex items-center gap-1 text-status-running">
+                <Check size={12} />
+                Valid
+              </span>
+            )}
+            {dirty && !markerIssue && <span className="text-xs text-text-muted">Unsaved changes</span>}
+            <span className="text-xs text-text-muted">
+              Composed in filename order; numeric prefixes (00-, 10-) control ordering.
+            </span>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-text-muted font-mono">
+            <span>{lineCount} lines</span>
+            <span>{charCount} chars</span>
+          </div>
+        </div>
+
+        <ConfirmDialog
+          isOpen={pendingDelete !== null}
+          onClose={() => setPendingDelete(null)}
+          onConfirm={() => {
+            const name = pendingDelete;
+            setPendingDelete(null);
+            if (name) void handleDelete(name);
+          }}
+          title="Remove fragment"
+          message={
+            <>
+              <p>
+                Remove <span className="font-mono text-primary">{pendingDelete}</span>?
+              </p>
+              <p>
+                A backup copy is saved outside the fragments directory. A sync afterward drops its projections.
+              </p>
             </>
-          )}
-        </div>
-      </div>
+          }
+          confirmLabel={`Remove "${pendingDelete ?? ''}"`}
+          variant="danger"
+        />
 
-      {/* Bottom status bar */}
-      <div className="flex items-center justify-between px-5 py-2 border-t border-border/30 bg-surface/50 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          {markerIssue ? (
-            <span className="text-xs flex items-center gap-1 text-status-error">
-              <AlertCircle size={12} />
-              contains the reserved gridctl marker {markerIssue}
-            </span>
-          ) : (
-            <span className="text-xs flex items-center gap-1 text-status-running">
-              <Check size={12} />
-              Valid
-            </span>
-          )}
-          {dirty && !markerIssue && <span className="text-xs text-text-muted">Unsaved changes</span>}
-          <span className="text-xs text-text-muted">
-            Composed in filename order; numeric prefixes (00-, 10-) control ordering.
-          </span>
-        </div>
-        <div className="flex items-center gap-4 text-xs text-text-muted font-mono">
-          <span>{lineCount} lines</span>
-          <span>{charCount} chars</span>
-        </div>
-      </div>
-
-      <ConfirmDialog
-        isOpen={pendingDelete !== null}
-        onClose={() => setPendingDelete(null)}
-        onConfirm={() => {
-          const name = pendingDelete;
-          setPendingDelete(null);
-          if (name) void handleDelete(name);
-        }}
-        title="Remove fragment"
-        message={
-          <>
+        <ConfirmDialog
+          isOpen={revertOpen}
+          onClose={() => setRevertOpen(false)}
+          onConfirm={() => {
+            setRevertOpen(false);
+            commitDraft(null);
+          }}
+          title="Revert fragment"
+          message={
             <p>
-              Remove <span className="font-mono text-primary">{pendingDelete}</span>?
+              Discard the unsaved changes to <span className="font-mono text-primary">{current?.name}</span> and
+              restore its saved content?
             </p>
-            <p>
-              A backup copy is saved outside the fragments directory. A sync afterward drops its projections.
-            </p>
-          </>
-        }
-        confirmLabel={`Remove "${pendingDelete ?? ''}"`}
-        variant="danger"
-      />
+          }
+          confirmLabel={`Revert "${current?.name ?? ''}"`}
+          variant="danger"
+        />
 
-      <ConfirmDialog
-        isOpen={revertOpen}
-        onClose={() => setRevertOpen(false)}
-        onConfirm={() => {
-          setRevertOpen(false);
-          commitDraft(null);
-        }}
-        title="Revert fragment"
-        message={
-          <p>
-            Discard the unsaved changes to <span className="font-mono text-primary">{current?.name}</span> and
-            restore its saved content?
-          </p>
-        }
-        confirmLabel={`Revert "${current?.name ?? ''}"`}
-        variant="danger"
-      />
-
-      {driftTarget &&
-        (() => {
-          const client = doc.clients.find((c) => c.slug === driftTarget.slug);
-          if (!client) return null;
-          return (
-            <FragmentDriftResolveDialog
-              client={client}
-              fragmentNames={(fragments ?? []).map((f) => f.name)}
-              initialFragment={driftTarget.fragment}
-              onClose={() => setDriftTarget(null)}
-              onResolved={handleDriftResolved}
-            />
-          );
-        })()}
-    </div>
+        {driftTarget &&
+          (() => {
+            const client = doc.clients.find((c) => c.slug === driftTarget.slug);
+            if (!client) return null;
+            return (
+              <FragmentDriftResolveDialog
+                client={client}
+                fragmentNames={(fragments ?? []).map((f) => f.name)}
+                initialFragment={driftTarget.fragment}
+                onClose={() => setDriftTarget(null)}
+                onResolved={handleDriftResolved}
+              />
+            );
+          })()}
+      </div>
+    </ContextFrame>
   );
 }
 

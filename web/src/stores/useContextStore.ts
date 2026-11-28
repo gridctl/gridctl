@@ -3,7 +3,7 @@ import { fetchGlobalContext, type ContextDoc } from '../lib/api';
 import { describeError, isCancellation } from '../lib/describeError';
 
 interface ContextStoreState {
-  /** null means "not loaded yet"; the dialog shows a loading state. */
+  /** null means "not loaded yet"; the Context segment shows a loading state. */
   doc: ContextDoc | null;
   loading: boolean;
   error: string | null;
@@ -14,9 +14,9 @@ interface ContextStoreState {
 }
 
 /**
- * Global-context state shared by the Library's Global Context dialog and
- * any status badge that wants the needs_sync signal. Fetched on demand
- * (dialog open), not in the global polling cycle — context state only
+ * Global-context state shared by the Library's Context segment and any
+ * status badge that wants the needs_sync signal. Fetched on demand when
+ * the segment mounts, not in the global polling cycle: context state only
  * changes through explicit user actions.
  */
 export const useContextStore = create<ContextStoreState>()((set) => ({

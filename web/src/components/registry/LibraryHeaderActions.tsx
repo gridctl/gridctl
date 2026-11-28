@@ -5,7 +5,6 @@ import {
   Download,
   Ellipsis,
   ExternalLink,
-  Globe,
   Plus,
   RefreshCw,
 } from 'lucide-react';
@@ -16,7 +15,6 @@ import { HeaderMenu, type HeaderMenuItem } from '../shell/HeaderMenu';
 interface LibraryHeaderActionsProps {
   onNewSkill: () => void;
   onImportSkill: () => void;
-  onGlobalContext: () => void;
   onRefresh: () => void;
   onSync: () => void;
   onPopout: () => void;
@@ -39,7 +37,6 @@ const ACTION_CLASS =
 export function LibraryHeaderActions({
   onNewSkill,
   onImportSkill,
-  onGlobalContext,
   onRefresh,
   onSync,
   onPopout,
@@ -70,7 +67,6 @@ export function LibraryHeaderActions({
   if (collapsed) {
     const items: HeaderMenuItem[] = [
       { key: 'import', label: 'Import', icon: Download, onSelect: onImportSkill },
-      { key: 'context', label: 'Global Context', icon: Globe, onSelect: onGlobalContext },
     ];
     if (hasSources && updateCount === 0) {
       items.push({
@@ -109,7 +105,7 @@ export function LibraryHeaderActions({
 
   return (
     <>
-      {/* One shared treatment for the three header actions (the
+      {/* One shared treatment for the two header actions (the
           secondary outline Import always had): uniform color, padding,
           and nowrap so no label ever two-lines and heights stay equal.
           The stateful Sync pill keeps its distinct alert styling. */}
@@ -123,13 +119,6 @@ export function LibraryHeaderActions({
         title="Import skills from a git repository"
       >
         <Download size={12} /> Import
-      </button>
-      <button
-        onClick={onGlobalContext}
-        className={ACTION_CLASS}
-        title="Manage the global context (single file or rule fragments) synced to linked clients"
-      >
-        <Globe size={12} /> Global Context
       </button>
       <SyncSourcesButton
         hasSources={hasSources}

@@ -424,6 +424,7 @@ describe('ConnectionsWorkspace — staged change guard', () => {
         <Routes>
           <Route path="/connections" element={<ConnectionsWorkspace />} />
           <Route path="/tools" element={<div>TOOLS PAGE</div>} />
+          <Route path="/library" element={<div>LIBRARY PAGE</div>} />
         </Routes>
         <NavigationGuardDialog />
         <LocationProbe />
@@ -502,5 +503,57 @@ describe('ConnectionsWorkspace — staged change guard', () => {
     );
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(screen.getByText('1 pending change')).toBeInTheDocument();
+  });
+
+  it('navigates Review in Global Context to /library?kind=context&client=<slug> without a dialog', async () => {
+    vi.mocked(api.fetchGlobalContext).mockResolvedValue({
+      canonical: { path: '/fixture/context/AGENTS.md', exists: true, content: '# Rules\n' },
+      needs_sync: true,
+      clients: [
+        {
+          slug: 'grok',
+          name: 'Grok Build',
+          supported: true,
+          available: true,
+          strategy: 'block',
+          target_path: '/home/u/.grok/AGENTS.md',
+          state: 'drifted',
+        },
+      ],
+    });
+    renderGuarded();
+    const review = await screen.findByRole('button', { name: 'Review' });
+    fireEvent.click(review);
+    expect(await screen.findByText('LIBRARY PAGE')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/library?kind=context&client=grok');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('guards Review in Global Context when connection changes are staged', async () => {
+    vi.mocked(api.fetchGlobalContext).mockResolvedValue({
+      canonical: { path: '/fixture/context/AGENTS.md', exists: true, content: '# Rules\n' },
+      needs_sync: true,
+      clients: [
+        {
+          slug: 'grok',
+          name: 'Grok Build',
+          supported: true,
+          available: true,
+          strategy: 'block',
+          target_path: '/home/u/.grok/AGENTS.md',
+          state: 'drifted',
+        },
+      ],
+    });
+    renderGuarded();
+    fireEvent.click(screen.getByRole('switch', { name: 'Link Grok Build' }));
+    const review = await screen.findByRole('button', { name: 'Review' });
+    fireEvent.click(review);
+    expect(
+      await screen.findByRole('alertdialog', { name: 'Discard unsaved changes' }),
+    ).toHaveTextContent('1 staged connection change');
+    fireEvent.click(screen.getByRole('button', { name: 'Discard & leave' }));
+    expect(await screen.findByText('LIBRARY PAGE')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/library?kind=context&client=grok');
   });
 });

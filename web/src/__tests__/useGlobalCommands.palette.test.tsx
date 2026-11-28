@@ -159,7 +159,21 @@ describe('palette navigation commands', () => {
     const nav = reg()
       .getSortedCommands(undefined, undefined, 'stack')
       .filter((c) => c.id.startsWith('navigate:'));
-    expect(ids(nav)).toEqual([...WORKSPACE_CONFIG.map((w) => `navigate:workspace-${w.id}`), 'navigate:spec']);
+    expect(ids(nav)).toEqual([
+      ...WORKSPACE_CONFIG.map((w) => `navigate:workspace-${w.id}`),
+      'navigate:library-context',
+      'navigate:spec',
+    ]);
+  });
+
+  it('registers Go to Global Context and navigates to /library?kind=context', async () => {
+    await renderAt('/stack');
+    const cmd = reg().commands.find((c) => c.id === 'navigate:library-context');
+    expect(cmd).toBeDefined();
+    expect(cmd!.label).toBe('Go to Global Context');
+    expect(cmd!.keywords).toEqual(expect.arrayContaining(['context', 'agents.md', 'rules', 'fragments', 'global']));
+    act(() => cmd!.onSelect());
+    expect(screen.getByTestId('location')).toHaveTextContent('/library?kind=context');
   });
 
   it.each(['stack', 'tools'] as const)('ranks Go to Tools first for "tools" in %s', async (ws) => {

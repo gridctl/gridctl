@@ -12,7 +12,6 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { Suspense, lazy, useState, useCallback, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { useGuardedNavigate } from '../../hooks/useGuardedNavigate';
 import { formatShortcut, MOD_KEY, SHIFT_KEY } from '../../lib/platform';
 import { Button } from '../ui/Button';
@@ -36,7 +35,6 @@ import { ThemePicker } from '../shell/ThemePicker';
 import { WorkspaceSwitcher } from '../shell/WorkspaceSwitcher';
 
 const CreationWizard = lazy(() => import('../wizard/CreationWizard').then((m) => ({ default: m.CreationWizard })));
-const GlobalContextDialog = lazy(() => import('../context/GlobalContextDialog').then((m) => ({ default: m.GlobalContextDialog })));
 
 interface HeaderProps {
   onRefresh?: () => void;
@@ -50,8 +48,6 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
   const toggleCommandPalette = useUIStore((s) => s.toggleCommandPalette);
   const credential = useAuthStore((s) => s.credential);
   const [isReloading, setIsReloading] = useState(false);
-  // Global Context dialog, reachable from the creation wizard's tile.
-  const [showGlobalContext, setShowGlobalContext] = useState(false);
   const wizardOpen = useWizardStore((s) => s.isOpen);
   // Synchronous re-entry guard for the whole reload flow: pre-flight, the
   // preview modal, and the reload. State updates are not visible to a second
@@ -259,25 +255,12 @@ export function Header({ onRefresh, isRefreshing }: HeaderProps) {
         <Suspense fallback={null}>
           <CreationWizard
             onOpenVault={() => navigate('/vault')}
-            onOpenGlobalContext={() => setShowGlobalContext(true)}
+            onOpenGlobalContext={() => navigate('/library?kind=context')}
             onOpenConnections={() => navigate('/connections?spotlight=unlinked')}
             onDeploy={onRefresh}
           />
         </Suspense>
       )}
-      {/* Portaled: the header's backdrop-blur creates a containing block
-          that would trap the dialog's fixed positioning inside the 56px
-          header (same reason CreationWizard portals). */}
-      {showGlobalContext &&
-        createPortal(
-          <Suspense fallback={null}>
-            <GlobalContextDialog
-              isOpen={showGlobalContext}
-              onClose={() => setShowGlobalContext(false)}
-            />
-          </Suspense>,
-          document.body,
-        )}
     </header>
   );
 }

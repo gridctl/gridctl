@@ -36,9 +36,9 @@ const PROJECTION_STATE_STYLE: Record<ProjectionState, string> = {
 };
 
 /**
- * One projection-state chip. Extracted from GlobalContextDialog's local
+ * One projection-state chip. Extracted from GlobalContextEditor's local
  * STATE_STYLE so context rows and agent projection rows stay one color
- * vocabulary. The state text itself is the accessible content — color is
+ * vocabulary. The state text itself is the accessible content, so color is
  * never the only carrier.
  */
 export function StatePill({ state, className }: { state: ProjectionState; className?: string }) {

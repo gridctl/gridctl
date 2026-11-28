@@ -1,9 +1,12 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import '@testing-library/jest-dom';
 import { act, render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
-import { GlobalContextDialog } from '../components/context/GlobalContextDialog';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router';
+import { CommandRegistryProvider } from '../hooks/useCommandRegistry';
+import { ContextWorkspace } from '../components/context/ContextWorkspace';
 import { useContextStore } from '../stores/useContextStore';
 import type { ContextDoc, ContextFragment } from '../lib/api';
+import type { RegistryKind } from '../lib/registryKind';
 
 vi.mock('../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../lib/api')>('../lib/api');
@@ -20,6 +23,7 @@ vi.mock('../lib/api', async () => {
     fetchContextFragments: vi.fn(),
     saveContextFragment: vi.fn(),
     deleteContextFragment: vi.fn(),
+    fetchProposals: vi.fn().mockResolvedValue({ schema_version: 1, proposals: [], skipped: [], truncated: false }),
   };
 });
 
@@ -102,6 +106,32 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+function LocationProbe({ onNav }: { onNav?: (fn: (to: string) => void) => void }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  onNav?.((to: string) => void navigate(to));
+  return <div data-testid="location">{location.pathname + location.search}</div>;
+}
+
+function renderFragments(
+  options: { url?: string; onKindChange?: (kind: RegistryKind) => void } = {},
+) {
+  const { url = '/library?kind=context', onKindChange = vi.fn() } = options;
+  let navFn: (to: string) => void = () => {};
+  const result = render(
+    <CommandRegistryProvider>
+      <MemoryRouter initialEntries={[url]}>
+        <Routes>
+          <Route path="/library" element={<ContextWorkspace onKindChange={onKindChange} />} />
+          <Route path="*" element={<div data-testid="other-route" />} />
+        </Routes>
+        <LocationProbe onNav={(fn) => { navFn = fn; }} />
+      </MemoryRouter>
+    </CommandRegistryProvider>,
+  );
+  return { ...result, onKindChange, navigateTo: (to: string) => act(() => navFn(to)) };
+}
+
 beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -110,9 +140,13 @@ beforeEach(() => {
   vi.mocked(fetchContextFragments).mockResolvedValue({ active: true, fragments });
 });
 
-describe('GlobalContextDialog fragments mode', () => {
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('ContextWorkspace fragments mode', () => {
   it('routes to the fragments view with the rail in composition order', async () => {
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
 
     await waitFor(() => {
       expect(screen.getByText('00-default')).toBeInTheDocument();
@@ -124,19 +158,101 @@ describe('GlobalContextDialog fragments mode', () => {
     expect(screen.queryByText('Set up your global context')).not.toBeInTheDocument();
   });
 
-  it('shows per-client mode chips in the clients strip', async () => {
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+  it('shows per-client mode chips in the inspector Clients tab', async () => {
+    renderFragments();
     await waitFor(() => {
       expect(screen.getByText('00-default')).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByText('Clients'));
-    expect(screen.getByText('multi-file')).toBeInTheDocument();
-    expect(screen.getByText('compiled')).toBeInTheDocument();
+    const inspector = screen.getByRole('complementary', { name: 'Global context inspector' });
+    expect(within(inspector).getByText('multi-file')).toBeInTheDocument();
+    expect(within(inspector).getByText('compiled')).toBeInTheDocument();
+  });
+
+  it('reads ?fragment= on load, updates it on click, and toasts once on an unknown name', async () => {
+    const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
+    renderFragments({ url: '/library?kind=context&fragment=10-style' });
+    expect(await screen.findByLabelText('Fragment 10-style')).toHaveValue(fragments[1].content);
+
+    fireEvent.click(screen.getByText('00-default'));
+    expect(await screen.findByLabelText('Fragment 00-default')).toBeInTheDocument();
+    expect(screen.getByTestId('location').textContent).toBe('/library?kind=context&fragment=00-default');
+    cleanup();
+
+    useContextStore.setState({ doc: null, loading: false, error: null });
+    renderFragments({ url: '/library?kind=context&fragment=unknown-frag' });
+    await screen.findByLabelText('Fragment 00-default');
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/library?kind=context');
+    });
+    const notFoundCalls = spy.mock.calls.filter((c) => c[1] === 'Fragment "unknown-frag" not found');
+    expect(notFoundCalls).toHaveLength(1);
+    expect(notFoundCalls[0][0]).toBe('error');
+  });
+
+  it('snaps the URL back and preserves the draft when ?fragment= changes while dirty', async () => {
+    const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
+    const { navigateTo } = renderFragments({ url: '/library?kind=context&fragment=00-default' });
+    const editor = await screen.findByLabelText('Fragment 00-default');
+
+    fireEvent.change(editor, { target: { value: '# Unsaved A\n' } });
+    navigateTo('/library?kind=context&fragment=10-style');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/library?kind=context&fragment=00-default');
+    });
+    expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Unsaved A\n');
+    expect(screen.queryByLabelText('Fragment 10-style')).not.toBeInTheDocument();
+    expect(spy).toHaveBeenCalledWith(
+      'warning',
+      'Save or revert your changes before switching fragments',
+    );
+  });
+
+  it('shows fragment metadata and Pins link in the inspector Details tab', async () => {
+    vi.mocked(fetchGlobalContext).mockResolvedValue({
+      ...fragmentsDoc,
+      pins: { drifted: ['10-style'], unpinned: [], missing: [] },
+      clients: [
+        {
+          ...fragmentsDoc.clients[0],
+          state: 'stale',
+          fragments: [{ name: '10-style', state: 'stale' }],
+        },
+      ],
+    });
+    renderFragments({ url: '/library?kind=context&fragment=10-style&tab=details' });
+
+    const inspector = await screen.findByRole('complementary', { name: 'Global context inspector' });
+    const panel = within(inspector).getByRole('tabpanel', { name: 'Details' });
+    await waitFor(() => {
+      expect(panel).toHaveTextContent('10-style');
+    });
+    expect(panel).toHaveTextContent('/home/u/.gridctl/context/fragments/10-style.md');
+    expect(panel).toHaveTextContent('style rules');
+    expect(panel).toHaveTextContent('**/*.go');
+    expect(panel).toHaveTextContent('42 bytes');
+    expect(panel).toHaveTextContent('Claude Code');
+    expect(panel).toHaveTextContent('Pin drift');
+    expect(within(panel).getByRole('link', { name: 'Review in Pins' })).toHaveAttribute(
+      'href',
+      '/pins?kind=context&fragment=10-style&view=drift',
+    );
+  });
+
+  it('shows a placeholder in Details when no fragment is selected', async () => {
+    vi.mocked(fetchContextFragments).mockResolvedValue({ active: true, fragments: [] });
+    renderFragments({ url: '/library?kind=context&tab=details' });
+
+    const inspector = await screen.findByRole('complementary', { name: 'Global context inspector' });
+    const panel = within(inspector).getByRole('tabpanel', { name: 'Details' });
+    await waitFor(() => {
+      expect(panel).toHaveTextContent('Select a fragment to see its details.');
+    });
   });
 
   it('saves an edited fragment through the fragment endpoint', async () => {
     vi.mocked(saveContextFragment).mockResolvedValue({ name: '00-default' });
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     const editor = await screen.findByLabelText('Fragment 00-default');
 
     fireEvent.change(editor, { target: { value: '# Edited rules\n' } });
@@ -152,29 +268,37 @@ describe('GlobalContextDialog fragments mode', () => {
       ...fragmentsDoc,
       pins: { drifted: ['10-style'], missing: [], unpinned: ['00-default'] },
     });
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     await screen.findByText('10-style');
     expect(screen.getByRole('button', { name: 'Pin drift' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Unpinned' })).toBeInTheDocument();
   });
 
-  it('adds pin drift to the fragment save toast', async () => {
+  it('adds a Review in Pins action to the fragment save toast on pin drift', async () => {
     const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
     vi.mocked(saveContextFragment).mockResolvedValue({ name: '00-default', pin_status: 'drift' });
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     const editor = await screen.findByLabelText('Fragment 00-default');
     fireEvent.change(editor, { target: { value: '# Edited rules\n' } });
     fireEvent.click(screen.getByText('Save'));
     await waitFor(() => {
       expect(spy).toHaveBeenCalledWith(
         'success',
-        'Fragment saved. Run a sync to propagate. Pin drift: review and approve in Pins',
+        'Fragment saved. Run a sync to propagate. Pin drift: review and approve in Pins.',
+        expect.objectContaining({
+          action: expect.objectContaining({ label: 'Review in Pins' }),
+        }),
       );
     });
+    const opts = spy.mock.calls.find((c) => c[0] === 'success')?.[2];
+    act(() => {
+      opts?.action?.onClick();
+    });
+    expect(screen.getByTestId('location').textContent).toBe('/pins?kind=context&fragment=00-default&view=drift');
   });
 
   it('switches fragments only when the draft is clean', async () => {
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     const editor = await screen.findByLabelText('Fragment 00-default');
 
     fireEvent.change(editor, { target: { value: '# Dirty\n' } });
@@ -189,9 +313,10 @@ describe('GlobalContextDialog fragments mode', () => {
     });
   });
 
-  it('creates a fragment from the rail add affordance', async () => {
+  it('creates a fragment, writes it to the URL, and raises no not-found toast', async () => {
+    const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
     vi.mocked(saveContextFragment).mockResolvedValue({ name: '20-testing' });
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     await screen.findByText('00-default');
 
     fireEvent.click(screen.getByText('Add'));
@@ -209,12 +334,14 @@ describe('GlobalContextDialog fragments mode', () => {
     });
     expect(await screen.findByLabelText('Fragment 20-testing')).toHaveValue('# 20-testing\n');
     expect(screen.queryByLabelText('New fragment name')).not.toBeInTheDocument();
+    expect(screen.getByTestId('location').textContent).toBe('/library?kind=context&fragment=20-testing');
+    expect(spy.mock.calls.some((c) => String(c[1]).includes('not found'))).toBe(false);
   });
 
   it('refuses to add a fragment while the current one has unsaved edits', async () => {
     const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
     vi.mocked(saveContextFragment).mockResolvedValue({ name: '00-default' });
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     const editor = await screen.findByLabelText('Fragment 00-default');
 
     fireEvent.change(editor, { target: { value: '# Dirty\n' } });
@@ -243,7 +370,7 @@ describe('GlobalContextDialog fragments mode', () => {
 
   it('never re-targets a draft when its fragment disappears on reload', async () => {
     const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     const editor = await screen.findByLabelText('Fragment 00-default');
 
     fireEvent.change(editor, { target: { value: '# Dirty\n' } });
@@ -251,7 +378,7 @@ describe('GlobalContextDialog fragments mode', () => {
       active: true,
       fragments: [fragments[1]],
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh status' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
 
     const other = await screen.findByLabelText('Fragment 10-style');
     expect(other).toHaveValue(fragments[1].content);
@@ -261,13 +388,13 @@ describe('GlobalContextDialog fragments mode', () => {
     expect(saveContextFragment).not.toHaveBeenCalled();
     expect(spy).toHaveBeenCalledWith(
       'warning',
-      expect.stringContaining('removed outside the dialog'),
+      expect.stringContaining('removed outside the editor'),
     );
   });
 
   it('shows the saved text as clean before the reload returns', async () => {
     vi.mocked(saveContextFragment).mockResolvedValue({ name: '00-default' });
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     const editor = await screen.findByLabelText('Fragment 00-default');
 
     const reload = deferred<{ active: boolean; fragments: ContextFragment[] }>();
@@ -297,7 +424,7 @@ describe('GlobalContextDialog fragments mode', () => {
 
   it('keeps the saved text in the editor when the reload after a save fails', async () => {
     vi.mocked(saveContextFragment).mockResolvedValue({ name: '00-default' });
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     const editor = await screen.findByLabelText('Fragment 00-default');
 
     const reload = deferred<{ active: boolean; fragments: ContextFragment[] }>();
@@ -315,8 +442,8 @@ describe('GlobalContextDialog fragments mode', () => {
   });
 
   it('reverts a dirty fragment only after confirmation', async () => {
-    const onClose = vi.fn();
-    render(<GlobalContextDialog isOpen onClose={onClose} />);
+    const onKindChange = vi.fn();
+    renderFragments({ onKindChange });
     const editor = await screen.findByLabelText('Fragment 00-default');
 
     fireEvent.change(editor, { target: { value: '# Dirty\n' } });
@@ -328,7 +455,7 @@ describe('GlobalContextDialog fragments mode', () => {
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Dirty\n');
 
-    // Escape closes only the Revert confirm, never the parent discard confirm.
+    // Escape closes only the Revert confirm.
     fireEvent.click(screen.getByRole('button', { name: 'Revert' }));
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
@@ -344,18 +471,18 @@ describe('GlobalContextDialog fragments mode', () => {
 
     fireEvent.click(screen.getByText('10-style'));
     expect(await screen.findByLabelText('Fragment 10-style')).toBeInTheDocument();
-    expect(onClose).not.toHaveBeenCalled();
+    expect(onKindChange).not.toHaveBeenCalled();
   });
 
   it('disables Revert while the editor is clean', async () => {
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     await screen.findByLabelText('Fragment 00-default');
     expect(screen.getByRole('button', { name: 'Revert' })).toBeDisabled();
   });
 
   it('names Revert in the switch-blocking toast', async () => {
     const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     const editor = await screen.findByLabelText('Fragment 00-default');
 
     fireEvent.change(editor, { target: { value: '# Dirty\n' } });
@@ -370,7 +497,7 @@ describe('GlobalContextDialog fragments mode', () => {
     const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
     const create = deferred<{ name: string }>();
     vi.mocked(saveContextFragment).mockReturnValueOnce(create.promise);
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     const editor = await screen.findByLabelText('Fragment 00-default');
 
     fireEvent.click(screen.getByText('Add'));
@@ -401,7 +528,7 @@ describe('GlobalContextDialog fragments mode', () => {
   it('does not steal the selection when typing starts during the reload after a create', async () => {
     const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
     vi.mocked(saveContextFragment).mockResolvedValue({ name: '20-testing' });
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     const editor = await screen.findByLabelText('Fragment 00-default');
 
     const reload = deferred<{ active: boolean; fragments: ContextFragment[] }>();
@@ -432,7 +559,7 @@ describe('GlobalContextDialog fragments mode', () => {
 
   it('keeps a fragment switched to and edited during the reload after a save', async () => {
     vi.mocked(saveContextFragment).mockResolvedValue({ name: '00-default' });
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     const editor = await screen.findByLabelText('Fragment 00-default');
 
     const reload = deferred<{ active: boolean; fragments: ContextFragment[] }>();
@@ -463,7 +590,7 @@ describe('GlobalContextDialog fragments mode', () => {
     vi.mocked(saveContextFragment)
       .mockReturnValueOnce(save.promise)
       .mockResolvedValue({ name: '00-default' });
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     const editor = await screen.findByLabelText('Fragment 00-default');
 
     fireEvent.change(editor, { target: { value: '# First\n' } });
@@ -497,7 +624,7 @@ describe('GlobalContextDialog fragments mode', () => {
   it('does not report an outside removal when the dirty fragment is deleted here', async () => {
     const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
     vi.mocked(deleteContextFragment).mockResolvedValue({ name: '00-default', backup: '/b' });
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments({ url: '/library?kind=context&fragment=00-default' });
     const editor = await screen.findByLabelText('Fragment 00-default');
 
     fireEvent.change(editor, { target: { value: '# Dirty\n' } });
@@ -515,16 +642,23 @@ describe('GlobalContextDialog fragments mode', () => {
     await waitFor(() => {
       expect(fetchContextFragments).toHaveBeenCalledTimes(2);
     });
+    expect(screen.getByTestId('location').textContent).toBe('/library?kind=context');
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
     const messages = spy.mock.calls.map((c) => String(c[1]));
-    expect(messages.some((m) => m.includes('outside the dialog'))).toBe(false);
+    expect(messages.some((m) => m.includes('outside the editor'))).toBe(false);
+    expect(messages.some((m) => m.includes('not found'))).toBe(false);
   });
 
-  it('deletes a fragment from the rail', async () => {
+  it('deletes the selected fragment and cleans the URL with no not-found toast', async () => {
+    const spy = vi.spyOn(toastMod, 'showToast').mockImplementation(() => 'toast');
     vi.mocked(deleteContextFragment).mockResolvedValue({ name: '10-style', backup: '/b' });
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
-    await screen.findByText('10-style');
+    renderFragments({ url: '/library?kind=context&fragment=10-style' });
+    await screen.findByLabelText('Fragment 10-style');
 
+    vi.mocked(fetchContextFragments).mockResolvedValueOnce({
+      active: true,
+      fragments: [fragments[0]],
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Remove fragment 10-style' }));
     expect(deleteContextFragment).not.toHaveBeenCalled();
     expect(screen.getByRole('alertdialog')).toHaveTextContent(/backup/i);
@@ -533,33 +667,37 @@ describe('GlobalContextDialog fragments mode', () => {
     await waitFor(() => {
       expect(deleteContextFragment).toHaveBeenCalledWith('10-style');
     });
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/library?kind=context');
+    });
+    expect(spy.mock.calls.some((c) => String(c[1]).includes('not found'))).toBe(false);
   });
 
-  it('confirms before discarding fragment edits', async () => {
-    const onClose = vi.fn();
-    render(<GlobalContextDialog isOpen onClose={onClose} />);
+  it('confirms before discarding fragment edits on kind switch', async () => {
+    const onKindChange = vi.fn();
+    renderFragments({ onKindChange });
     const editor = await screen.findByLabelText('Fragment 00-default');
 
     fireEvent.change(editor, { target: { value: '# Edited rules\n' } });
-    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
 
-    expect(onClose).not.toHaveBeenCalled();
+    expect(onKindChange).not.toHaveBeenCalled();
     expect(screen.getByRole('alertdialog')).toHaveTextContent(/unsaved edits/i);
     expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Edited rules\n');
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(onClose).not.toHaveBeenCalled();
+    expect(onKindChange).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Fragment 00-default')).toHaveValue('# Edited rules\n');
 
-    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onKindChange).toHaveBeenCalledWith('skill');
   });
 
   it('offers the split-into-fragments affordance from the single-file editor', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(singleFileDoc);
     vi.mocked(saveContextFragment).mockResolvedValue({ name: '10-style', migrated: true });
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     await screen.findByLabelText('Canonical global context');
 
     fireEvent.click(screen.getByText('Fragments'));
@@ -629,9 +767,9 @@ describe('fragment-level drift review', () => {
     vi.mocked(adoptGlobalContext).mockResolvedValue(clientDoc(identityClient));
   });
 
-  it('expands a multi-file row to every non-synced fragment, drifted and stale', async () => {
+  it('expands a multi-file row to every non-synced fragment with a navigating PackChip', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(identityClient));
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     await screen.findByLabelText('Expand Claude Code fragments');
 
     fireEvent.click(screen.getByLabelText('Expand Claude Code fragments'));
@@ -641,15 +779,16 @@ describe('fragment-level drift review', () => {
     expect(within(list).getByText('drifted')).toBeInTheDocument();
     expect(within(list).getByText('10-style')).toBeInTheDocument();
     expect(within(list).getByText('stale')).toBeInTheDocument();
-    // Pack provenance rides the wire onto the fragment line; untagged
-    // fragments show none.
-    expect(within(list).getByText('pack: team-pack')).toBeInTheDocument();
-    expect(within(list).getAllByText(/^pack:/)).toHaveLength(1);
+    // Pack provenance renders a navigating PackChip.
+    const packChip = within(list).getByRole('button', { name: /pack: team-pack/ });
+    expect(within(list).getAllByRole('button', { name: /^pack:/ })).toHaveLength(1);
+    fireEvent.click(packChip);
+    expect(screen.getByTestId('location').textContent).toBe('/library?kind=pack&selected=team-pack');
   });
 
   it('adopts one fragment losslessly on the identity target', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(identityClient));
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     await screen.findByLabelText('Expand Claude Code fragments');
 
     fireEvent.click(screen.getByLabelText('Expand Claude Code fragments'));
@@ -670,7 +809,7 @@ describe('fragment-level drift review', () => {
 
   it('shows the lossy reason with no Adopt affordance on lossy renders', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(lossyClient));
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     await screen.findByLabelText('Expand VS Code fragments');
 
     fireEvent.click(screen.getByLabelText('Expand VS Code fragments'));
@@ -684,7 +823,7 @@ describe('fragment-level drift review', () => {
 
   it('captures a compiled edit into an existing fragment', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(compiledClient));
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     await screen.findByText('Review');
 
     fireEvent.click(screen.getByText('Review'));
@@ -700,7 +839,7 @@ describe('fragment-level drift review', () => {
 
   it('captures a compiled edit into a new named fragment', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(compiledClient));
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     await screen.findByText('Review');
 
     fireEvent.click(screen.getByText('Review'));
@@ -720,7 +859,7 @@ describe('fragment-level drift review', () => {
 
   it('disables Capture while the new fragment name is invalid', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(compiledClient));
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     await screen.findByText('Review');
 
     fireEvent.click(screen.getByText('Review'));
@@ -735,21 +874,24 @@ describe('fragment-level drift review', () => {
     expect(adoptGlobalContext).not.toHaveBeenCalled();
   });
 
-  it('deep-links straight into the review when exactly one fragment is drifted', async () => {
+  it('deep-links straight into the review when exactly one fragment is drifted and removes client param', async () => {
     const oneDrift = {
       ...identityClient,
       fragments: [{ name: '00-default', state: 'drifted' as const }],
     };
     vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(oneDrift));
-    render(<GlobalContextDialog isOpen onClose={() => {}} initialDriftSlug="claude-code" />);
+    renderFragments({ url: '/library?kind=context&client=claude-code' });
 
     expect(await screen.findByText('00-default in Claude Code was edited')).toBeInTheDocument();
     await waitFor(() => {
       expect(fetchGlobalContextDiff).toHaveBeenCalledWith('claude-code', '00-default');
     });
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/library?kind=context');
+    });
   });
 
-  it('leaves the expanded fragment lines as the picker when several are drifted', async () => {
+  it('leaves the expanded fragment lines as the picker when several are drifted and removes client param', async () => {
     const twoDrift = {
       ...identityClient,
       fragments: [
@@ -758,17 +900,20 @@ describe('fragment-level drift review', () => {
       ],
     };
     vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(twoDrift));
-    render(<GlobalContextDialog isOpen onClose={() => {}} initialDriftSlug="claude-code" />);
+    renderFragments({ url: '/library?kind=context&client=claude-code' });
 
     // The row arrives pre-expanded (spotlight), but no dialog opens.
     const list = await screen.findByLabelText('Claude Code fragments');
     expect(within(list).getAllByText('Review')).toHaveLength(2);
     expect(screen.queryByText(/was edited/)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/library?kind=context');
+    });
   });
 
   it('marks fragments with non-synced copies in the rail', async () => {
     vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(identityClient));
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     await screen.findByText('10-style');
 
     // Both the drifted and the stale fragment carry a dot naming the client.
@@ -780,7 +925,7 @@ describe('fragment load failures', () => {
   it('shows a failure notice with Retry in the rail and disables Add until loaded', async () => {
     vi.mocked(fetchContextFragments).mockRejectedValueOnce(new Error('offline'));
     const toast = vi.spyOn(toastMod, 'showToast');
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Load fragments failed: offline.');
@@ -798,7 +943,7 @@ describe('fragment load failures', () => {
 
   it('keeps the list and the open editor when a later reload fails', async () => {
     vi.mocked(saveContextFragment).mockResolvedValue({ name: '00-default' });
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     const editor = await screen.findByLabelText('Fragment 00-default');
 
     vi.mocked(fetchContextFragments).mockRejectedValueOnce(new Error('offline'));
@@ -815,7 +960,7 @@ describe('fragment load failures', () => {
 
   it('drops a removed fragment from the rail when the reload fails', async () => {
     vi.mocked(deleteContextFragment).mockResolvedValue({ name: '10-style', backup: '/b' });
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     await screen.findByText('10-style');
 
     vi.mocked(fetchContextFragments).mockRejectedValueOnce(new Error('offline'));
@@ -834,7 +979,7 @@ const GATE_TITLE = 'Review the diff before choosing';
 describe('fragment drift review evidence gate', () => {
   async function openFragmentReview(client: ContextDoc['clients'][number]) {
     vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(client));
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     const expand = await screen.findByLabelText(`Expand ${client.name} fragments`);
     fireEvent.click(expand);
     const list = screen.getByLabelText(`${client.name} fragments`);
@@ -844,7 +989,7 @@ describe('fragment drift review evidence gate', () => {
 
   async function openCompiledReview() {
     vi.mocked(fetchGlobalContext).mockResolvedValue(clientDoc(compiledClient));
-    render(<GlobalContextDialog isOpen onClose={() => {}} />);
+    renderFragments();
     fireEvent.click(await screen.findByText('Review'));
     await screen.findByText(/receives one assembled document/);
   }

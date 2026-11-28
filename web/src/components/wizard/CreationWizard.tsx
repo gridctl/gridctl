@@ -262,10 +262,10 @@ export function CreationWizard({ onOpenVault, onOpenGlobalContext, onOpenConnect
   }, [applyTemplate, resetValidation]);
 
   // Skill skips template step; secret, global-context, and client-link
-  // close the wizard and open their own dedicated surfaces (vault panel,
-  // context dialog, Connections workspace). Linking is stateful and
-  // reversible per machine, so it lives in a workspace rather than a
-  // one-shot creation flow.
+  // close the wizard and open their own dedicated surfaces (Variables
+  // workspace, the Library's Context segment, Connections workspace). Linking
+  // is stateful and reversible per machine, so it lives in a workspace rather
+  // than a one-shot creation flow.
   const handleTypeSelect = useCallback((type: ResourceType) => {
     if (type === 'secret') {
       close();

@@ -9,7 +9,6 @@ function setup(overrides: Partial<Props> = {}) {
   const props: Props = {
     onNewSkill: vi.fn(),
     onImportSkill: vi.fn(),
-    onGlobalContext: vi.fn(),
     onRefresh: vi.fn(),
     onSync: vi.fn(),
     onPopout: vi.fn(),
@@ -38,7 +37,7 @@ describe('LibraryHeaderActions', () => {
     setup({ collapsed: false });
     expect(screen.getByRole('button', { name: /New Skill/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Import/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Global Context/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Global Context/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open in separate window' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
@@ -60,7 +59,6 @@ describe('LibraryHeaderActions', () => {
     expect(screen.getByRole('menu', { name: 'More actions' })).toBeInTheDocument();
     expect(items.map((i) => i.textContent)).toEqual([
       'Import',
-      'Global Context',
       'Sync sources',
       'Refresh',
       'Open in separate window',
@@ -96,7 +94,6 @@ describe('LibraryHeaderActions', () => {
     const { props } = setup();
     const cases: [string, () => void][] = [
       ['Import', props.onImportSkill],
-      ['Global Context', props.onGlobalContext],
       ['Sync sources', props.onSync],
       ['Refresh', props.onRefresh],
       ['Open in separate window', props.onPopout],
@@ -115,8 +112,6 @@ describe('LibraryHeaderActions', () => {
     const sync = screen.getByRole('menuitem', { name: 'Syncing…' });
     expect(sync).toBeDisabled();
     expect(items[0]).toHaveFocus();
-    key('ArrowDown');
-    expect(items[1]).toHaveFocus();
     key('ArrowDown');
     expect(screen.getByRole('menuitem', { name: 'Refresh' })).toHaveFocus();
   });

@@ -308,12 +308,12 @@ describe('Proposals load failures', () => {
 });
 
 describe('LibraryKindSwitch', () => {
-  it('renders five aria-pressed segments with the shared segment chrome', async () => {
+  it('renders six aria-pressed segments with the shared segment chrome', async () => {
     render(<LibraryKindSwitch kind="agent" onChange={() => {}} />);
     const group = screen.getByRole('group', { name: 'Library catalog kind' });
     expect(group.className).toContain(SEGMENT_GROUP_CLASS);
     const buttons = within(group).getAllByRole('button');
-    expect(buttons).toHaveLength(5);
+    expect(buttons).toHaveLength(6);
     for (const button of buttons) {
       expect(button).toHaveAttribute('type', 'button');
       expect(button).toHaveAttribute('aria-pressed');
@@ -325,6 +325,11 @@ describe('LibraryKindSwitch', () => {
     const skills = within(group).getByRole('button', { name: 'Skills' });
     expect(skills).toHaveAttribute('aria-pressed', 'false');
     expect(skills.className).toContain(segmentClass(false));
+    const context = within(group).getByRole('button', { name: 'Global Context' });
+    expect(context).toHaveTextContent('Context');
+    expect(context).toHaveAttribute('title', 'Global Context');
+    expect(context).toHaveAttribute('aria-pressed', 'false');
+    expect(buttons.indexOf(context)).toBe(4);
     expect(await screen.findByLabelText('2 pending')).toBeInTheDocument();
   });
 
