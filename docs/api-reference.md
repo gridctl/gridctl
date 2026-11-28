@@ -3035,7 +3035,7 @@ Body: `{ "reason": "<required>", "approved_by": "<name>" }`. `200` with the upda
 
 ### Global Context
 
-Manage the canonical global agent-context file (`~/.gridctl/context/AGENTS.md`) and its projection into each linked client's global context location. Backs `gridctl ctx` and the web UI's Global Context segment; see [Global Context Sync](global-context.md) for concepts (write strategies, drift, adoption, fragment pins). These endpoints are pure file operations against the gateway host's home directory and work in stackless mode.
+Manage the canonical global agent-context file (`~/.gridctl/context/AGENTS.md`) and its projection into each linked client's global context location. Backs `gridctl ctx` and the Library's Context segment; see [Global Context Sync](global-context.md) for concepts (write strategies, drift, adoption, fragment pins). These endpoints are pure file operations against the gateway host's home directory and work in stackless mode.
 
 #### `GET /api/context`
 

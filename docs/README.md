@@ -42,7 +42,7 @@ New to gridctl? Read in this order:
 | [Proposals](proposals.md) | Staged diffs against skills, rule fragments, and hooks: `gridctl propose`, review with `gridctl proposals`, apply and record paths, REST, and the Library Proposals segment |
 | [Tools Workspace](tools-workspace.md) | Curate the exposed tool surface - whitelists, policy verdicts, Audit Mode, annotation hints, fleet actions, per-client access, groups, and calling a tool with Try it |
 | [Gateway authentication](config-schema.md#auth) | Shared credentials and OAuth resource-server mode (included in v1.0.0-rc.3), issuer setup, authenticated client profiles, and credential recovery |
-| [Global Context Sync](global-context.md) | Manage the global context (one canonical AGENTS.md, or an opt-in rule fragment library with per-client assembly) via `gridctl ctx`, the web UI, or the REST API |
+| [Global Context Sync](global-context.md) | Manage the global context (one canonical AGENTS.md, or an opt-in rule fragment library with per-client assembly) via `gridctl ctx`, the Library Context segment, or the REST API |
 | [Scaling stdio servers](scaling.md) | Run multiple replicas of a single MCP server - policies, trade-offs, observability |
 | [MCP execution controls](execution.md) | Included in v1.0.0-rc.2: opt-in container restrictions, local environment hygiene, and per-replica evidence |
 | [Outbound A2A](config-schema.md#a2a) | Experimental, included in v1.0.0-rc.2: remote agent tools, mandatory card trust, secret handles, and conversation lifecycle |
