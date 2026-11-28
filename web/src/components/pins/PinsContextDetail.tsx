@@ -36,9 +36,8 @@ import { diffLines, MAX_DIFF_LINES } from '../../lib/diff';
 // Context detail - fragment pin drift review (line diff) + pinned document
 //
 // Follows PinsSkillDetail and shares the server, skill, and context ids. The
-// detail also mounts in the Global Context dialog's review modal, which can
-// open over the Pins workspace, so ids are opt-in (anchors) to keep them
-// unique in the document.
+// detail also mounts in the Library Context segment's pin review modal, so
+// ids are opt-in (anchors) to keep them unique in the document.
 // ---------------------------------------------------------------------------
 
 interface PinsContextDetailProps {

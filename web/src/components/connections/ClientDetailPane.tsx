@@ -576,9 +576,9 @@ function AxisBadge({
 }
 
 /**
- * One collapsible detail section in the ClientsStrip grammar: a one-line
- * summary when collapsed, auto-expanded when its content needs the
- * user's attention. Never force-closes a strip the user opened.
+ * One collapsible detail section: a one-line summary when collapsed,
+ * auto-expanded when its content needs the user's attention. Never
+ * force-closes a section the user opened.
  */
 function Section({
   icon,

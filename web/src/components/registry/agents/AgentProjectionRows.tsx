@@ -25,7 +25,7 @@ interface AgentProjectionRowsProps {
 }
 
 /**
- * Per-client projection rows for one agent, in the shipped ClientsStrip /
+ * Per-client projection rows for one agent, in the Context inspector's
  * ClientRow grammar: state pill, render chip, client name, truncated
  * target path, and inline text-button actions. Adopt is only ever offered
  * on identity rows; lossy rows get an
