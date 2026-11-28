@@ -14,6 +14,7 @@ import { useOptimize } from '../../hooks/useOptimize';
 import {
   useMetricsSeries,
   normalizeMetricsTimeRangeParam,
+  apiRangeFor,
   windowLabelFor,
   type MetricsTimeRange,
 } from '../../hooks/useMetricsSeries';
@@ -33,7 +34,9 @@ import {
   PanelHeader,
   BreakdownTable,
   ScrollableBreakdown,
+  ExportCsvButton,
   ViewAllButton,
+  WindowColumnCaption,
   WindowEmptyNote,
 } from '../metrics/metricsShared';
 import { LimitsPanel } from '../metrics/LimitsShared';
@@ -51,6 +54,8 @@ import {
   hasMetricsData,
   sortBreakdownRows,
   FLEET_TOKEN_CATEGORY,
+  SERVER_COLUMNS,
+  TOOL_COLUMNS,
   type BreakdownRow,
   type BreakdownSortColumn,
   type SortDirection,
@@ -273,8 +278,13 @@ export function MetricsWorkspace() {
   // selectable in the breakdown rather than absent from it.
   const serverNames = useMemo(() => mcpServers.map((s) => s.name), [mcpServers]);
   const serverRows = useMemo(
-    () => sortBreakdownRows(derivePerServerRows(tokenUsage, serverNames), serverSort.col, serverSort.dir),
-    [tokenUsage, serverNames, serverSort],
+    () =>
+      sortBreakdownRows(
+        derivePerServerRows(tokenUsage, { serverNames, toolUsage: toolUsageData, metricsData }),
+        serverSort.col,
+        serverSort.dir,
+      ),
+    [tokenUsage, serverNames, toolUsageData, metricsData, serverSort],
   );
   const clientRows = useMemo(
     () => sortBreakdownRows(derivePerClientRows(tokenUsage), clientSort.col, clientSort.dir),
@@ -585,10 +595,15 @@ export function MetricsWorkspace() {
                   </PanelHeader>
                 )}
 
-                {/* Breakdown tables stay snapshot-fed (no ranged per-entity
-                    aggregates exist yet), so their chrome says "session totals". */}
+                {/* Breakdown tables are session totals. The one exception is
+                    the Servers window column, fed by the ranged per-server
+                    series and named by the caption under that table. */}
                 {scope === 'tools' && (
-                  <PanelHeader icon={Wrench} label="Per-Tool · session totals">
+                  <PanelHeader
+                    icon={Wrench}
+                    label="Per-Tool · session totals"
+                    right={<ExportCsvButton rows={filteredToolRows} kind="tools" />}
+                  >
                     {toolRows.length > 0 ? (
                       <>
                         <ToolsFilterBar
@@ -612,6 +627,7 @@ export function MetricsWorkspace() {
                               onSort={sortTools}
                               selectedName={selected}
                               onSelectRow={setSelected}
+                              columns={TOOL_COLUMNS}
                             />
                           </ScrollableBreakdown>
                         ) : (
@@ -636,7 +652,11 @@ export function MetricsWorkspace() {
                 )}
 
                 {scope === 'clients' && (
-                  <PanelHeader icon={Users} label="Top Clients · session totals">
+                  <PanelHeader
+                    icon={Users}
+                    label="Top Clients · session totals"
+                    right={<ExportCsvButton rows={clientRows} kind="clients" />}
+                  >
                     {clientRows.length > 0 ? (
                       <BreakdownTable
                         rows={clientRows}
@@ -654,17 +674,28 @@ export function MetricsWorkspace() {
                 )}
 
                 {scope === 'servers' && (
-                  <PanelHeader icon={Server} label="Per-Server · session totals">
+                  <PanelHeader
+                    icon={Server}
+                    label="Per-Server · session totals"
+                    right={<ExportCsvButton rows={serverRows} kind="servers" window={apiRangeFor(timeRange)} />}
+                  >
                     {serverRows.length > 0 ? (
-                      <BreakdownTable
-                        rows={serverRows}
-                        nameLabel="Server"
-                        sortColumn={serverSort.col}
-                        sortDirection={serverSort.dir}
-                        onSort={sortServers}
-                        selectedName={selected}
-                        onSelectRow={setSelected}
-                      />
+                      <>
+                        <div className="overflow-x-auto scrollbar-dark">
+                          <BreakdownTable
+                            rows={serverRows}
+                            nameLabel="Server"
+                            sortColumn={serverSort.col}
+                            sortDirection={serverSort.dir}
+                            onSort={sortServers}
+                            selectedName={selected}
+                            onSelectRow={setSelected}
+                            columns={SERVER_COLUMNS}
+                            windowLabel={windowLabel}
+                          />
+                        </div>
+                        <WindowColumnCaption windowLabel={windowLabel} />
+                      </>
                     ) : (
                       <EmptyScopeNote text="No per-server traffic recorded yet." />
                     )}

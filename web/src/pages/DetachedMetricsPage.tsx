@@ -6,13 +6,22 @@ import { DetachedWindowFrame } from '../components/detached/DetachedWindowFrame'
 import { refreshPhase } from '../lib/refreshPhase';
 import { useSharedStatus } from '../hooks/useSharedStatus';
 import { formatCompactNumber } from '../lib/format';
-import { useMetricsSeries, windowLabelFor, type MetricsTimeRange } from '../hooks/useMetricsSeries';
+import { apiRangeFor, useMetricsSeries, windowLabelFor, type MetricsTimeRange } from '../hooks/useMetricsSeries';
 import { useToolUsage } from '../hooks/useToolUsage';
 import { useLimits } from '../hooks/useLimits';
 import { LimitsPanel } from '../components/metrics/LimitsShared';
 import { deriveLimitsSummary } from '../components/metrics/limitsData';
 import { MetricsControls } from '../components/metrics/MetricsControls';
-import { MetricsKpiRow, TokenChart, PanelHeader, BreakdownTable, ScrollableBreakdown, WindowEmptyNote } from '../components/metrics/metricsShared';
+import {
+  MetricsKpiRow,
+  TokenChart,
+  PanelHeader,
+  BreakdownTable,
+  ExportCsvButton,
+  ScrollableBreakdown,
+  WindowColumnCaption,
+  WindowEmptyNote,
+} from '../components/metrics/metricsShared';
 import {
   buildTokenChartData,
   derivePerServerRows,
@@ -22,6 +31,8 @@ import {
   deriveWindowTotals,
   hasMetricsData,
   sortBreakdownRows,
+  SERVER_COLUMNS,
+  TOOL_COLUMNS,
   type BreakdownSortColumn,
   type SortDirection,
 } from '../components/metrics/metricsData';
@@ -88,7 +99,11 @@ function DetachedMetricsPageContent() {
   };
 
   const kpis = deriveSessionKpis(tokenUsage);
-  const sortedServers = sortBreakdownRows(derivePerServerRows(tokenUsage, serverNames), sortColumn, sortDirection);
+  const sortedServers = sortBreakdownRows(
+    derivePerServerRows(tokenUsage, { serverNames, toolUsage: toolUsageData, metricsData }),
+    sortColumn,
+    sortDirection,
+  );
   const sortedClients = sortBreakdownRows(derivePerClientRows(tokenUsage), clientSortColumn, clientSortDirection);
   const sortedTools = sortBreakdownRows(derivePerToolRows(toolUsageData), toolSortColumn, toolSortDirection);
 
@@ -182,14 +197,19 @@ function DetachedMetricsPageContent() {
 
             <LimitsPanel summary={limitsSummary} />
 
-            {/* Tables are snapshot-fed, hence "session totals" (same labeling
-                as the in-shell workspace). Parity decision: the workspace's
+            {/* Tables are session totals (same labeling as the in-shell
+                workspace), except the Servers window column, which the caption
+                under that table names. Parity decision: the workspace's
                 findings card and top-5 previews are deliberately absent here —
                 the previews would duplicate the full tables below, and the
                 finding links navigate the /metrics URL scheme, which this solo
                 window does not host. */}
             {sortedClients.length > 0 && (
-              <PanelHeader icon={Users} label="Top Clients · session totals">
+              <PanelHeader
+                icon={Users}
+                label="Top Clients · session totals"
+                right={<ExportCsvButton rows={sortedClients} kind="clients" />}
+              >
                 <BreakdownTable
                   rows={sortedClients}
                   nameLabel="Client"
@@ -201,19 +221,32 @@ function DetachedMetricsPageContent() {
             )}
 
             {sortedServers.length > 0 && (
-              <PanelHeader icon={Server} label="Per-Server · session totals">
-                <BreakdownTable
-                  rows={sortedServers}
-                  nameLabel="Server"
-                  sortColumn={sortColumn}
-                  sortDirection={sortDirection}
-                  onSort={handleSort}
-                />
+              <PanelHeader
+                icon={Server}
+                label="Per-Server · session totals"
+                right={<ExportCsvButton rows={sortedServers} kind="servers" window={apiRangeFor(timeRange)} />}
+              >
+                <div className="overflow-x-auto scrollbar-dark">
+                  <BreakdownTable
+                    rows={sortedServers}
+                    nameLabel="Server"
+                    sortColumn={sortColumn}
+                    sortDirection={sortDirection}
+                    onSort={handleSort}
+                    columns={SERVER_COLUMNS}
+                    windowLabel={windowLabel}
+                  />
+                </div>
+                <WindowColumnCaption windowLabel={windowLabel} />
               </PanelHeader>
             )}
 
             {(sortedTools.length > 0 || toolUsageError) && (
-              <PanelHeader icon={Wrench} label="Per-Tool · session totals">
+              <PanelHeader
+                icon={Wrench}
+                label="Per-Tool · session totals"
+                right={<ExportCsvButton rows={sortedTools} kind="tools" />}
+              >
                 {/* A failed fetch is not "no usage" — say the source is
                     unavailable instead of silently dropping the panel. A
                     retained snapshot keeps rendering (stale beats blank). */}
@@ -236,6 +269,7 @@ function DetachedMetricsPageContent() {
                         sortColumn={toolSortColumn}
                         sortDirection={toolSortDirection}
                         onSort={handleToolSort}
+                        columns={TOOL_COLUMNS}
                       />
                     </ScrollableBreakdown>
                   </>

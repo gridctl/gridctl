@@ -1,13 +1,26 @@
-import { type ComponentType, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, ArrowUpDown, Recycle } from 'lucide-react';
+import { type ComponentType, type ReactNode, useEffect, useRef } from 'react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, Recycle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
 import { listNavProps, listNavRowProps } from '../../hooks/useListNav';
 import { formatCompactNumber } from '../../lib/format';
+import { formatLastUsed } from '../../lib/toolAudit';
+import { downloadTextFile, metricsExportFilename } from '../../lib/download';
+import { showToast } from '../ui/Toast';
 import { AreaChart } from '../chart/AreaChart';
 import type { AvailableChartColorsKeys } from '../chart/chartColors';
 import type { TokenMetricsResponse } from '../../types';
+import {
+  avgTokensPerCall,
+  breakdownRowsToCsv,
+  SERVER_AVG_NOTE,
+  TOKEN_COLUMNS,
+  windowColumnCaption,
+  windowColumnLabel,
+} from './metricsData';
 import type {
+  BreakdownColumn,
+  BreakdownExportKind,
   BreakdownRow,
   BreakdownSortColumn,
   SessionKpis,
@@ -255,6 +268,8 @@ export function SortableHeader({
   sortDirection,
   onSort,
   align = 'left',
+  padClass = 'px-3',
+  title,
 }: {
   label: string;
   column: BreakdownSortColumn;
@@ -264,10 +279,18 @@ export function SortableHeader({
   // as plain text instead of a dead, focusable, sort-announcing control.
   onSort?: (column: BreakdownSortColumn) => void;
   align?: 'left' | 'right';
+  padClass?: string;
+  // Optional note on what the column means; also exposed as the header's
+  // accessible description.
+  title?: string;
 }) {
   if (!onSort) {
     return (
-      <th className={cn('px-3 py-2 font-medium text-text-muted select-none', align === 'right' && 'text-right')}>
+      <th
+        className={cn(padClass, 'py-2 font-medium text-text-muted select-none whitespace-nowrap', align === 'right' && 'text-right')}
+        title={title}
+        aria-description={title}
+      >
         {label}
       </th>
     );
@@ -277,9 +300,12 @@ export function SortableHeader({
   return (
     <th
       className={cn(
-        'px-3 py-2 font-medium text-text-muted cursor-pointer hover:text-text-secondary transition-colors select-none',
+        padClass,
+        'py-2 font-medium text-text-muted cursor-pointer hover:text-text-secondary transition-colors select-none whitespace-nowrap',
         align === 'right' && 'text-right',
       )}
+      title={title}
+      aria-description={title}
       tabIndex={0}
       role="columnheader"
       aria-sort={isActive ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'}
@@ -305,7 +331,7 @@ export function SortableHeader({
 // window's Per-Tool panel.
 export function ScrollableBreakdown({ children }: { children: ReactNode }) {
   return (
-    <div className="max-h-[60vh] overflow-y-auto scrollbar-dark [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-sticky [&_thead_th]:bg-surface">
+    <div className="max-h-[60vh] overflow-y-auto overflow-x-auto scrollbar-dark [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-sticky [&_thead_th]:bg-surface">
       {children}
     </div>
   );
@@ -323,11 +349,151 @@ export function InspectorStat({ label, value, className }: { label: string; valu
   );
 }
 
-// BreakdownTable renders the shared client/server breakdown. Hosts may make
-// rows selectable (`onSelectRow` + `selectedName`) to drive a detail
-// inspector. `renderNameExtra` renders below the name cell's text (the limits
-// overlay mounts its consumption annotation there); returning null/undefined
-// adds nothing.
+// Dash placeholder for a value whose source is absent; the hidden phrase
+// keeps the meaning available to assistive tech.
+function Placeholder({ label }: { label: string }) {
+  return (
+    <span title={label}>
+      <span aria-hidden="true">–</span>
+      <span className="sr-only">{label}</span>
+    </span>
+  );
+}
+
+const COLUMN_HEADERS: Record<Exclude<BreakdownColumn, 'window'>, string> = {
+  calls: 'Calls',
+  input: 'Input',
+  output: 'Output',
+  total: 'Total',
+  avg: 'Avg/call',
+  lastUsed: 'Last used',
+};
+
+const CELL_TEXT_CLASS: Record<BreakdownColumn, string> = {
+  calls: 'text-text-primary',
+  window: 'text-text-primary',
+  input: 'text-secondary',
+  output: 'text-primary',
+  total: 'text-text-primary font-semibold',
+  avg: 'text-text-secondary',
+  lastUsed: 'text-text-secondary whitespace-nowrap',
+};
+
+function BreakdownCell({ row, column, cellPad }: { row: BreakdownRow; column: BreakdownColumn; cellPad: string }) {
+  let content: ReactNode;
+  let title: string | undefined;
+  switch (column) {
+    case 'calls':
+      content = row.calls === undefined ? <Placeholder label="calls unavailable" /> : formatCompactNumber(row.calls);
+      break;
+    case 'window':
+      content =
+        row.windowTotal === undefined ? <Placeholder label="window not loaded" /> : formatCompactNumber(row.windowTotal);
+      break;
+    case 'avg': {
+      const avg = avgTokensPerCall(row);
+      content = avg === undefined ? <Placeholder label="no recorded calls" /> : formatCompactNumber(avg);
+      break;
+    }
+    case 'lastUsed': {
+      const t = row.lastUsed ? Date.parse(row.lastUsed) : NaN;
+      if (Number.isNaN(t)) {
+        content = <Placeholder label="no recorded calls" />;
+      } else {
+        content = formatLastUsed(row.lastUsed);
+        title = new Date(t).toLocaleString();
+      }
+      break;
+    }
+    default:
+      content = formatCompactNumber(row[column]);
+  }
+  return (
+    <td className={cn(cellPad, 'py-2 text-right tabular-nums', CELL_TEXT_CLASS[column])} title={title}>
+      {content}
+    </td>
+  );
+}
+
+function BreakdownTableRow({
+  row,
+  columns,
+  cellPad,
+  selected,
+  onSelectRow,
+  renderNameExtra,
+}: {
+  row: BreakdownRow;
+  columns: BreakdownColumn[];
+  cellPad: string;
+  selected: boolean;
+  onSelectRow?: (name: string) => void;
+  renderNameExtra?: (row: BreakdownRow) => ReactNode;
+}) {
+  const ref = useRef<HTMLTableRowElement>(null);
+  const selectable = onSelectRow !== undefined;
+
+  // Keep the selected row visible when selection moves. Keyed on the
+  // selection only: rows re-render on every poll and must not re-scroll.
+  useEffect(() => {
+    if (selectable && selected) ref.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [selectable, selected]);
+
+  return (
+    <tr
+      ref={ref}
+      aria-selected={onSelectRow ? selected : undefined}
+      {...(onSelectRow ? listNavRowProps : {})}
+      onClick={onSelectRow ? () => onSelectRow(row.name) : undefined}
+      // Selectable rows are keyboard-reachable in place (Enter/Space),
+      // complementing the workspace-level arrow-key navigation. Only
+      // keydowns on the row itself count: events bubbling out of nested
+      // interactive elements must keep their native behavior.
+      tabIndex={onSelectRow ? 0 : undefined}
+      onKeyDown={
+        onSelectRow
+          ? (e) => {
+              if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault();
+                onSelectRow(row.name);
+              }
+            }
+          : undefined
+      }
+      className={cn(
+        // The scroll margin clears the sticky header when a row is scrolled
+        // into view from below it.
+        'border-b border-border/20 last:border-0 transition-colors scroll-mt-9',
+        onSelectRow && 'cursor-pointer focus-visible:-outline-offset-2',
+        selected ? 'bg-primary/[0.07]' : 'hover:bg-surface-highlight/30',
+      )}
+    >
+      <td className={cn(cellPad, 'py-2 font-medium text-text-primary font-mono')}>
+        {row.server && row.tool ? (
+          <>
+            <span className="text-text-muted">{row.server}</span>
+            <span className="text-text-muted" aria-hidden="true">{' › '}</span>
+            {row.tool}
+          </>
+        ) : (
+          row.name
+        )}
+        {renderNameExtra?.(row)}
+      </td>
+      {columns.map((column) => (
+        <BreakdownCell key={column} row={row} column={column} cellPad={cellPad} />
+      ))}
+    </tr>
+  );
+}
+
+// BreakdownTable renders the shared client/server/tool breakdown. `columns`
+// picks the non-name columns (default: tokens only); `windowLabel` names the
+// window column when it is shown. Hosts may make rows selectable
+// (`onSelectRow` + `selectedName`) to drive a detail inspector.
+// `renderNameExtra` renders below the name cell's text (the limits overlay
+// mounts its consumption annotation there); returning null/undefined adds
+// nothing.
 export function BreakdownTable({
   rows,
   nameLabel,
@@ -337,6 +503,8 @@ export function BreakdownTable({
   renderNameExtra,
   selectedName,
   onSelectRow,
+  columns = TOKEN_COLUMNS,
+  windowLabel,
 }: {
   rows: BreakdownRow[];
   nameLabel: string;
@@ -346,66 +514,84 @@ export function BreakdownTable({
   renderNameExtra?: (row: BreakdownRow) => ReactNode;
   selectedName?: string | null;
   onSelectRow?: (name: string) => void;
+  columns?: BreakdownColumn[];
+  windowLabel?: string;
 }) {
+  // Wide column sets tighten the padding so the Servers table fits the
+  // center pane; the wrapper scrolls horizontally below that.
+  const cellPad = columns.length > TOKEN_COLUMNS.length ? 'px-2' : 'px-3';
+  // The window column only appears in the Servers set, whose average comes
+  // from a different source than its Total and so carries a note.
+  const avgTitle = columns.includes('window') ? SERVER_AVG_NOTE : undefined;
+  const sortProps = { sortColumn, sortDirection, onSort, padClass: cellPad };
   return (
     <table className="w-full text-xs">
       <thead>
         <tr className="border-b border-border/30">
-          <SortableHeader label={nameLabel} column="name" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} />
-          <SortableHeader label="Input" column="input" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" />
-          <SortableHeader label="Output" column="output" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" />
-          <SortableHeader label="Total" column="total" sortColumn={sortColumn} sortDirection={sortDirection} onSort={onSort} align="right" />
+          <SortableHeader label={nameLabel} column="name" {...sortProps} />
+          {columns.map((column) => (
+            <SortableHeader
+              key={column}
+              label={column === 'window' ? windowColumnLabel(windowLabel ?? 'Window') : COLUMN_HEADERS[column]}
+              column={column}
+              title={column === 'avg' ? avgTitle : undefined}
+              align="right"
+              {...sortProps}
+            />
+          ))}
         </tr>
       </thead>
       <tbody {...(onSelectRow ? listNavProps : {})}>
-        {rows.map((row) => {
-          const selected = selectedName === row.name;
-          return (
-            <tr
-              key={row.name}
-              aria-selected={onSelectRow ? selected : undefined}
-              {...(onSelectRow ? listNavRowProps : {})}
-              onClick={onSelectRow ? () => onSelectRow(row.name) : undefined}
-              // Selectable rows are keyboard-reachable in place (Enter/Space),
-              // complementing the workspace-level arrow-key navigation. Only
-              // keydowns on the row itself count: events bubbling out of nested
-              // interactive elements must keep their native behavior.
-              tabIndex={onSelectRow ? 0 : undefined}
-              onKeyDown={
-                onSelectRow
-                  ? (e) => {
-                      if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
-                        e.preventDefault();
-                        onSelectRow(row.name);
-                      }
-                    }
-                  : undefined
-              }
-              className={cn(
-                'border-b border-border/20 last:border-0 transition-colors',
-                onSelectRow && 'cursor-pointer focus-visible:-outline-offset-2',
-                selected ? 'bg-primary/[0.07]' : 'hover:bg-surface-highlight/30',
-              )}
-            >
-              <td className="px-3 py-2 font-medium text-text-primary font-mono">
-                {row.server && row.tool ? (
-                  <>
-                    <span className="text-text-muted">{row.server}</span>
-                    <span className="text-text-muted" aria-hidden="true">{' › '}</span>
-                    {row.tool}
-                  </>
-                ) : (
-                  row.name
-                )}
-                {renderNameExtra?.(row)}
-              </td>
-              <td className="px-3 py-2 text-right text-secondary tabular-nums">{formatCompactNumber(row.input)}</td>
-              <td className="px-3 py-2 text-right text-primary tabular-nums">{formatCompactNumber(row.output)}</td>
-              <td className="px-3 py-2 text-right text-text-primary font-semibold tabular-nums">{formatCompactNumber(row.total)}</td>
-            </tr>
-          );
-        })}
+        {rows.map((row) => (
+          <BreakdownTableRow
+            key={row.name}
+            row={row}
+            columns={columns}
+            cellPad={cellPad}
+            selected={selectedName === row.name}
+            onSelectRow={onSelectRow}
+            renderNameExtra={renderNameExtra}
+          />
+        ))}
       </tbody>
     </table>
+  );
+}
+
+// Caption under the Servers table naming the one range-scoped column.
+export function WindowColumnCaption({ windowLabel }: { windowLabel: string }) {
+  return (
+    <p className="px-3 py-1.5 text-2xs text-text-muted border-t border-border/20">
+      {windowColumnCaption(windowLabel)}
+    </p>
+  );
+}
+
+// Header-slot export for a breakdown panel. `rows` must be the array the
+// table renders, so the file matches what the operator sees.
+export function ExportCsvButton({
+  rows,
+  kind,
+  window,
+}: {
+  rows: BreakdownRow[];
+  kind: BreakdownExportKind;
+  window?: string;
+}) {
+  const disabled = rows.length === 0;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => {
+        if (rows.length === 0) return;
+        downloadTextFile(breakdownRowsToCsv(rows, kind, { window }), metricsExportFilename(kind), 'text/csv;charset=utf-8');
+        showToast('success', `Exported ${rows.length} ${rows.length === 1 ? 'row' : 'rows'} as CSV`);
+      }}
+      className="inline-flex items-center gap-1 text-3xs font-medium text-primary hover:underline disabled:text-text-muted disabled:no-underline disabled:cursor-not-allowed"
+    >
+      <Download size={10} aria-hidden="true" />
+      Export CSV
+    </button>
   );
 }

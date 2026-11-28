@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter } from 'react-router';
 import { DetachedMetricsPage } from '../pages/DetachedMetricsPage';
@@ -22,7 +22,19 @@ vi.mock('../lib/api', async (importActual) => {
   };
 });
 
+vi.mock('../components/ui/Toast', async (importActual) => {
+  const actual = await importActual<typeof import('../components/ui/Toast')>();
+  return { ...actual, showToast: vi.fn() };
+});
+
+vi.mock('../lib/download', async (importActual) => {
+  const actual = await importActual<typeof import('../lib/download')>();
+  return { ...actual, downloadTextFile: vi.fn() };
+});
+
 import { fetchLimits, fetchStatus, fetchTokenMetrics, fetchToolUsage } from '../lib/api';
+import { downloadTextFile } from '../lib/download';
+import type { GatewayStatus } from '../types';
 
 const statusOverride: { current: SharedStatus | null } = { current: null };
 
@@ -135,5 +147,128 @@ describe('DetachedMetricsPage disconnected banner', () => {
     await screen.findByText('Metrics unavailable');
     expect(screen.getAllByRole('alert')).toHaveLength(1);
     expect(screen.queryByText('Status failed: down.')).not.toBeInTheDocument();
+  });
+});
+
+describe('DetachedMetricsPage breakdown columns and export', () => {
+  const series: TokenMetricsResponse = {
+    ...seeded,
+    per_server: {
+      github: [
+        { timestamp: '2026-01-01T00:00:00Z', input_tokens: 5, output_tokens: 1, total_tokens: 6 },
+        { timestamp: '2026-01-01T00:01:00Z', input_tokens: 3, output_tokens: 2, total_tokens: 5 },
+      ],
+    },
+  };
+
+  beforeEach(() => {
+    vi.mocked(fetchTokenMetrics).mockImplementation((range = '30m') => Promise.resolve({ ...series, range }));
+    vi.mocked(fetchToolUsage).mockResolvedValue({
+      servers: {
+        github: {
+          create_issue: { calls: 4, lastCalledAt: '2026-07-01T00:00:00Z', inputTokens: 120, outputTokens: 80 },
+          list_repos: { calls: 1, inputTokens: 30, outputTokens: 10 },
+        },
+      },
+    });
+    statusOverride.current = {
+      status: {
+        'mcp-servers': [{ name: 'github' }, { name: 'atlassian' }],
+        token_usage: {
+          session: { input_tokens: 100, output_tokens: 40, total_tokens: 140 },
+          per_server: {
+            github: { input_tokens: 60, output_tokens: 20, total_tokens: 80 },
+            atlassian: { input_tokens: 40, output_tokens: 20, total_tokens: 60 },
+          },
+          per_client: { claude: { input_tokens: 100, output_tokens: 40, total_tokens: 140 } },
+          format_savings: { original_tokens: 0, formatted_tokens: 0, saved_tokens: 0, savings_percent: 0 },
+        },
+      } as unknown as GatewayStatus,
+      source: 'self',
+      settled: true,
+      error: null,
+      refresh: vi.fn().mockResolvedValue(undefined),
+    };
+  });
+
+  afterEach(() => {
+    statusOverride.current = null;
+  });
+
+  function panel(label: string): HTMLElement {
+    let el: HTMLElement | null = screen.getByText(label);
+    while (el && !el.querySelector('table')) el = el.parentElement;
+    if (!el) throw new Error(`no table under ${label}`);
+    return el;
+  }
+
+  const headersIn = (el: HTMLElement) =>
+    within(el.querySelector('table')!)
+      .getAllByRole('columnheader')
+      .map((h) => h.textContent);
+
+  async function ready() {
+    renderPage();
+    await screen.findByText('Per-Tool · session totals');
+    await waitFor(() => expect(screen.getByText('create_issue')).toBeInTheDocument());
+  }
+
+  it('shows the Tools and Servers columns, the window header and caption, and four Clients columns', async () => {
+    await ready();
+    expect(headersIn(panel('Per-Tool · session totals'))).toEqual([
+      'Tool',
+      'Calls',
+      'Input',
+      'Output',
+      'Total',
+      'Avg/call',
+      'Last used',
+    ]);
+    expect(headersIn(panel('Per-Server · session totals'))).toEqual([
+      'Server',
+      'Calls',
+      'Last 30m tokens',
+      'Input',
+      'Output',
+      'Total',
+      'Avg/call',
+      'Last used',
+    ]);
+    expect(
+      screen.getByText('The Last 30m tokens column follows the range control. Every other number is a session total.'),
+    ).toBeInTheDocument();
+    expect(headersIn(panel('Top Clients · session totals'))).toEqual(['Client', 'Input', 'Output', 'Total']);
+  });
+
+  it('exports each of the three tables with its filename kind and header row', async () => {
+    await ready();
+    const cases: Array<[string, string, string]> = [
+      ['Top Clients · session totals', 'clients', 'client,input_tokens,output_tokens,total_tokens'],
+      [
+        'Per-Server · session totals',
+        'servers',
+        'server,calls,window,window_tokens,input_tokens,output_tokens,total_tokens,avg_tokens_per_call,last_used',
+      ],
+      [
+        'Per-Tool · session totals',
+        'tools',
+        'server,tool,calls,input_tokens,output_tokens,total_tokens,avg_tokens_per_call,last_used',
+      ],
+    ];
+    expect(screen.getAllByRole('button', { name: /Export CSV/ })).toHaveLength(3);
+    for (const [label, kind, header] of cases) {
+      vi.mocked(downloadTextFile).mockClear();
+      fireEvent.click(within(panel(label)).getByRole('button', { name: /Export CSV/ }));
+      const [csv, filename] = vi.mocked(downloadTextFile).mock.calls[0];
+      expect(filename).toMatch(new RegExp(`^gridctl-metrics-${kind}-.+\\.csv$`));
+      expect(csv.split('\r\n')[0]).toBe(header);
+    }
+  });
+
+  it('sums the ranged series into the server window column', async () => {
+    await ready();
+    const rows = within(panel('Per-Server · session totals').querySelector('table')!).getAllByRole('row');
+    const github = rows.find((r) => r.textContent?.startsWith('github'))!;
+    await waitFor(() => expect(within(github).getAllByRole('cell')[2].textContent).toBe('11'));
   });
 });

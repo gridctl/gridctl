@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import '@testing-library/jest-dom';
 import { MetricsWorkspace } from '../components/workspaces/MetricsWorkspace';
@@ -8,6 +8,10 @@ import { useUIStore, COMPACT_MODE_DEFAULTS } from '../stores/useUIStore';
 import type { MCPServerStatus, TokenMetricsResponse, TokenUsage } from '../types';
 
 vi.mock('../components/ui/Toast', () => ({ showToast: vi.fn() }));
+vi.mock('../lib/download', async (importActual) => {
+  const actual = await importActual<typeof import('../lib/download')>();
+  return { ...actual, downloadTextFile: vi.fn() };
+});
 vi.mock('../hooks/useWindowManager', () => ({
   useWindowManager: () => ({
     openDetachedWindow: vi.fn(),
@@ -35,7 +39,11 @@ vi.mock('../lib/api', async (importActual) => {
 });
 
 // Imported after the mock factory so the mock-then-import order is visible.
-import { fetchTokenMetrics, fetchOptimizeReport } from '../lib/api';
+import { fetchTokenMetrics, fetchOptimizeReport, fetchToolUsage } from '../lib/api';
+import { downloadTextFile } from '../lib/download';
+import { showToast } from '../components/ui/Toast';
+import { BreakdownTable } from '../components/metrics/metricsShared';
+import { SERVER_COLUMNS } from '../components/metrics/metricsData';
 
 function server(name: string): MCPServerStatus {
   return { name, transport: 'stdio', initialized: true, tools: [], healthy: true } as unknown as MCPServerStatus;
@@ -251,8 +259,9 @@ describe('MetricsWorkspace', () => {
   it('selects a tool row into the inspector with its call count', async () => {
     renderAt('/metrics?scope=tools');
     fireEvent.click(await screen.findByText('create_issue'));
-    // The inspector shows the tool's KPI grid (Calls is tools-only).
-    expect(await screen.findByText('Calls')).toBeInTheDocument();
+    // The inspector shows the tool's KPI grid, including its call count.
+    const inspector = await screen.findByRole('complementary', { name: 'Metrics inspector' });
+    expect(await within(inspector).findByText('Calls')).toBeInTheDocument();
   });
 
   it('shows the onboarding empty state when there is no traffic', async () => {
@@ -357,7 +366,7 @@ describe('MetricsWorkspace', () => {
     renderAt();
     fireEvent.click(await screen.findByRole('button', { name: /Heavy tool: list_repos/ }));
     expect(await screen.findByText('Per-Tool · session totals')).toBeInTheDocument();
-    expect(await screen.findByText('Calls')).toBeInTheDocument();
+    expect(await screen.findByRole('columnheader', { name: /Calls/ })).toBeInTheDocument();
   });
 
   it('collapses to a quiet line when only info findings exist', async () => {
@@ -460,5 +469,233 @@ describe('MetricsWorkspace', () => {
     rejectSwitch(new Error('day window failed'));
     expect(await screen.findByText('Metrics unavailable')).toBeInTheDocument();
     expect(screen.getByText('day window failed')).toBeInTheDocument();
+  });
+});
+
+describe('MetricsWorkspace breakdown columns and export', () => {
+  const toolUsageFixture = {
+    servers: {
+      github: {
+        create_issue: { calls: 4, lastCalledAt: '2026-07-01T00:00:00Z', inputTokens: 120, outputTokens: 80 },
+        list_repos: { calls: 1, inputTokens: 30, outputTokens: 10 },
+      },
+    },
+  };
+
+  beforeEach(() => {
+    vi.mocked(fetchToolUsage).mockResolvedValue(toolUsageFixture);
+  });
+
+  const headers = (scope: HTMLElement = document.body) =>
+    within(scope)
+      .getAllByRole('columnheader')
+      .map((h) => h.textContent);
+  const dataRows = () => screen.getAllByRole('row').filter((r) => r.hasAttribute('aria-selected'));
+  const cellsOf = (text: string) => {
+    const r = dataRows().find((row) => row.textContent?.includes(text));
+    if (!r) throw new Error(`no row containing ${text}`);
+    return within(r)
+      .getAllByRole('cell')
+      .map((c) => c.textContent ?? '');
+  };
+
+  it('shows Calls, Avg/call, and Last used on Tools and sorts by Calls', async () => {
+    renderAt('/metrics?scope=tools');
+    await screen.findByText('create_issue');
+    expect(headers()).toEqual(['Tool', 'Calls', 'Input', 'Output', 'Total', 'Avg/call', 'Last used']);
+
+    const calls = screen.getByRole('columnheader', { name: /Calls/ });
+    fireEvent.click(calls);
+    await waitFor(() => expect(calls).toHaveAttribute('aria-sort', 'descending'));
+    expect(dataRows().map((r) => r.textContent?.includes('create_issue'))).toEqual([true, false]);
+    fireEvent.click(calls);
+    await waitFor(() => expect(calls).toHaveAttribute('aria-sort', 'ascending'));
+    expect(dataRows()[0]).toHaveTextContent('list_repos');
+  });
+
+  it('renders per-call averages and a dash for an unrecorded Last used, sorted last', async () => {
+    renderAt('/metrics?scope=tools');
+    await screen.findByText('create_issue');
+    const issue = cellsOf('create_issue');
+    expect(issue[5]).toBe('50');
+    expect(issue[6]).toMatch(/ago$/);
+    const repos = cellsOf('list_repos');
+    expect(repos[5]).toBe('40');
+    expect(repos[6]).toContain('–');
+    expect(repos[6]).toContain('no recorded calls');
+
+    const lastUsed = screen.getByRole('columnheader', { name: /Last used/ });
+    fireEvent.click(lastUsed);
+    await waitFor(() => expect(lastUsed).toHaveAttribute('aria-sort', 'descending'));
+    expect(dataRows().at(-1)).toHaveTextContent('list_repos');
+    fireEvent.click(lastUsed);
+    await waitFor(() => expect(lastUsed).toHaveAttribute('aria-sort', 'ascending'));
+    expect(dataRows().at(-1)).toHaveTextContent('list_repos');
+  });
+
+  it('aggregates server calls from tool usage and shows 0 calls for an idle server', async () => {
+    renderAt('/metrics?scope=servers');
+    await screen.findByText('Per-Server · session totals');
+    expect(headers()).toEqual([
+      'Server',
+      'Calls',
+      'Last 30m tokens',
+      'Input',
+      'Output',
+      'Total',
+      'Avg/call',
+      'Last used',
+    ]);
+    await waitFor(() => expect(cellsOf('github')[1]).toBe('5'));
+    const atlassian = cellsOf('atlassian');
+    expect(atlassian[1]).toBe('0');
+    expect(atlassian[6]).toContain('–');
+    expect(atlassian[7]).toContain('–');
+  });
+
+  it('sums the ranged series into the window column and follows the range', async () => {
+    mockSeries({
+      ...seededTokenSeries,
+      per_server: {
+        github: [
+          { timestamp: '2026-01-01T00:00:00Z', input_tokens: 5, output_tokens: 1, total_tokens: 6 },
+          { timestamp: '2026-01-01T00:01:00Z', input_tokens: 3, output_tokens: 2, total_tokens: 5 },
+        ],
+      },
+    });
+    renderAt('/metrics?scope=servers');
+    await screen.findByText('Per-Server · session totals');
+    expect(cellsOf('github')[2]).toBe('11');
+    expect(cellsOf('atlassian')[2]).toBe('0');
+
+    mockSeries({
+      ...seededTokenSeries,
+      per_server: { github: [{ timestamp: 't', input_tokens: 70, output_tokens: 7, total_tokens: 77 }] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '1h' }));
+    expect(await screen.findByRole('columnheader', { name: /Last 1h tokens/ })).toBeInTheDocument();
+    await waitFor(() => expect(cellsOf('github')[2]).toBe('77'));
+  });
+
+  it('renders a dash, never 0, in window cells while the series is unresolved', () => {
+    render(
+      <BreakdownTable
+        rows={[{ name: 'github', input: 1, output: 1, total: 2 }]}
+        nameLabel="Server"
+        sortColumn="total"
+        sortDirection="desc"
+        columns={SERVER_COLUMNS}
+        windowLabel="Last 1h"
+      />,
+    );
+    const cells = within(screen.getAllByRole('row')[1]).getAllByRole('cell');
+    expect(cells[2].textContent).toContain('–');
+    expect(cells[2].textContent).not.toContain('0');
+  });
+
+  it('keeps server token columns with dashes when tool usage fails', async () => {
+    vi.mocked(fetchToolUsage).mockRejectedValue(new Error('usage down'));
+    renderAt('/metrics?scope=servers');
+    await screen.findByText('Per-Server · session totals');
+    const github = cellsOf('github');
+    expect(github[5]).toBe('80');
+    expect(github[1]).toContain('–');
+    expect(github[6]).toContain('–');
+    expect(github[7]).toContain('–');
+  });
+
+  it('captions the window column with its exact header text and notes the server average', async () => {
+    renderAt('/metrics?scope=servers&range=1h');
+    await screen.findByText('Per-Server · session totals');
+    const header = screen.getByRole('columnheader', { name: /tokens$/ });
+    expect(header.textContent).toBe('Last 1h tokens');
+    expect(
+      screen.getByText(`The ${header.textContent} column follows the range control. Every other number is a session total.`),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /Avg\/call/ })).toHaveAttribute(
+      'title',
+      expect.stringMatching(/from per-tool usage/),
+    );
+  });
+
+  it('keeps Name, Input, Output, and Total on Clients and the Overview previews', async () => {
+    const { unmount } = renderAt();
+    expect(await screen.findByText('Top Servers · session totals')).toBeInTheDocument();
+    const tables = screen.getAllByRole('table');
+    expect(tables.length).toBeGreaterThanOrEqual(2);
+    for (const t of tables) expect(headers(t).slice(1)).toEqual(['Input', 'Output', 'Total']);
+    expect(screen.queryByRole('button', { name: /Export CSV/ })).not.toBeInTheDocument();
+    unmount();
+
+    renderAt('/metrics?scope=clients');
+    expect(await screen.findByText('Top Clients · session totals')).toBeInTheDocument();
+    expect(headers()).toEqual(['Client', 'Input', 'Output', 'Total']);
+  });
+
+  it('exports the filtered, sorted tools table as CSV and toasts the count', async () => {
+    renderAt('/metrics?scope=tools&q=create');
+    await screen.findByText('create_issue');
+    fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }));
+    const [csv, filename, mime] = vi.mocked(downloadTextFile).mock.calls[0];
+    expect(csv).toBe(
+      'server,tool,calls,input_tokens,output_tokens,total_tokens,avg_tokens_per_call,last_used\r\n' +
+        'github,create_issue,4,120,80,200,50,2026-07-01T00:00:00Z\r\n',
+    );
+    expect(filename).toMatch(/^gridctl-metrics-tools-.+\.csv$/);
+    expect(mime).toBe('text/csv;charset=utf-8');
+    expect(showToast).toHaveBeenCalledWith('success', 'Exported 1 row as CSV');
+  });
+
+  it('exports servers and clients with their headers', async () => {
+    const { unmount } = renderAt('/metrics?scope=servers');
+    await screen.findByText('Per-Server · session totals');
+    await waitFor(() => expect(cellsOf('github')[1]).toBe('5'));
+    fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }));
+    let [csv, filename] = vi.mocked(downloadTextFile).mock.calls[0];
+    const lines = csv.split('\r\n');
+    expect(lines[0]).toBe(
+      'server,calls,window,window_tokens,input_tokens,output_tokens,total_tokens,avg_tokens_per_call,last_used',
+    );
+    expect(lines[1]).toBe('github,5,30m,0,60,20,80,48,2026-07-01T00:00:00Z');
+    expect(filename).toMatch(/^gridctl-metrics-servers-/);
+    expect(showToast).toHaveBeenCalledWith('success', 'Exported 2 rows as CSV');
+    unmount();
+
+    renderAt('/metrics?scope=clients');
+    await screen.findByText('Top Clients · session totals');
+    fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }));
+    [csv, filename] = vi.mocked(downloadTextFile).mock.calls[1];
+    expect(csv).toBe('client,input_tokens,output_tokens,total_tokens\r\nclaude,100,40,140\r\n');
+    expect(filename).toMatch(/^gridctl-metrics-clients-/);
+  });
+
+  it('disables export when the displayed table has no rows', async () => {
+    renderAt('/metrics?scope=tools&q=zzz');
+    expect(await screen.findByText('No tools match the current filters.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Export CSV/ })).toBeDisabled();
+  });
+
+  it('scrolls the newly selected row into view once per selection change', async () => {
+    const scrollSpy = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollSpy;
+    try {
+      renderAt('/metrics?scope=tools');
+      await screen.findByText('create_issue');
+      expect(scrollSpy).not.toHaveBeenCalled();
+      fireEvent.keyDown(document, { key: 'ArrowDown' });
+      await waitFor(() => expect(dataRows()[0]).toHaveAttribute('aria-selected', 'true'));
+      expect(scrollSpy).toHaveBeenCalledTimes(1);
+      expect(scrollSpy).toHaveBeenCalledWith({ block: 'nearest' });
+      expect(scrollSpy.mock.contexts[0]).toBe(dataRows()[0]);
+
+      // A poll landing with the same selection re-renders the rows only.
+      act(() => {
+        useStackStore.setState({ tokenUsage: { ...tokenUsage } });
+      });
+      expect(scrollSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
   });
 });
