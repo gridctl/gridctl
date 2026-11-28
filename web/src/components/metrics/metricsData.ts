@@ -445,10 +445,10 @@ export function deriveFocusedTotals(
   return { tokens, share };
 }
 
-// Where an optimize finding's click should land, or null when it names no
-// entity. The single source for both "is this row a button?" (SavingsCard)
-// and the workspace's URL write, so the two can never disagree (a
-// linkable-looking row whose click does nothing is worse than plain text).
+// Where clicking an optimize finding's title should land, or null when it
+// names no entity. The single source for both "is this title a button?"
+// (SavingsCard) and the workspace's URL write, so the two can never disagree
+// (a clickable title whose click does nothing is worse than plain text).
 // Tools rows key on the server-qualified name; a finding with a tool but no
 // server is unlinkable.
 export function findingTarget(
@@ -459,6 +459,39 @@ export function findingTarget(
   }
   if (finding.server) return { scope: 'servers', selected: finding.server };
   return null;
+}
+
+// Human-readable explanation of what a finding's weekly token impact measures.
+// Schema heuristics estimate prompt-time tool schema overhead (not recorded
+// call tokens); format_savings_shortfall projects measured output savings.
+export function impactUnitLabel(heuristic: string): string {
+  switch (heuristic) {
+    case 'unused_server':
+      return "Estimated schema tokens sent per week for this server's tools. Not recorded usage.";
+    case 'unused_tool':
+      return 'Estimated schema tokens sent per week for this tool. Not recorded usage.';
+    case 'schema_overhead':
+      return "Estimated schema tokens sent per week for this server's tool list. Not recorded usage.";
+    case 'format_savings_shortfall':
+      return 'Projected output tokens saved per week, from savings measured on other servers.';
+    default:
+      return 'Estimated tokens per week.';
+  }
+}
+
+const TOOLS_AUDIT_HEURISTICS = new Set(['unused_server', 'unused_tool', 'schema_overhead']);
+
+// Link to the Tools workspace in Audit Mode for schema-related findings so the
+// operator can review or disable unused tools on that server. Non-schema
+// heuristics such as format_savings_shortfall are output-format configuration
+// changes rather than tool-exposure changes, so they have no Tools link.
+export function findingToolsHref(finding: OptimizeFinding): string | null {
+  if (!finding.server || !TOOLS_AUDIT_HEURISTICS.has(finding.heuristic)) return null;
+  const params = new URLSearchParams();
+  params.set('server', finding.server);
+  params.set('audit', '1');
+  if (finding.tool) params.set('tool', finding.tool);
+  return `/tools?${params.toString()}`;
 }
 
 // Session-level KPI bundle, derived once and shared by every surface's KPI row.

@@ -14,9 +14,12 @@ import {
   formatChartTick,
   formatChartBucket,
   formatChartTooltipTitle,
+  impactUnitLabel,
+  findingToolsHref,
   type SessionKpis,
 } from '../components/metrics/metricsData';
 import type {
+  OptimizeFinding,
   TokenUsage,
   TokenMetricsResponse,
   ToolUsageResponse,
@@ -394,5 +397,61 @@ describe('chart timestamp formatters', () => {
       expect(formatChartBucket(bad, '1h', 'en-US', 'UTC')).toBe(bad);
       expect(formatChartTooltipTitle(bad, '1h', 'en-US', 'UTC')).toBe(bad);
     }
+  });
+});
+
+function makeFinding(over: Partial<OptimizeFinding> = {}): OptimizeFinding {
+  return {
+    id: 'f1',
+    heuristic: 'unused_server',
+    severity: 'warn',
+    title: 'Unused server: zapier',
+    summary: 'No calls observed.',
+    remediation: '',
+    detected_at: '2026-11-20T00:00:00Z',
+    ...over,
+  };
+}
+
+describe('impactUnitLabel', () => {
+  it('returns heuristic-specific labels for known heuristics and a fallback for unknown ones', () => {
+    expect(impactUnitLabel('unused_server')).toBe(
+      "Estimated schema tokens sent per week for this server's tools. Not recorded usage.",
+    );
+    expect(impactUnitLabel('unused_tool')).toBe(
+      'Estimated schema tokens sent per week for this tool. Not recorded usage.',
+    );
+    expect(impactUnitLabel('schema_overhead')).toBe(
+      "Estimated schema tokens sent per week for this server's tool list. Not recorded usage.",
+    );
+    expect(impactUnitLabel('format_savings_shortfall')).toBe(
+      'Projected output tokens saved per week, from savings measured on other servers.',
+    );
+    expect(impactUnitLabel('unknown_future_heuristic')).toBe('Estimated tokens per week.');
+  });
+});
+
+describe('findingToolsHref', () => {
+  it('builds Tools audit URLs for schema heuristics with server and optional tool', () => {
+    expect(findingToolsHref(makeFinding({ heuristic: 'unused_server', server: 'zapier' }))).toBe(
+      '/tools?server=zapier&audit=1',
+    );
+    expect(findingToolsHref(makeFinding({ heuristic: 'schema_overhead', server: 'github' }))).toBe(
+      '/tools?server=github&audit=1',
+    );
+    expect(
+      findingToolsHref(makeFinding({ heuristic: 'unused_tool', server: 'github', tool: 'list_repos' })),
+    ).toBe('/tools?server=github&audit=1&tool=list_repos');
+  });
+
+  it('returns null without a server or for non-schema heuristics', () => {
+    expect(findingToolsHref(makeFinding({ heuristic: 'unused_server', server: undefined }))).toBeNull();
+    expect(
+      findingToolsHref(makeFinding({ heuristic: 'unused_tool', server: undefined, tool: 'list_repos' })),
+    ).toBeNull();
+    expect(
+      findingToolsHref(makeFinding({ heuristic: 'format_savings_shortfall', server: 'github' })),
+    ).toBeNull();
+    expect(findingToolsHref(makeFinding({ heuristic: 'unlisted_heuristic', server: 'github' }))).toBeNull();
   });
 });

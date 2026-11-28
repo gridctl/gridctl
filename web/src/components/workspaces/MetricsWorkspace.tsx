@@ -1,8 +1,9 @@
 import { useCallback, useId, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { BarChart3, Server, Users, Wrench, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { GATEWAY_NODE_ID } from '../../lib/graph';
 import { WORKSPACE_LABELS } from '../../types/workspace';
 import { useUIStore } from '../../stores/useUIStore';
 import { useStackStore } from '../../stores/useStackStore';
@@ -94,6 +95,7 @@ function clearToolParams(params: URLSearchParams): void {
 // shared with the detached window via metricsShared.
 export function MetricsWorkspace() {
   const headingId = useId();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const compact = useUIStore((s) => s.compactMode.metrics);
   const metricsDetached = useUIStore((s) => s.metricsDetached);
@@ -228,10 +230,10 @@ export function MetricsWorkspace() {
     [setSearchParams],
   );
 
-  // Optimize deep links resolve through findingTarget — the same predicate
-  // SavingsCard uses to decide whether a row is a button — so a clickable
-  // finding always has somewhere to land. Filters are cleared so the target
-  // row is never hidden by an active facet.
+  // Optimize deep links resolve through findingTarget, the same predicate
+  // SavingsCard uses to decide whether a finding's title is a button, so a
+  // clickable title always has somewhere to land. Filters are cleared so the
+  // target row is never hidden by an active facet.
   const openFinding = useCallback(
     (finding: OptimizeFinding) => {
       const target = findingTarget(finding);
@@ -239,6 +241,12 @@ export function MetricsWorkspace() {
     },
     [openInScope],
   );
+
+  const openAllFindings = useCallback(() => {
+    useStackStore.getState().selectNode(GATEWAY_NODE_ID);
+    useUIStore.getState().setSidebarOpen(true);
+    navigate('/stack');
+  }, [navigate]);
 
   const [isPaused, setIsPaused] = useState(false);
   const [serverSort, setServerSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'total', dir: 'desc' });
@@ -584,7 +592,13 @@ export function MetricsWorkspace() {
 
                 {scope === 'overview' && <LimitsPanel summary={limitsSummary} />}
 
-                {scope === 'overview' && <SavingsCard report={optimizeReport} onOpenFinding={openFinding} />}
+                {scope === 'overview' && (
+                  <SavingsCard
+                    report={optimizeReport}
+                    onOpenFinding={openFinding}
+                    onOpenAllFindings={openAllFindings}
+                  />
+                )}
 
                 {/* Top-5 previews jump into the full scope on row click or
                     View all. Hard-capped at five rows and session-scoped like
