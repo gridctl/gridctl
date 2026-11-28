@@ -380,17 +380,42 @@ describe('LogsWorkspace follow-tail', () => {
     expect(pill()).toBe(status);
     expect(status).toHaveTextContent(/^Live · not following$/);
     expect(jump()).toHaveTextContent(/^Jump to latest$/);
-    const label = jump()!.textContent;
+
+    const later: LogEntry = { ...gatewayEntry, ts: '2026-07-23T10:00:09Z', msg: 'arrived later' };
+    vi.mocked(fetchGatewayLogs).mockResolvedValue(envelope([gatewayEntry, githubEntry, zapierEntry, later]));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await screen.findByText('arrived later');
+    expect(jump()).toHaveTextContent(/^1 new · Jump to latest$/);
 
     fireEvent.click(screen.getByRole('button', { name: 'Pause live updates' }));
     expect(pill()).toBe(status);
     expect(status).toHaveTextContent(/^Paused$/);
-    expect(jump()!.textContent).toBe(label);
+    expect(jump()).toHaveTextContent(/^1 new · Jump to latest$/);
 
     fireEvent.click(jump()!);
     expect(pill()).toBe(status);
     expect(status).toHaveTextContent(/^Paused$/);
     expect(jump()).toBeNull();
+  });
+
+  it('reads Live with no button while a refresh fails, and restores not following on recovery', async () => {
+    renderAt('/logs');
+    await screen.findByText('gateway listening');
+    scrollUp();
+    expect(pill()).toHaveTextContent('Live · not following');
+
+    vi.mocked(fetchGatewayLogs).mockRejectedValue(new Error('Gateway connection unavailable'));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await screen.findByRole('alert');
+    expect(screen.getByText('gateway listening')).toBeInTheDocument();
+    expect(pill()).toHaveTextContent(/^Live$/);
+    expect(jump()).toBeNull();
+
+    vi.mocked(fetchGatewayLogs).mockResolvedValue(envelope([gatewayEntry, githubEntry, zapierEntry]));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(pill()).toHaveTextContent(/^Live · not following$/);
+    expect(jump()).not.toBeNull();
   });
 
   it('follows again after the list empties while not following and refills', async () => {

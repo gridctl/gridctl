@@ -148,6 +148,25 @@ describe('LogStream follow-tail', () => {
     expect(el.scrollTop).toBe(1000);
   });
 
+  it('resumes following on the virtualized path past 200 entries', () => {
+    render(<Harness logs={makeLogs(250)} />);
+    const el = scroller();
+    scrollUp(el);
+    expect(screen.getByTestId('following')).toHaveTextContent('false');
+    const grid = screen.getByRole('grid', { name: 'Log entries' });
+    const focus = vi.spyOn(grid, 'focus');
+    fireEvent.click(jumpButton()!);
+    expect(screen.getByTestId('following')).toHaveTextContent('true');
+    expect(jumpButton()).toBeNull();
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+
+    scrollUp(el);
+    expect(jumpButton()).not.toBeNull();
+    fireEvent.keyDown(document, { key: 'End' });
+    expect(screen.getByTestId('following')).toHaveTextContent('true');
+    expect(jumpButton()).toBeNull();
+  });
+
   it('clears the cursor and keeps the expanded row when resuming', () => {
     render(<Harness logs={makeLogs(5)} />);
     const el = scroller();

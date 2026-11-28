@@ -85,7 +85,7 @@ function isSelectedRow(el: Element): boolean {
  * or inside the element marked with listNavProps, so other controls and
  * scrollable panes keep their native keys. Enter additionally defers to a
  * focused control (button, link, row with a control role) so it activates
- * natively. j, k, '/', and Escape act from any non-text target.
+ * natively. j, k, 'G', '/', and Escape act from any non-text target.
  *
  * When a key handled here moves the selection while a row marked with
  * listNavRowProps has focus, focus moves to the newly selected row of the
@@ -211,7 +211,7 @@ export function useListNav({
           else select(itemCount - 1);
           return;
         case 'G':
-          if (onEnd && scoped) {
+          if (onEnd) {
             e.preventDefault();
             onEnd();
           }

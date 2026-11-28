@@ -473,6 +473,7 @@ function EndHarness({ onEnd }: { onEnd?: () => void }) {
     <>
       <div data-testid="index">{index}</div>
       <input data-testid="input" />
+      <button data-testid="outside">Pause</button>
       <div {...listNavProps} />
     </>
   );
@@ -503,6 +504,17 @@ describe('useListNav — onEnd', () => {
     expect(getIndex()).toBe(0);
     fireEvent.keyDown(document, { key: 'End' });
     expect(getIndex()).toBe(2);
+  });
+
+  it('runs G from a focused control outside the list, but not End', () => {
+    const onEnd = vi.fn();
+    render(<EndHarness onEnd={onEnd} />);
+    const outside = screen.getByTestId('outside');
+    outside.focus();
+    expect(fireEvent.keyDown(outside, { key: 'End' })).toBe(true);
+    expect(onEnd).not.toHaveBeenCalled();
+    expect(fireEvent.keyDown(outside, { key: 'G', shiftKey: true })).toBe(false);
+    expect(onEnd).toHaveBeenCalledTimes(1);
   });
 
   it('ignores End and G in a text input', () => {

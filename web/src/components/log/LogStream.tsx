@@ -126,8 +126,9 @@ export function LogStream({
   // follow suspends, so polls while following cost no extra render.
   const tailRef = useRef<LogTailAnchor | null>(null);
   const [anchor, setAnchor] = useState<LogTailAnchor | null>(null);
-  // Set while our own pin-to-bottom scrolls, so its scroll events (and the
-  // virtualizer's follow-up corrections in the same frame) never suspend.
+  // Set by our own pin-to-bottom until the first scroll event or the next
+  // frame, so that event never suspends. Later virtualizer corrections rely
+  // on the upward-direction rule in handleScroll.
   const pinningRef = useRef(false);
   const lastScrollTopRef = useRef(0);
 

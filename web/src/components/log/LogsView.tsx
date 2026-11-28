@@ -68,13 +68,14 @@ export function LogsView({
   const trailing = (
     <div className="flex items-center gap-1 flex-shrink-0">
       {/* Live / paused state. The status wrapper stays mounted so a change
-          of pill is announced. */}
+          of pill is announced. A failed refresh hides the jump button, so
+          the pill does not claim "not following" until polls recover. */}
       <span role="status" className="flex items-center">
         {view.isPaused ? (
           <span className="text-3xs px-2 py-0.5 bg-status-pending/15 text-status-pending rounded-full font-medium border border-status-pending/20">
             Paused
           </span>
-        ) : following ? (
+        ) : following || view.error ? (
           <span className="flex items-center gap-1 text-3xs text-status-running font-medium">
             <span className="w-1.5 h-1.5 rounded-full bg-status-running animate-pulse motion-reduce:animate-none" />
             Live
