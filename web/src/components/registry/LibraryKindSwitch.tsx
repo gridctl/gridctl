@@ -34,7 +34,7 @@ export function LibraryKindSwitch({
   const fetched = usePendingProposalCount(pendingProposals === undefined);
   const pending = pendingProposals ?? fetched ?? 0;
   return (
-    <div className={SEGMENT_GROUP_CLASS} role="group" aria-label="Library catalog kind">
+    <div className={cn(SEGMENT_GROUP_CLASS, 'flex-wrap')} role="group" aria-label="Library catalog kind">
       {KIND_OPTIONS.map((opt) => (
         <button
           key={opt.key}
