@@ -464,7 +464,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 #### `GET /api/tools/usage`
 
-Returns per-(server, tool) usage observed by the gateway: cumulative call count, last-called timestamp, and token counts. Powers the Tools workspace **Audit Mode** (which separates actively-used, configured-but-unused, and disabled tools), the Tools detail panel's Usage section, and the Metrics workspace's Tools scope.
+Returns per-(server, tool) usage observed by the gateway: cumulative call count, last-called timestamp, and token counts. Powers the Tools workspace **Audit Mode** (which separates actively-used, configured-but-unused, and disabled tools), the Tools detail panel's Usage section, and the Metrics workspace's Tools scope and the Calls, Avg/call, and Last used columns of its Servers table.
 
 Usage is recorded for both direct tool calls and tools invoked through code mode's `execute` (both flow through the same observer). For servers with metrics persistence enabled, the data is restored from disk on startup so it survives gateway restarts; otherwise it reflects activity since the last gateway start.
 

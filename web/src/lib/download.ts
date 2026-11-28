@@ -15,6 +15,10 @@ export function logExportFilename(format: 'jsonl' | 'txt'): string {
   return `gridctl-logs-${new Date().toISOString().slice(0, 19).replaceAll(':', '-')}.${format}`;
 }
 
+export function metricsExportFilename(kind: 'tools' | 'servers' | 'clients'): string {
+  return `gridctl-metrics-${kind}-${new Date().toISOString().slice(0, 19).replaceAll(':', '-')}.csv`;
+}
+
 export function pinsDiffExportFilename(server: string): string {
   return `gridctl-pins-diff-${server}-${new Date().toISOString().slice(0, 19).replaceAll(':', '-')}.json`;
 }
