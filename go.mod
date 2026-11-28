@@ -22,7 +22,7 @@ require (
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/gowebpki/jcs v1.0.2
-	github.com/jedib0t/go-pretty/v6 v6.9.2
+	github.com/jedib0t/go-pretty/v6 v6.9.3
 	github.com/mattn/go-isatty v0.0.24
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/opencontainers/image-spec v1.1.1
