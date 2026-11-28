@@ -50,8 +50,13 @@ interface UseMetricsSeriesResult {
   error: string | null;
   /** Epoch ms of the last successful load; 0 before the first. */
   lastLoadedAt: number;
-  reload: () => void;
-  clear: () => Promise<void>;
+  /** Resolves true when fresh data was applied, false on failure or a stale generation. */
+  reload: () => Promise<boolean>;
+  /**
+   * Rejects when the DELETE fails, before any state changes. On success the
+   * series reload and `followUp` start together; a follow-up failure is ignored.
+   */
+  clear: (followUp?: () => Promise<unknown>) => Promise<void>;
 }
 
 // useMetricsSeries owns the token time-series polling shared by the Metrics
@@ -77,21 +82,23 @@ export function useMetricsSeries({
   // (including the mount/range effect) never trigger a cascading render. The
   // skeleton is gated on `!metricsData`, so once data lands it never reappears
   // on a background refresh anyway; explicit reloads flip the flag themselves.
-  const loadMetrics = useCallback(async () => {
+  const loadMetrics = useCallback(async (): Promise<boolean> => {
     const current = () => useAuthStore.getState().generation === generation && !useAuthStore.getState().authRequired;
-    if (!current()) return;
+    if (!current()) return false;
     try {
       const data = await fetchTokenMetrics(apiRange);
-      if (!current()) return;
+      if (!current()) return false;
       setMetricsData(data);
       setLastLoadedAt(Date.now());
       setError(null);
       setErrorRange(null);
+      return true;
     } catch (err) {
       if (current()) {
         setError(err instanceof Error ? err.message : 'Failed to fetch metrics');
         setErrorRange(apiRange);
       }
+      return false;
     } finally {
       if (current()) setIsLoading(false);
     }
@@ -112,16 +119,15 @@ export function useMetricsSeries({
     immediate: false,
   });
 
-  const reload = useCallback(() => {
-    void loadMetrics();
-  }, [loadMetrics]);
+  const reload = useCallback(() => loadMetrics(), [loadMetrics]);
 
-  const clear = useCallback(async () => {
+  const clear = useCallback(async (followUp?: () => Promise<unknown>) => {
     await clearTokenMetrics();
     if (useAuthStore.getState().generation !== generation) return;
     setMetricsData(null);
     setIsLoading(true);
-    void loadMetrics();
+    // Started together so the snapshot-fed tables do not trail the series.
+    await Promise.allSettled([loadMetrics(), (async () => followUp?.())()]);
   }, [loadMetrics, generation]);
 
   // The API echoes the requested range, so a response held over from a

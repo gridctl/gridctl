@@ -929,7 +929,7 @@ export async function clearTokenMetrics(): Promise<void> {
   }
 
   if (!response.ok) {
-    throw new Error(`Clear metrics failed: ${response.status} ${response.statusText}`);
+    throw new HTTPError(response.status, `${response.status} ${response.statusText}`);
   }
 }
 

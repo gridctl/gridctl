@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   AgentScanError,
+  clearTokenMetrics,
   ClientLinkError,
   ClientScopeError,
   HTTPError,
@@ -227,5 +228,29 @@ describe('describeError', () => {
     expect(described.fullDetail).toBe('disk   full  \nmore');
     expect(describeError(new Error(''), 'Save')).toEqual({ summary: 'Save failed', text: 'Save failed.' });
     expect(describeError(new Error('Error: '), 'Save').detail).toBeUndefined();
+  });
+});
+
+describe('clearTokenMetrics error framing', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('throws HTTPError on a non-OK response so describeError uses one prefix and the 5xx hint', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('', { status: 500, statusText: 'Internal Server Error' })),
+    );
+    let caught: unknown;
+    try {
+      await clearTokenMetrics();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(HTTPError);
+    const described = describeError(caught, 'Clear metrics');
+    expect(described.text).toBe(
+      'Clear metrics failed: 500 Internal Server Error. The gateway reported an error. Check gridctl logs.',
+    );
   });
 });

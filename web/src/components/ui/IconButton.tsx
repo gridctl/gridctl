@@ -17,6 +17,8 @@ interface IconButtonBase {
   hasPopup?: 'menu' | 'dialog';
   /** Rendered as aria-expanded alongside `hasPopup`. */
   expanded?: boolean;
+  /** Extra classes for the glyph. */
+  iconClassName?: string;
 }
 
 type IconButtonProps = IconButtonBase & (
@@ -48,6 +50,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
   spinning,
   hasPopup,
   expanded,
+  iconClassName,
 }, ref) {
   const accessibleName = ariaLabel ?? tooltip;
   const sizeClasses = {
@@ -90,7 +93,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
         className
       )}
     >
-      <Icon size={iconSize} aria-hidden="true" className={spinning ? 'animate-spin' : undefined} />
+      <Icon size={iconSize} aria-hidden="true" className={cn(spinning && 'animate-spin', iconClassName) || undefined} />
     </button>
   );
 });

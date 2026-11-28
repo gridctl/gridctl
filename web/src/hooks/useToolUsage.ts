@@ -17,6 +17,8 @@ export interface ToolUsageState {
   // "now" so the clock read stays out of render (React purity) and matches
   // the snapshot it compares against. null until the first successful load.
   fetchedAt: number | null;
+  // One fetch now, outside the poll schedule. Never rejects.
+  reload: () => Promise<void>;
 }
 
 // useToolUsage fetches GET /api/tools/usage and refreshes it on an interval
@@ -52,5 +54,5 @@ export function useToolUsage(enabled: boolean): ToolUsageState {
 
   useInterval(load, USAGE_POLL_MS, { enabled: enabled && !authRequired });
 
-  return { usage, error, fetchedAt };
+  return { usage, error, fetchedAt, reload: load };
 }

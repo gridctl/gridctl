@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter } from 'react-router';
 import { DetachedMetricsPage } from '../pages/DetachedMetricsPage';
@@ -19,6 +19,7 @@ vi.mock('../lib/api', async (importActual) => {
     fetchStatus: vi.fn(),
     fetchToolUsage: vi.fn(),
     fetchLimits: vi.fn(),
+    clearTokenMetrics: vi.fn(),
   };
 });
 
@@ -32,7 +33,8 @@ vi.mock('../lib/download', async (importActual) => {
   return { ...actual, downloadTextFile: vi.fn() };
 });
 
-import { fetchLimits, fetchStatus, fetchTokenMetrics, fetchToolUsage } from '../lib/api';
+import { clearTokenMetrics, fetchLimits, fetchStatus, fetchTokenMetrics, fetchToolUsage, HTTPError } from '../lib/api';
+import { showToast } from '../components/ui/Toast';
 import { downloadTextFile } from '../lib/download';
 import type { GatewayStatus } from '../types';
 
@@ -270,5 +272,215 @@ describe('DetachedMetricsPage breakdown columns and export', () => {
     const rows = within(panel('Per-Server · session totals').querySelector('table')!).getAllByRole('row');
     const github = rows.find((r) => r.textContent?.startsWith('github'))!;
     await waitFor(() => expect(within(github).getAllByRole('cell')[2].textContent).toBe('11'));
+  });
+});
+
+describe('DetachedMetricsPage clear feedback', () => {
+  const createdToastIds: string[] = [];
+
+  afterEach(async () => {
+    const actualToast = await vi.importActual<typeof import('../components/ui/Toast')>('../components/ui/Toast');
+    for (const id of createdToastIds.splice(0)) actualToast.dismissToast(id);
+    vi.mocked(showToast).mockReset();
+    statusOverride.current = null;
+  });
+
+  it('shows a failed clear as a visible toast and keeps the session line', async () => {
+    // Route the mock to the real store so the frame's container renders it.
+    const actualToast = await vi.importActual<typeof import('../components/ui/Toast')>('../components/ui/Toast');
+    vi.mocked(showToast).mockImplementation((type, message, options) => {
+      const id = actualToast.showToast(type, message, options);
+      createdToastIds.push(id);
+      return id;
+    });
+    statusOverride.current = {
+      status: {
+        'mcp-servers': [],
+        token_usage: {
+          session: { input_tokens: 100, output_tokens: 40, total_tokens: 140 },
+          per_server: {},
+          per_client: {},
+          format_savings: { original_tokens: 0, formatted_tokens: 0, saved_tokens: 0, savings_percent: 0 },
+        },
+      } as unknown as GatewayStatus,
+      source: 'self',
+      settled: true,
+      error: null,
+      refresh: vi.fn(() => Promise.resolve()),
+    };
+    vi.mocked(fetchTokenMetrics).mockImplementation((range = '30m') => Promise.resolve({ ...seeded, range }));
+    vi.mocked(clearTokenMetrics).mockRejectedValue(new HTTPError(500, '500 Internal Server Error'));
+    renderPage();
+    expect((await screen.findAllByText(/Session total: 140 tokens/)).length).toBeGreaterThan(0);
+    const fetches = vi.mocked(fetchTokenMetrics).mock.calls.length;
+
+    fireEvent.click(screen.getByTitle('Clear Metrics'));
+    const dialog = await screen.findByRole('alertdialog', { name: /clear all metrics/i });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Clear' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Clear metrics failed');
+    expect(screen.getAllByText(/Session total: 140 tokens/).length).toBeGreaterThan(0);
+    expect(screen.getByText('1.8k')).toBeInTheDocument();
+    expect(vi.mocked(fetchTokenMetrics).mock.calls.length).toBe(fetches);
+  });
+
+  it('refreshes status and tool usage on Refresh and refetches the series on Resume', async () => {
+    const refreshStatus = vi.fn(() => Promise.resolve());
+    statusOverride.current = {
+      status: {
+        'mcp-servers': [],
+        token_usage: {
+          session: { input_tokens: 100, output_tokens: 40, total_tokens: 140 },
+          per_server: {},
+          per_client: {},
+          format_savings: { original_tokens: 0, formatted_tokens: 0, saved_tokens: 0, savings_percent: 0 },
+        },
+      } as unknown as GatewayStatus,
+      source: 'self',
+      settled: true,
+      error: null,
+      refresh: refreshStatus,
+    };
+    vi.mocked(fetchTokenMetrics).mockImplementation((range = '30m') => Promise.resolve({ ...seeded, range }));
+    renderPage();
+    await screen.findByText('1.8k');
+    await waitFor(() => expect(fetchToolUsage).toHaveBeenCalledTimes(1));
+
+    const fetchesBeforeRefresh = vi.mocked(fetchTokenMetrics).mock.calls.length;
+    fireEvent.click(screen.getByTitle('Refresh'));
+    expect(await screen.findByText('Metrics refreshed')).toBeInTheDocument();
+    expect(refreshStatus).toHaveBeenCalledTimes(1);
+    expect(fetchToolUsage).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(fetchTokenMetrics).mock.calls.length).toBe(fetchesBeforeRefresh + 1);
+
+    const fetchesBeforePause = vi.mocked(fetchTokenMetrics).mock.calls.length;
+    fireEvent.click(screen.getByTitle('Pause live updates'));
+    expect(vi.mocked(fetchTokenMetrics).mock.calls.length).toBe(fetchesBeforePause);
+    fireEvent.click(screen.getByTitle('Resume live updates'));
+    await waitFor(() => expect(vi.mocked(fetchTokenMetrics).mock.calls.length).toBe(fetchesBeforePause + 1));
+  });
+
+  it('holds the session line and tables while paused on Live and updates on Refresh, Clear, Resume, and range switch', async () => {
+    const statusWith = (total: number, serverTotal: number): GatewayStatus =>
+      ({
+        'mcp-servers': [{ name: 'github' }],
+        token_usage: {
+          session: { input_tokens: total, output_tokens: 0, total_tokens: total },
+          per_server: serverTotal > 0 ? { github: { input_tokens: serverTotal, output_tokens: 0, total_tokens: serverTotal } } : {},
+          per_client: {},
+          format_savings: { original_tokens: 0, formatted_tokens: 0, saved_tokens: 0, savings_percent: 0 },
+        },
+      }) as unknown as GatewayStatus;
+
+    let refreshNext: GatewayStatus | null = null;
+    const refreshStatus = vi.fn(async () => {
+      if (refreshNext && statusOverride.current) {
+        statusOverride.current = { ...statusOverride.current, status: refreshNext };
+      }
+    });
+    statusOverride.current = {
+      status: statusWith(140, 80),
+      source: 'self',
+      settled: true,
+      error: null,
+      refresh: refreshStatus,
+    };
+    vi.mocked(fetchTokenMetrics).mockImplementation((range = '30m') => Promise.resolve({ ...seeded, range }));
+    vi.mocked(clearTokenMetrics).mockResolvedValue(undefined);
+
+    const toolData = {
+      servers: {
+        github: {
+          create_issue: { calls: 4, inputTokens: 120, outputTokens: 80 },
+        },
+      },
+    };
+    let resolveInitialToolUsage: (value: typeof toolData) => void = () => {};
+    vi.mocked(fetchToolUsage)
+      .mockImplementationOnce(
+        () => new Promise((resolve) => {
+          resolveInitialToolUsage = resolve;
+        }),
+      )
+      .mockResolvedValue(toolData);
+
+    const { rerender } = renderPage();
+    expect((await screen.findAllByText(/Session total: 140 tokens/)).length).toBeGreaterThan(0);
+
+    // Pause on Live: later status and tool-usage updates stay held until Refresh or Resume.
+    fireEvent.click(screen.getByTitle('Pause live updates'));
+    expect(screen.getByText('Session total: 140 tokens (paused)')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveInitialToolUsage(toolData);
+      await Promise.resolve();
+    });
+    statusOverride.current = { ...statusOverride.current, status: statusWith(500, 320) };
+    rerender(
+      <MemoryRouter>
+        <DetachedMetricsPage />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Session total: 140 tokens (paused)')).toBeInTheDocument();
+    expect(screen.queryByText(/Session total: 500 tokens/)).not.toBeInTheDocument();
+    expect(screen.queryByText('create_issue')).not.toBeInTheDocument();
+
+    // Refresh while paused applies the updates once and stays paused.
+    fireEvent.click(screen.getByTitle('Refresh'));
+    expect(await screen.findByText('Session total: 500 tokens (paused)')).toBeInTheDocument();
+    expect(screen.getByText('create_issue')).toBeInTheDocument();
+
+    statusOverride.current = { ...statusOverride.current, status: statusWith(900, 600) };
+    rerender(
+      <MemoryRouter>
+        <DetachedMetricsPage />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Session total: 500 tokens (paused)')).toBeInTheDocument();
+
+    // Clear while paused releases the hold once and stays paused.
+    refreshNext = statusWith(0, 0);
+    vi.mocked(fetchToolUsage).mockResolvedValue({ servers: {} });
+    vi.mocked(fetchTokenMetrics).mockImplementation((range = '30m') =>
+      Promise.resolve({ range, interval: '1m', data_points: [], per_server: {} }),
+    );
+    fireEvent.click(screen.getByTitle('Clear Metrics'));
+    const dialog = await screen.findByRole('alertdialog', { name: /clear all metrics/i });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Clear' }));
+    expect(await screen.findByText('No data (paused)')).toBeInTheDocument();
+    expect(screen.queryByText('create_issue')).not.toBeInTheDocument();
+    refreshNext = null;
+
+    // Restore data for Resume and non-live range checks.
+    vi.mocked(fetchTokenMetrics).mockImplementation((range = '30m') => Promise.resolve({ ...seeded, range }));
+    statusOverride.current = { ...statusOverride.current, status: statusWith(700, 400) };
+    rerender(
+      <MemoryRouter>
+        <DetachedMetricsPage />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('No data (paused)')).toBeInTheDocument();
+
+    // Switching to a non-live range drops both the hold and the (paused) footer suffix.
+    fireEvent.click(screen.getByRole('button', { name: '1h' }));
+    expect(await screen.findByText('Session total: 700 tokens')).toBeInTheDocument();
+    expect(screen.queryByText(/\(paused\)/)).not.toBeInTheDocument();
+
+    // Returning to Live clears pause; pausing again and resuming adopts latest.
+    fireEvent.click(screen.getByRole('button', { name: 'Live' }));
+    fireEvent.click(screen.getByTitle('Pause live updates'));
+    expect(screen.getByText('Session total: 700 tokens (paused)')).toBeInTheDocument();
+    statusOverride.current = { ...statusOverride.current, status: statusWith(820, 500) };
+    rerender(
+      <MemoryRouter>
+        <DetachedMetricsPage />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Session total: 700 tokens (paused)')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle('Resume live updates'));
+    expect(await screen.findByText('Session total: 820 tokens')).toBeInTheDocument();
+    expect(screen.queryByText(/\(paused\)/)).not.toBeInTheDocument();
   });
 });

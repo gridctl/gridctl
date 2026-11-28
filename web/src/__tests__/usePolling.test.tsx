@@ -3,7 +3,13 @@ import type { ReactNode } from 'react';
 import '@testing-library/jest-dom';
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router';
-import { requestGatewayPoll, resetPinAlertBaseline, usePolling, usePollingRefresh } from '../hooks/usePolling';
+import {
+  requestGatewayPoll,
+  resetPinAlertBaseline,
+  usePolling,
+  usePollingRefresh,
+  usePollingStatusRefresh,
+} from '../hooks/usePolling';
 import * as api from '../lib/api';
 import { HTTPError } from '../lib/api';
 import { GatewayRequestError } from '../lib/gatewayRequest';
@@ -81,6 +87,79 @@ describe('usePolling retry registration', () => {
     const after = vi.mocked(api.fetchStatus).mock.calls.length;
     requestGatewayPoll();
     expect(api.fetchStatus).toHaveBeenCalledTimes(after);
+  });
+
+  it('refreshes only the fast status lane via usePollingStatusRefresh and resolves when unmounted', async () => {
+    stubPoll();
+    const unmounted = renderHook(() => usePollingStatusRefresh(), { wrapper });
+    await expect(unmounted.result.current()).resolves.toBeUndefined();
+    expect(api.fetchStatus).not.toHaveBeenCalled();
+
+    useAuthStore.setState({ authRequired: false, generation: Symbol() });
+    const poller = renderHook(() => usePolling(), { wrapper });
+    await waitFor(() => expect(api.fetchStatus).toHaveBeenCalledTimes(1));
+    expect(api.fetchToolCatalog).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await unmounted.result.current();
+    });
+    expect(api.fetchStatus).toHaveBeenCalledTimes(2);
+    expect(api.fetchToolCatalog).toHaveBeenCalledTimes(1);
+
+    poller.unmount();
+    await expect(unmounted.result.current()).resolves.toBeUndefined();
+    expect(api.fetchStatus).toHaveBeenCalledTimes(2);
+    unmounted.unmount();
+  });
+
+  it('drops a stale in-flight status poll that resolves after usePollingStatusRefresh', async () => {
+    stubPoll();
+    const staleStatus = {
+      ...quietStatus,
+      token_usage: {
+        session: { input_tokens: 100, output_tokens: 40, total_tokens: 140 },
+        per_server: {},
+        per_client: {},
+        format_savings: { original_tokens: 0, formatted_tokens: 0, saved_tokens: 0, savings_percent: 0 },
+      },
+    } as Awaited<ReturnType<typeof api.fetchStatus>>;
+    const clearedStatus = {
+      ...quietStatus,
+      token_usage: {
+        session: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+        per_server: {},
+        per_client: {},
+        format_savings: { original_tokens: 0, formatted_tokens: 0, saved_tokens: 0, savings_percent: 0 },
+      },
+    } as Awaited<ReturnType<typeof api.fetchStatus>>;
+
+    let resolveStale: (value: Awaited<ReturnType<typeof api.fetchStatus>>) => void = () => {};
+    vi.mocked(api.fetchStatus)
+      .mockImplementationOnce(
+        () => new Promise((resolve) => {
+          resolveStale = resolve;
+        }),
+      )
+      .mockResolvedValueOnce(clearedStatus);
+
+    useAuthStore.setState({ authRequired: false, generation: Symbol() });
+    const poller = renderHook(() => usePolling(), { wrapper });
+    const statusRefresh = renderHook(() => usePollingStatusRefresh(), { wrapper });
+    await waitFor(() => expect(api.fetchStatus).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await statusRefresh.result.current();
+    });
+    expect(useStackStore.getState().tokenUsage?.session.total_tokens).toBe(0);
+
+    await act(async () => {
+      resolveStale(staleStatus);
+      await Promise.resolve();
+    });
+    expect(useStackStore.getState().tokenUsage?.session.total_tokens).toBe(0);
+
+    statusRefresh.unmount();
+    poller.unmount();
   });
 
   it('propagates a status connection failure to pins and the registry', async () => {

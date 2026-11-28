@@ -79,6 +79,14 @@ export function usePollingRefresh(): () => Promise<void> {
   return useCallback(() => refreshImpl?.() ?? Promise.resolve(), []);
 }
 
+// Status snapshot only (the fast lane), for surfaces that must show the
+// effect of a write without waiting for the next tick.
+let statusRefreshImpl: (() => Promise<void>) | null = null;
+
+export function usePollingStatusRefresh(): () => Promise<void> {
+  return useCallback(() => statusRefreshImpl?.() ?? Promise.resolve(), []);
+}
+
 function failureMessage(err: unknown): string {
   return err instanceof Error ? err.message : 'Unknown error';
 }
@@ -94,6 +102,7 @@ function pageVisible(): boolean {
 export function usePolling(_options?: { registerRetry?: boolean }) {
   const navigate = useGuardedNavigate();
   const startedRef = useRef(false);
+  const fastSeqRef = useRef(0);
   const slowRunning = useRef(false);
   const slowInFlight = useRef<Promise<void> | null>(null);
   const runSlowRef = useRef<() => Promise<void>>(async () => {});
@@ -134,8 +143,12 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
 
   const runFast = useCallback(async () => {
     const generation = useAuthStore.getState().generation;
-    const current = () => useAuthStore.getState().generation === generation && !useAuthStore.getState().authRequired;
-    if (!current()) return;
+    const authCurrent = () => useAuthStore.getState().generation === generation && !useAuthStore.getState().authRequired;
+    if (!authCurrent()) return;
+    // Monotonic sequence so an older in-flight timer poll cannot overwrite a
+    // newer status refresh (for example after clearing metrics).
+    const seq = ++fastSeqRef.current;
+    const current = () => authCurrent() && fastSeqRef.current === seq;
     if (!startedRef.current) {
       startedRef.current = true;
       setLoading(true);
@@ -179,7 +192,7 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
       // Wait out a slow cycle that started during the outage, then run a
       // fresh one. The in-flight guard makes the second start a no-op when
       // a post-recovery cycle is already running.
-      if (recoverInventory) {
+      if (recoverInventory && current()) {
         void (async () => {
           try {
             const inflight = slowInFlight.current;
@@ -444,6 +457,13 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
       if (refreshImpl === refresh) refreshImpl = null;
     };
   }, [refresh]);
+
+  useEffect(() => {
+    statusRefreshImpl = runFast;
+    return () => {
+      if (statusRefreshImpl === runFast) statusRefreshImpl = null;
+    };
+  }, [runFast]);
 
   useEffect(() => {
     if (authRequired) startedRef.current = false;

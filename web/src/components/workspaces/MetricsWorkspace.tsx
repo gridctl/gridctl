@@ -9,6 +9,8 @@ import { useStackStore } from '../../stores/useStackStore';
 import { useWindowManager } from '../../hooks/useWindowManager';
 import { useListNav } from '../../hooks/useListNav';
 import { useToolUsage } from '../../hooks/useToolUsage';
+import { useHeldValue } from '../../hooks/useHeldValue';
+import { usePollingStatusRefresh } from '../../hooks/usePolling';
 import { useLimits } from '../../hooks/useLimits';
 import { useOptimize } from '../../hooks/useOptimize';
 import {
@@ -96,7 +98,7 @@ export function MetricsWorkspace() {
   const compact = useUIStore((s) => s.compactMode.metrics);
   const metricsDetached = useUIStore((s) => s.metricsDetached);
 
-  const tokenUsage = useStackStore((s) => s.tokenUsage);
+  const liveTokenUsage = useStackStore((s) => s.tokenUsage);
   const mcpServers = useStackStore((s) => s.mcpServers);
 
   const { openDetachedWindow, focusDetachedWindow } = useWindowManager();
@@ -242,8 +244,13 @@ export function MetricsWorkspace() {
   const [serverSort, setServerSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'total', dir: 'desc' });
   const [clientSort, setClientSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'total', dir: 'desc' });
   const [toolSort, setToolSort] = useState<{ col: BreakdownSortColumn; dir: SortDirection }>({ col: 'total', dir: 'desc' });
-  // Polite announcement for range/refresh, read by screen readers.
+  // Polite announcement for range changes, read by screen readers.
   const [liveMsg, setLiveMsg] = useState('');
+  // Pause holds the snapshot-fed tables with the chart. Only Live is held:
+  // isPaused survives a switch to another range, which shows no Pause control.
+  const holdTables = isPaused && timeRange === 'live';
+  const [tablesEpoch, setTablesEpoch] = useState(0);
+  const refreshStatus = usePollingStatusRefresh();
 
   const { metricsData, error, lastLoadedAt, reload, clear } = useMetricsSeries({
     timeRange,
@@ -255,7 +262,9 @@ export function MetricsWorkspace() {
   // Per-tool usage powers the Tools scope (and its rail count badge), so the
   // poll runs whenever the workspace is mounted — same 15s cadence Audit Mode
   // uses, against the same single per-tool data source.
-  const { usage: toolUsageData, error: toolUsageError } = useToolUsage(true);
+  const { usage: liveToolUsage, error: toolUsageError, reload: reloadToolUsage } = useToolUsage(true);
+  const tokenUsage = useHeldValue(liveTokenUsage, holdTables, tablesEpoch);
+  const toolUsageData = useHeldValue(liveToolUsage, holdTables, tablesEpoch);
 
   // Rate-limit state feeds the Limits panel. A stack without a limits: block
   // reports configured: false and renders nothing anywhere.
@@ -382,7 +391,7 @@ export function MetricsWorkspace() {
   // series keeps the fleet chart + an honest note instead of a flat zero
   // line (see the zero-fill note in metricsData: zeros are only real when the
   // entity has at least one bucket in the window).
-  const focusedName = selectedRow && (scope === 'servers' || scope === 'clients') ? selectedRow.name : null;
+  const focusedName = selectedRow && scope === 'servers' ? selectedRow.name : null;
   const focusHasTokens = focusedName !== null && (inspectorTokenPoints?.length ?? 0) > 0;
   const focusedTokenChartData = useMemo(
     () => (focusHasTokens && inspectorTokenPoints ? buildFocusedTokenChartData(metricsData, inspectorTokenPoints) : []),
@@ -413,7 +422,7 @@ export function MetricsWorkspace() {
     focusNote = 'Charts show the whole stack; per-tool time series is not recorded yet.';
   } else if (focusedName && scope === 'servers' && !focusHasTokens) {
     focusNote = `No samples for ${focusedName} in this window. The chart shows the whole stack as context.`;
-  } else if (focusedName && scope === 'clients') {
+  } else if (selectedRow && scope === 'clients') {
     focusNote = 'The chart shows the whole stack; per-client token series is not recorded.';
   }
 
@@ -444,6 +453,24 @@ export function MetricsWorkspace() {
     setTimeRange(r);
     if (r === 'live') setIsPaused(false);
     setLiveMsg(`Showing ${r === 'live' ? 'live' : r} metrics`);
+  };
+
+  const onTogglePause = () => {
+    // The series poll does not fire when re-enabled, so Resume fetches now to
+    // keep the chart in step with the released tables.
+    if (isPaused) void reload();
+    setIsPaused(!isPaused);
+  };
+
+  const onRefresh = async () => {
+    const [ok] = await Promise.all([reload(), refreshStatus(), reloadToolUsage()]);
+    setTablesEpoch((n) => n + 1);
+    return ok;
+  };
+
+  const onClear = async () => {
+    await clear(() => Promise.all([refreshStatus(), reloadToolUsage()]));
+    setTablesEpoch((n) => n + 1);
   };
 
   return (
@@ -477,12 +504,9 @@ export function MetricsWorkspace() {
                 timeRange={timeRange}
                 onTimeRange={onTimeRange}
                 isPaused={isPaused}
-                onTogglePause={() => setIsPaused((p) => !p)}
-                onRefresh={() => {
-                  reload();
-                  setLiveMsg('Metrics refreshed');
-                }}
-                onClear={() => void clear()}
+                onTogglePause={onTogglePause}
+                onRefresh={onRefresh}
+                onClear={onClear}
                 right={(
                   <PopoutButton
                     onClick={() => (metricsDetached ? focusDetachedWindow('metrics') : openDetachedWindow('metrics'))}
@@ -529,7 +553,7 @@ export function MetricsWorkspace() {
               <div className="space-y-4 max-w-7xl">
                 <PersistedFromMarker serverName={null} signal="metrics" />
                 <MetricsKpiRow kpis={kpis} windowTotals={windowTotals} windowLabel={windowLabel} focusLine={focusLine} />
-                {focusedName && (
+                {focusedName && focusHasTokens && (
                   <button
                     type="button"
                     onClick={() => setSelected(null)}
