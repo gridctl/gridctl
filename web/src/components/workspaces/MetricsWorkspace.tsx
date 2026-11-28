@@ -435,6 +435,8 @@ export function MetricsWorkspace() {
       row={inspectorRow}
       onClose={() => setSelected(null)}
       tokenPoints={inspectorTokenPoints}
+      range={metricsData?.range}
+      interval={metricsData?.interval}
     />
   );
 

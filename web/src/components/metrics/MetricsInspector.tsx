@@ -1,10 +1,11 @@
+import { useCallback } from 'react';
 import { X } from 'lucide-react';
 import { Link } from 'react-router';
 import { formatCompactNumber } from '../../lib/format';
 import { AreaChart } from '../chart/AreaChart';
 import { InspectorStat } from './metricsShared';
 import { PaneAnchor } from '../inspector';
-import { toTokenPoints, type BreakdownRow } from './metricsData';
+import { formatChartTick, formatChartTooltipTitle, toTokenPoints, type BreakdownRow } from './metricsData';
 import type { TokenDataPoint } from '../../types';
 
 export type MetricsInspectorScope = 'clients' | 'servers' | 'tools';
@@ -16,13 +17,19 @@ interface MetricsInspectorProps {
   onClose: () => void;
   // Per-entity series for the inspector sparkline, when available.
   tokenPoints?: TokenDataPoint[];
+  // Active time range and bucket interval from the loaded metrics series.
+  range?: string;
+  interval?: string;
 }
 
 // MetricsInspector is the workspace right rail: a per-entity detail view for
 // the selected client, server, or tool — the entity's KPI numbers plus a
 // per-entity token sparkline where a series exists. With nothing selected it
 // falls back to a short usage note.
-export function MetricsInspector({ scope, row, onClose, tokenPoints }: MetricsInspectorProps) {
+export function MetricsInspector({ scope, row, onClose, tokenPoints, range, interval }: MetricsInspectorProps) {
+  const formatTick = useCallback((value: string) => formatChartTick(value, range), [range]);
+  const formatTooltipLabel = useCallback((value: string) => formatChartTooltipTitle(value, interval), [interval]);
+
   if (!row) return <InspectorOverview />;
 
   const tokenSeries = toTokenPoints(tokenPoints ?? []);
@@ -97,6 +104,8 @@ export function MetricsInspector({ scope, row, onClose, tokenPoints }: MetricsIn
                 showGridLines={false}
                 showYAxis={false}
                 valueFormatter={(v: number) => formatCompactNumber(v)}
+                indexFormatter={formatTick}
+                tooltipLabelFormatter={formatTooltipLabel}
                 className="h-24"
               />
             </div>

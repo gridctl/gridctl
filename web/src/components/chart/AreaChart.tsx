@@ -40,31 +40,60 @@ interface LegendItemProps {
 }
 
 const LegendItem = ({ name, color, onClick, activeLegend }: LegendItemProps) => {
-  const hasOnValueChange = !!onClick
+  const dimmed = activeLegend && activeLegend !== name
+  const swatch = (
+    <span
+      className={cn(
+        "h-[3px] w-3.5 shrink-0 rounded-full",
+        getColorClassName(color, "bg"),
+        dimmed ? "opacity-40" : "opacity-100",
+      )}
+      aria-hidden={true}
+    />
+  )
+
+  if (onClick) {
+    return (
+      <li className="inline-flex">
+        <button
+          type="button"
+          aria-pressed={activeLegend === name}
+          onClick={(e) => {
+            e.stopPropagation()
+            onClick(name, color)
+          }}
+          className={cn(
+            "group inline-flex flex-nowrap items-center gap-1.5 rounded-sm px-2 py-1 whitespace-nowrap transition",
+            "cursor-pointer hover:bg-surface-highlight",
+            "focus-visible:outline-2 focus-visible:outline-primary",
+          )}
+        >
+          {swatch}
+          <span
+            className={cn(
+              "truncate text-xs whitespace-nowrap text-text-secondary group-hover:text-text-primary",
+              dimmed ? "opacity-40" : "opacity-100",
+            )}
+          >
+            {name}
+          </span>
+        </button>
+      </li>
+    )
+  }
+
   return (
     <li
-      className={cn(
-        "group inline-flex flex-nowrap items-center gap-1.5 rounded-sm px-2 py-1 whitespace-nowrap transition",
-        hasOnValueChange ? "cursor-pointer hover:bg-surface-highlight" : "cursor-default",
-      )}
+      className="group inline-flex flex-nowrap items-center gap-1.5 rounded-sm px-2 py-1 whitespace-nowrap transition cursor-default"
       onClick={(e) => {
         e.stopPropagation()
-        onClick?.(name, color)
       }}
     >
-      <span
-        className={cn(
-          "h-[3px] w-3.5 shrink-0 rounded-full",
-          getColorClassName(color, "bg"),
-          activeLegend && activeLegend !== name ? "opacity-40" : "opacity-100",
-        )}
-        aria-hidden={true}
-      />
+      {swatch}
       <p
         className={cn(
           "truncate text-xs whitespace-nowrap text-text-secondary",
-          hasOnValueChange && "group-hover:text-text-primary",
-          activeLegend && activeLegend !== name ? "opacity-40" : "opacity-100",
+          dimmed ? "opacity-40" : "opacity-100",
         )}
       >
         {name}
@@ -220,6 +249,8 @@ interface AreaChartProps extends React.HTMLAttributes<HTMLDivElement> {
   categories: string[]
   colors?: AvailableChartColorsKeys[]
   valueFormatter?: (value: number) => string
+  indexFormatter?: (value: string) => string
+  tooltipLabelFormatter?: (value: string) => string
   startEndOnly?: boolean
   showXAxis?: boolean
   showYAxis?: boolean
@@ -254,6 +285,8 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>((props, ref) 
     index,
     colors = AvailableChartColors,
     valueFormatter = (value: number) => value.toString(),
+    indexFormatter,
+    tooltipLabelFormatter,
     startEndOnly = false,
     showXAxis = true,
     showYAxis = true,
@@ -389,9 +422,11 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>((props, ref) 
             hide={!showXAxis}
             dataKey={index}
             interval={startEndOnly ? "preserveStartEnd" : intervalType}
-            tick={{ transform: "translate(0, 6)", fill: "var(--color-text-primary)" }}
+            // Recharts portals tick labels out of the axis group into a separate
+            // z-index layer, so text-xs must live on the tick object itself.
+            tick={{ transform: "translate(0, 6)", fill: "var(--color-text-primary)", className: "text-xs" }}
             ticks={startEndOnly ? [data[0][index], data[data.length - 1][index]] : undefined}
-            className="text-xs"
+            tickFormatter={indexFormatter ? (value: any) => indexFormatter(String(value)) : undefined}
             tickLine={false}
             axisLine={false}
             minTickGap={tickGap}
@@ -409,8 +444,8 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>((props, ref) 
             tickLine={false}
             type="number"
             domain={yAxisDomain as AxisDomain}
-            tick={{ transform: "translate(-3, 0)", fill: "var(--color-text-primary)" }}
-            className="text-xs"
+            // Recharts portals tick labels out of the axis group; keep text-xs on tick.
+            tick={{ transform: "translate(-3, 0)", fill: "var(--color-text-primary)", className: "text-xs" }}
             tickFormatter={type === "percent" ? valueToPercent : valueFormatter}
             allowDecimals={allowDecimals}
           >
@@ -452,13 +487,13 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>((props, ref) 
                 prevLabelRef.current = label
               }
 
-              return showTooltip && active ? (
-                CustomTooltip ? (
-                  <CustomTooltip active={active} payload={cleanPayload} label={label} />
-                ) : (
-                  <ChartTooltip active={active} payload={cleanPayload} label={label} valueFormatter={valueFormatter} />
-                )
-              ) : null
+              if (!showTooltip || !active) return null
+              const displayLabel = tooltipLabelFormatter ? tooltipLabelFormatter(label) : label
+              return CustomTooltip ? (
+                <CustomTooltip active={active} payload={cleanPayload} label={displayLabel} />
+              ) : (
+                <ChartTooltip active={active} payload={cleanPayload} label={displayLabel} valueFormatter={valueFormatter} />
+              )
             }}
           />
 
@@ -601,4 +636,4 @@ const AreaChart = React.forwardRef<HTMLDivElement, AreaChartProps>((props, ref) 
 
 AreaChart.displayName = "AreaChart"
 
-export { AreaChart, type AreaChartEventProps, type TooltipProps }
+export { AreaChart, Legend, type AreaChartEventProps, type TooltipProps }
