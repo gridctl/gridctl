@@ -59,6 +59,14 @@ const RIGHT_ID = 'right';
 
 const DRAWER_GUTTER_PX = 56;
 
+// react-resizable-panels widens each separator's hit region to
+// resizeTargetMinimumSize, which reaches (24 - 6) / 2 = 9 px past a 6 px
+// separator on coarse pointers. A press there starts a drag even over a
+// stacked button, so a docked toggle sits clear of it.
+const RESIZE_TARGET = { coarse: 24, fine: 16 };
+const SEPARATOR_PX = 6;
+const DOCKED_TOGGLE_INSET_PX = (RESIZE_TARGET.coarse - SEPARATOR_PX) / 2 + 1;
+
 const FOCUSABLE_SELECTOR = [
   'a[href]',
   'button:not([disabled])',
@@ -118,11 +126,13 @@ interface RailToggleProps {
   expanded: boolean;
   controls?: string;
   offsetPx: number;
+  /** Detached from the edge (docked beside a separator), so fully rounded. */
+  inset?: boolean;
   onToggle: () => void;
   buttonRef: React.RefObject<HTMLButtonElement | null>;
 }
 
-function RailToggle({ side, expanded, controls, offsetPx, onToggle, buttonRef }: RailToggleProps) {
+function RailToggle({ side, expanded, controls, offsetPx, inset, onToggle, buttonRef }: RailToggleProps) {
   const label = `${expanded ? 'Collapse' : 'Expand'} ${side} rail`;
   const shortcut = side === 'left' ? '[' : ']';
   const pointsLeft = (side === 'left') === expanded;
@@ -139,13 +149,14 @@ function RailToggle({ side, expanded, controls, offsetPx, onToggle, buttonRef }:
       aria-keyshortcuts={shortcut}
       style={side === 'left' ? { left: offsetPx } : { right: offsetPx }}
       className={cn(
-        // Sits below the separator grip dots, and above the separator so a
-        // click here never starts a resize drag.
+        // Sits below the separator grip dots.
         'absolute z-raised top-[calc(50%+1.75rem)] flex h-10 w-6 items-center justify-center',
         'bg-surface-elevated border border-border text-text-muted',
         'hover:bg-surface-highlight hover:text-text-primary transition-colors',
         'focus-visible:-outline-offset-2',
-        side === 'left' ? 'rounded-r-md border-l-0' : 'rounded-l-md border-r-0',
+        inset
+          ? 'rounded-md'
+          : side === 'left' ? 'rounded-r-md border-l-0' : 'rounded-l-md border-r-0',
       )}
     >
       <Icon size={14} aria-hidden="true" />
@@ -167,6 +178,11 @@ function RailToggle({ side, expanded, controls, offsetPx, onToggle, buttonRef }:
  * through its toggle, its key, or a `rightKey` change; Escape closes it, and
  * a press outside closes the left drawer. Rail content stays mounted in
  * every mode. A shell that has not been measured yet keeps both rails docked.
+ *
+ * A `rightKey` change opens the drawer one synchronous render after the
+ * commit that mounts the new rail content, so `autoFocus` in that content
+ * does not take focus in drawer mode (it does when docked). Opening through
+ * `rightKey` is not meant to move focus.
  */
 export function WorkspaceShell({
   workspace,
@@ -241,7 +257,11 @@ export function WorkspaceShell({
       const current = openRef.current;
       if (current === next) return;
       const { focus, returnFocus = true } = options;
-      if (current && returnFocus && containsFocus(current === 'left' ? leftHost : rightHost)) {
+      // The drawer container itself takes focus when its rail has nothing
+      // focusable, so the check covers the drawer as well as the host.
+      const drawer = (current === 'left' ? leftDrawerRef : rightDrawerRef).current;
+      const host = current === 'left' ? leftHost : rightHost;
+      if (current && returnFocus && ((drawer && containsFocus(drawer)) || containsFocus(host))) {
         pendingFocusRef.current = { side: current, target: 'toggle' };
       }
       if (next && focus) pendingFocusRef.current = { side: next, target: focus };
@@ -393,6 +413,32 @@ export function WorkspaceShell({
 
   const drawerClasses = 'absolute inset-y-0 z-header overflow-hidden bg-surface border-border';
 
+  // A docked toggle lives in the center pane, clear of the separator's hit
+  // region. An undocked toggle lives at the shell root so the center pane's
+  // overflow never clips it at an open drawer's inner edge.
+  const leftToggle = (
+    <RailToggle
+      side="left"
+      expanded={leftDocked ? !leftCollapsed : openDrawer === 'left'}
+      controls={leftDocked ? undefined : leftDrawerId}
+      offsetPx={leftDocked ? DOCKED_TOGGLE_INSET_PX : openDrawer === 'left' ? leftDrawerWidth : 0}
+      inset={leftDocked}
+      onToggle={() => toggleRail('left')}
+      buttonRef={leftToggleRef}
+    />
+  );
+  const rightToggle = (
+    <RailToggle
+      side="right"
+      expanded={rightDocked ? !rightCollapsed : openDrawer === 'right'}
+      controls={rightDocked ? undefined : rightDrawerId}
+      offsetPx={rightDocked ? DOCKED_TOGGLE_INSET_PX : openDrawer === 'right' ? rightDrawerWidth : 0}
+      inset={rightDocked}
+      onToggle={() => toggleRail('right')}
+      buttonRef={rightToggleRef}
+    />
+  );
+
   return (
     <div ref={rootRef} className={cn('relative flex flex-1 min-h-0 w-full h-full', className)}>
       <Group
@@ -400,7 +446,7 @@ export function WorkspaceShell({
         className="flex-1 min-h-0 w-full"
         defaultLayout={defaultLayout}
         onLayoutChanged={onLayoutChanged}
-        resizeTargetMinimumSize={{ coarse: 24, fine: 16 }}
+        resizeTargetMinimumSize={RESIZE_TARGET}
       >
         {showLeftPanel && (
           <Panel
@@ -432,26 +478,8 @@ export function WorkspaceShell({
         >
           <div className="relative h-full overflow-hidden">
             {children}
-            {hasLeft && (
-              <RailToggle
-                side="left"
-                expanded={leftDocked ? !leftCollapsed : openDrawer === 'left'}
-                controls={leftDocked ? undefined : leftDrawerId}
-                offsetPx={!leftDocked && openDrawer === 'left' ? leftDrawerWidth : 0}
-                onToggle={() => toggleRail('left')}
-                buttonRef={leftToggleRef}
-              />
-            )}
-            {hasRight && (
-              <RailToggle
-                side="right"
-                expanded={rightDocked ? !rightCollapsed : openDrawer === 'right'}
-                controls={rightDocked ? undefined : rightDrawerId}
-                offsetPx={!rightDocked && openDrawer === 'right' ? rightDrawerWidth : 0}
-                onToggle={() => toggleRail('right')}
-                buttonRef={rightToggleRef}
-              />
-            )}
+            {hasLeft && leftDocked && leftToggle}
+            {hasRight && rightDocked && rightToggle}
           </div>
         </Panel>
 
@@ -507,6 +535,8 @@ export function WorkspaceShell({
           <RailSlot host={rightHost} focusRef={rightFocusRef} />
         </div>
       )}
+      {hasLeft && !leftDocked && leftToggle}
+      {hasRight && !rightDocked && rightToggle}
 
       {/* Portals come after every slot so a slot adopts its host before the
           rail content commits (autoFocus and layout measurements need it). */}

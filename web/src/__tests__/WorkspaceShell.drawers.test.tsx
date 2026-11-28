@@ -159,6 +159,16 @@ describe('WorkspaceShell drawers', () => {
     render(<Shell right={<p>static</p>} />);
     fireEvent.click(screen.getByRole('button', { name: 'Expand right rail' }));
     expect(rightDrawer()).toHaveFocus();
+
+    fireEvent.keyDown(rightDrawer(), { key: 'Escape' });
+    expect(rightDrawer()).toHaveAttribute('hidden');
+    expect(screen.getByRole('button', { name: 'Expand right rail' })).toHaveFocus();
+
+    fireEvent.keyDown(document.body, { key: ']' });
+    expect(rightDrawer()).toHaveFocus();
+    fireEvent.keyDown(rightDrawer(), { key: ']' });
+    expect(rightDrawer()).toHaveAttribute('hidden');
+    expect(screen.getByRole('button', { name: 'Expand right rail' })).toHaveFocus();
   });
 
   it('closes the left drawer on a leftKey change and an outside press, not on its toggle', () => {
@@ -361,6 +371,22 @@ describe('WorkspaceShell toggles', () => {
     expect(open).toHaveAttribute('aria-expanded', 'true');
     expect(open).toHaveAttribute('title', 'Collapse left rail ([)');
     expect(document.getElementById(open.getAttribute('aria-controls')!)).toContainElement(screen.getByText('nav item'));
+  });
+
+  it('keeps docked toggles in the center pane and drawer toggles outside it', () => {
+    recorded.width = 800;
+    render(<Shell />);
+    const center = screen.getByTestId('panel-center');
+    const leftToggle = screen.getByRole('button', { name: 'Collapse left rail' });
+    const rightToggle = screen.getByRole('button', { name: 'Expand right rail' });
+    expect(center).toContainElement(leftToggle);
+    expect(leftToggle.style.left).toBe('10px');
+    expect(center).not.toContainElement(rightToggle);
+
+    fireEvent.click(rightToggle);
+    const open = screen.getByRole('button', { name: 'Collapse right rail' });
+    expect(center).not.toContainElement(open);
+    expect(open.style.right).not.toBe('0px');
   });
 
   it('collapses and expands docked panels and follows onResize', () => {
