@@ -27,6 +27,9 @@ interface HeaderMenuProps {
   spinning?: boolean;
   items: HeaderMenuItem[];
   className?: string;
+  /** Trigger size and variant, passed to IconButton. */
+  size?: 'sm' | 'md';
+  variant?: 'default' | 'ghost';
 }
 
 const ITEM_SELECTOR = '[role="menuitem"]:not([disabled])';
@@ -36,7 +39,7 @@ const ITEM_SELECTOR = '[role="menuitem"]:not([disabled])';
  * button pattern on top of Popover. Popover owns dismissal and the focus
  * return to the trigger; this component owns initial focus and arrow keys.
  */
-export function HeaderMenu({ tooltip, menuLabel, icon, spinning, items, className }: HeaderMenuProps) {
+export function HeaderMenu({ tooltip, menuLabel, icon, spinning, items, className, size, variant }: HeaderMenuProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -109,6 +112,8 @@ export function HeaderMenu({ tooltip, menuLabel, icon, spinning, items, classNam
         spinning={spinning}
         onClick={() => setOpen((v) => !v)}
         tooltip={tooltip}
+        size={size}
+        variant={variant}
         hasPopup="menu"
         expanded={open}
         className={cn('hover:text-primary hover:border-primary/30', open && 'text-primary border-primary/30', className)}

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import { cn } from '../../lib/cn';
 
 interface WorkspaceHeaderProps {
@@ -17,6 +17,8 @@ interface WorkspaceHeaderProps {
   /** Additional rows below the title row. */
   children?: ReactNode;
   className?: string;
+  /** Ref to the title row, for callers that measure the row's width. */
+  rowRef?: Ref<HTMLDivElement>;
 }
 
 // The single visible h1 for a workspace, with its summary, optional view
@@ -30,6 +32,7 @@ export function WorkspaceHeader({
   compact = false,
   children,
   className,
+  rowRef,
 }: WorkspaceHeaderProps) {
   const hasSummary = summary !== undefined && summary !== null && summary !== false && summary !== '';
   return (
@@ -40,7 +43,7 @@ export function WorkspaceHeader({
         className,
       )}
     >
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <div ref={rowRef} className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h1 id={headingId} className="text-sm font-semibold text-text-primary whitespace-nowrap">
           {title}
         </h1>
