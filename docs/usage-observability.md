@@ -27,7 +27,7 @@ for the observer contract and counting boundary.
 
 ## Where usage surfaces
 
-The **Metrics workspace** in the web UI charts token throughput over time and breaks totals down by server, replica, client, and tool, alongside call counts, format savings, and rate-limit state.
+The **Metrics workspace** in the web UI charts token throughput over time, with a "View as table" toggle to inspect the same series as an accessible table of exact values, and breaks totals down by server, replica, client, and tool, alongside call counts, format savings, and rate-limit state.
 
 The Tools table shows Calls, Avg/call, and Last used for each tool, and the Servers table adds the same three columns (summed from per-tool usage) plus one token column for the selected range, headed with the window label (for example "Last 1h tokens"). That window column is the only breakdown number that follows the range control; every other number is a session total, and the Clients table has no call columns. A server's Avg/call comes from per-tool usage, so it can differ slightly from its Total divided by its Calls; the exported `total_tokens` and `avg_tokens_per_call` fields carry the same difference. Export CSV on the Clients, Servers, and Tools tables downloads the rows as displayed (current sort, and for Tools the current filter) with these headers: Tools `server,tool,calls,input_tokens,output_tokens,total_tokens,avg_tokens_per_call,last_used`, Servers `server,calls,window,window_tokens,input_tokens,output_tokens,total_tokens,avg_tokens_per_call,last_used`, and Clients `client,input_tokens,output_tokens,total_tokens`.
 
