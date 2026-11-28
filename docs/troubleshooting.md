@@ -1023,7 +1023,7 @@ The browser window is narrower than 480 px, the minimum width the web UI support
 
 Pins, the Library skills list, Tools, Variables, Connections, Stack, Metrics, run history, Traces, or Logs shows a title ending in "unavailable" and a Retry control. Every one of them except Connections may instead show a banner above data that is already on screen. This is not a blank page, and it is not the authentication prompt.
 
-The Library Agents, Hooks, Packs, and Proposals segments, a pack detail, and the Global Context dialog use the same failed state ("Agents unavailable", "Pack unavailable", "Global context unavailable", and so on), and so does the context pin review ("Pin record unavailable"). A skill's file tree, the Global Context fragment rail, a proposal detail, and the Create new wizard's variable picker show the error with Retry inline: in place of the list when nothing is loaded, or above content that is already on screen.
+The Library Agents, Hooks, Packs, Context, and Proposals segments and a pack detail use the same failed state ("Agents unavailable", "Pack unavailable", "Global context unavailable", and so on), and so does the context pin review ("Pin record unavailable"). A skill's file tree, the Global Context fragment rail, a proposal detail, and the Create new wizard's variable picker show the error with Retry inline: in place of the list when nothing is loaded, or above content that is already on screen.
 
 The detached Library window shows "Library unavailable" when its first load fails, and a banner above the loaded skills when a later refresh fails. The detached inspector shows "Gateway unavailable" when it cannot load status. A node that is not in the running stack is a different state: the inspector reads `Node "<name>" not found` and asks you to choose another node.
 
@@ -1035,7 +1035,7 @@ The request for that workspace failed. `gridctl apply` restarts the daemon and i
 
 **Resolution:**
 
-1. Use Retry on that workspace. Pins, the Library skills list, Tools, and Stack retry through the shell poller, which refreshes status and inventory. Variables, Connections, Metrics, run history, Traces, and Logs retry their own fetch. The detached logs window uses the same Retry as Logs. The detached Library window retries its own fetch. In the detached inspector, Retry and the header Refresh both fetch status and inventory again. Retry on a detached window's gateway banner runs one status check. The Library Agents, Hooks, Packs, and Proposals segments, pack and proposal details, the skill file tree, the Global Context dialog, the context pin review, and the variable picker also retry their own fetch. These load failures do not raise a toast.
+1. Use Retry on that workspace. Pins, the Library skills list, Tools, and Stack retry through the shell poller, which refreshes status and inventory. Variables, Connections, Metrics, run history, Traces, and Logs retry their own fetch. The detached logs window uses the same Retry as Logs. The detached Library window retries its own fetch. In the detached inspector, Retry and the header Refresh both fetch status and inventory again. Retry on a detached window's gateway banner runs one status check. The Library Agents, Hooks, Packs, Context, and Proposals segments, pack and proposal details, the skill file tree, the context pin review, and the variable picker also retry their own fetch. These load failures do not raise a toast.
 2. If Retry fails the same way, confirm the gateway is running:
    ```bash
    gridctl status

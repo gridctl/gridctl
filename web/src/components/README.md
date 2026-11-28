@@ -201,9 +201,9 @@ Use a container query (`@container` with `@md:` and similar variants) or
 resizable panel, because the pane is not the viewport's width. Reserve
 viewport breakpoints (`sm:`, `md:`) for viewport-sized surfaces such as the
 wizard modal, the toast stack, and the minimum-width state. The Library
-header is the measured case: `LibraryHeaderActions` moves Import, Global
-Context, Sync sources, Refresh, and the popout into a More actions
-`HeaderMenu` when its row is narrower than
+header is the measured case: `LibraryHeaderActions` moves Import, Sync
+sources, Refresh, and the popout into a More actions `HeaderMenu` when its
+row is narrower than
 `LIBRARY_ACTIONS_COLLAPSE_BELOW` in `lib/libraryHeader.ts` (990 px with a
 pending update pill, 850 px without). A width of 0 means unknown and keeps
 the full cluster.
