@@ -17,21 +17,201 @@ function entry(over: Partial<ParsedLog>): ParsedLog {
 
 // Expansion state is lifted out of LogStream (shared with keyboard nav and
 // hosts), so tests drive it through a minimal controlled harness.
-function Harness({ logs, searchQuery }: { logs: ParsedLog[]; searchQuery?: string }) {
+function Harness({
+  logs,
+  searchQuery,
+  error = null,
+}: {
+  logs: ParsedLog[];
+  searchQuery?: string;
+  error?: string | null;
+}) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [following, setFollowing] = useState(true);
   return (
-    <LogStream
-      logs={logs}
-      searchQuery={searchQuery}
-      isLoading={false}
-      error={null}
-      fontSize={12}
-      containerRef={createRef<HTMLDivElement>()}
-      expandedKey={expandedKey}
-      onToggleExpand={setExpandedKey}
-    />
+    <>
+      <div data-testid="following">{String(following)}</div>
+      <LogStream
+        logs={logs}
+        searchQuery={searchQuery}
+        isLoading={false}
+        error={error}
+        hasLoaded
+        fontSize={12}
+        containerRef={createRef<HTMLDivElement>()}
+        expandedKey={expandedKey}
+        onToggleExpand={setExpandedKey}
+        following={following}
+        onFollowingChange={setFollowing}
+      />
+    </>
   );
 }
+
+function makeLogs(n: number, start = 0): ParsedLog[] {
+  return Array.from({ length: n }, (_, i) =>
+    entry({
+      message: `line ${start + i}`,
+      raw: `line ${start + i}`,
+      timestamp: new Date(Date.UTC(2026, 6, 24, 10, 0, 0) + (start + i) * 1000).toISOString(),
+    }),
+  );
+}
+
+function scroller(): HTMLElement {
+  return screen.getByRole('grid', { name: 'Log entries' }).parentElement as HTMLElement;
+}
+
+function setMetrics(el: HTMLElement, m: { scrollTop?: number; scrollHeight?: number; clientHeight?: number }) {
+  for (const [k, v] of Object.entries(m)) {
+    Object.defineProperty(el, k, { configurable: true, writable: true, value: v });
+  }
+}
+
+// Overflowing container scrolled to the bottom, then up by 300 px.
+function scrollUp(el: HTMLElement) {
+  setMetrics(el, { scrollHeight: 1000, clientHeight: 200, scrollTop: 800 });
+  fireEvent.scroll(el);
+  setMetrics(el, { scrollTop: 500 });
+  fireEvent.scroll(el);
+}
+
+const jumpButton = () => screen.queryByRole('button', { name: /Jump to latest/ });
+
+describe('LogStream follow-tail', () => {
+  it('shows Jump to latest after scrolling up in an overflowing list', () => {
+    render(<Harness logs={makeLogs(5)} />);
+    expect(jumpButton()).toBeNull();
+    scrollUp(scroller());
+    expect(screen.getByTestId('following')).toHaveTextContent('false');
+    expect(jumpButton()).toHaveTextContent(/^Jump to latest$/);
+    expect(jumpButton()).toHaveAttribute('title', 'End or G');
+  });
+
+  it('does not suspend on a scroll that moves down or stays away from the bottom without rising', () => {
+    render(<Harness logs={makeLogs(5)} />);
+    const el = scroller();
+    setMetrics(el, { scrollHeight: 1000, clientHeight: 200, scrollTop: 300 });
+    fireEvent.scroll(el);
+    setMetrics(el, { scrollTop: 400 });
+    fireEvent.scroll(el);
+    expect(screen.getByTestId('following')).toHaveTextContent('true');
+    expect(jumpButton()).toBeNull();
+  });
+
+  it('counts new entries by identity, singular and plural', () => {
+    const base = makeLogs(5);
+    const { rerender } = render(<Harness logs={base} />);
+    scrollUp(scroller());
+    rerender(<Harness logs={[...base, ...makeLogs(1, 5)]} />);
+    expect(jumpButton()).toHaveTextContent('1 new · Jump to latest');
+    rerender(<Harness logs={[...base, ...makeLogs(3, 5)]} />);
+    expect(jumpButton()).toHaveTextContent('3 new · Jump to latest');
+  });
+
+  it('keeps counting at a full sliding window and marks overflow once the anchor leaves', () => {
+    const { rerender } = render(<Harness logs={makeLogs(5)} />);
+    scrollUp(scroller());
+    rerender(<Harness logs={makeLogs(5, 2)} />);
+    expect(jumpButton()).toHaveTextContent('2 new · Jump to latest');
+    rerender(<Harness logs={makeLogs(5, 7)} />);
+    expect(jumpButton()).toHaveTextContent('5+ new · Jump to latest');
+  });
+
+  it('jumps, resumes, and focuses the grid without scrolling on click', () => {
+    const base = makeLogs(5);
+    const { rerender } = render(<Harness logs={base} />);
+    const el = scroller();
+    scrollUp(el);
+    rerender(<Harness logs={[...base, ...makeLogs(2, 5)]} />);
+    const grid = screen.getByRole('grid', { name: 'Log entries' });
+    const focus = vi.spyOn(grid, 'focus');
+    fireEvent.click(jumpButton()!);
+    expect(screen.getByTestId('following')).toHaveTextContent('true');
+    expect(jumpButton()).toBeNull();
+    expect(el.scrollTop).toBe(1000);
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(document.activeElement).toBe(grid);
+  });
+
+  it.each([
+    ['End', { key: 'End' }],
+    ['G', { key: 'G', shiftKey: true }],
+  ])('resumes following on %s', (_name, init) => {
+    render(<Harness logs={makeLogs(5)} />);
+    const el = scroller();
+    scrollUp(el);
+    expect(jumpButton()).not.toBeNull();
+    fireEvent.keyDown(document, init);
+    expect(screen.getByTestId('following')).toHaveTextContent('true');
+    expect(jumpButton()).toBeNull();
+    expect(el.scrollTop).toBe(1000);
+  });
+
+  it('clears the cursor and keeps the expanded row when resuming', () => {
+    render(<Harness logs={makeLogs(5)} />);
+    const el = scroller();
+    setMetrics(el, { scrollHeight: 1000, clientHeight: 200 });
+    fireEvent.keyDown(document, { key: 'j' });
+    fireEvent.keyDown(document, { key: 'Enter' });
+    expect(screen.getAllByText('line 1')).toHaveLength(2);
+    expect(screen.getByTestId('following')).toHaveTextContent('false');
+    expect(screen.getByRole('grid')).toHaveAttribute('aria-activedescendant', 'log-row-1');
+    fireEvent.keyDown(document, { key: 'End' });
+    expect(screen.getByTestId('following')).toHaveTextContent('true');
+    expect(screen.getByRole('grid')).not.toHaveAttribute('aria-activedescendant');
+    expect(screen.getAllByText('line 1')).toHaveLength(2);
+  });
+
+  it('resumes when a scroll lands within 50 px of the bottom', () => {
+    render(<Harness logs={makeLogs(5)} />);
+    const el = scroller();
+    scrollUp(el);
+    setMetrics(el, { scrollTop: 760 });
+    fireEvent.scroll(el);
+    expect(screen.getByTestId('following')).toHaveTextContent('true');
+    expect(jumpButton()).toBeNull();
+  });
+
+  it('never suspends on j/k in a list that fits its container', () => {
+    render(<Harness logs={makeLogs(3)} />);
+    fireEvent.keyDown(document, { key: 'j' });
+    fireEvent.keyDown(document, { key: 'k' });
+    expect(screen.getByTestId('following')).toHaveTextContent('true');
+    expect(jumpButton()).toBeNull();
+  });
+
+  it('suspends on j/k when the list overflows', () => {
+    render(<Harness logs={makeLogs(3)} />);
+    setMetrics(scroller(), { scrollHeight: 1000, clientHeight: 200 });
+    fireEvent.keyDown(document, { key: 'j' });
+    expect(screen.getByTestId('following')).toHaveTextContent('false');
+    expect(jumpButton()).not.toBeNull();
+  });
+
+  it('shows no button in the error state', () => {
+    const { rerender } = render(<Harness logs={makeLogs(5)} />);
+    scrollUp(scroller());
+    expect(jumpButton()).not.toBeNull();
+    rerender(<Harness logs={makeLogs(5)} error="socket closed" />);
+    expect(jumpButton()).toBeNull();
+  });
+
+  it('ignores End and G while a text input has focus', () => {
+    render(
+      <>
+        <input data-testid="search" />
+        <Harness logs={makeLogs(5)} />
+      </>,
+    );
+    scrollUp(scroller());
+    const input = screen.getByTestId('search');
+    input.focus();
+    fireEvent.keyDown(input, { key: 'End' });
+    fireEvent.keyDown(input, { key: 'G', shiftKey: true });
+    expect(screen.getByTestId('following')).toHaveTextContent('false');
+  });
+});
 
 describe('LogStream', () => {
   it('renders a failed state and calls onRetry', () => {
@@ -46,6 +226,8 @@ describe('LogStream', () => {
         containerRef={createRef<HTMLDivElement>()}
         expandedKey={null}
         onToggleExpand={() => {}}
+        following
+        onFollowingChange={() => {}}
       />,
     );
     expect(screen.getByText('Logs unavailable')).toBeInTheDocument();
@@ -64,6 +246,8 @@ describe('LogStream', () => {
         containerRef={createRef<HTMLDivElement>()}
         expandedKey={null}
         onToggleExpand={() => {}}
+        following
+        onFollowingChange={() => {}}
       />,
     );
     expect(screen.getByRole('grid', { name: 'Log entries' })).toBeInTheDocument();
@@ -81,6 +265,8 @@ describe('LogStream', () => {
         containerRef={createRef<HTMLDivElement>()}
         expandedKey={null}
         onToggleExpand={() => {}}
+        following
+        onFollowingChange={() => {}}
       />,
     );
     expect(screen.getByText('still here')).toBeInTheDocument();
@@ -100,6 +286,8 @@ describe('LogStream', () => {
         containerRef={createRef<HTMLDivElement>()}
         expandedKey={null}
         onToggleExpand={() => {}}
+        following
+        onFollowingChange={() => {}}
       />,
     );
     expect(screen.getByText('No entries match your filters')).toBeInTheDocument();
@@ -114,6 +302,8 @@ describe('LogStream', () => {
       containerRef: createRef<HTMLDivElement>(),
       expandedKey: null,
       onToggleExpand: () => {},
+      following: true,
+      onFollowingChange: () => {},
     };
     const { rerender } = render(<LogStream {...props} isLoading hasLoaded={false} />);
     expect(screen.getByText('Loading logs...')).toBeInTheDocument();
@@ -280,6 +470,8 @@ describe('LogStream', () => {
         containerRef={createRef<HTMLDivElement>()}
         expandedKey={null}
         onToggleExpand={() => {}}
+        following
+        onFollowingChange={() => {}}
         searchQuery="issue"
       />,
     );
@@ -310,6 +502,8 @@ describe('LogStream', () => {
         containerRef={createRef<HTMLDivElement>()}
         expandedKey={null}
         onToggleExpand={() => {}}
+        following
+        onFollowingChange={() => {}}
         wrap
       />,
     );
@@ -329,6 +523,8 @@ describe('LogStream', () => {
         containerRef={createRef<HTMLDivElement>()}
         expandedKey={null}
         onToggleExpand={() => {}}
+        following
+        onFollowingChange={() => {}}
         {...extra}
       />,
     );
