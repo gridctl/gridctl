@@ -1000,7 +1000,22 @@ Browser shows a blank page or connection refused when accessing the gateway URL.
    http://localhost:8180
    ```
 
-3. The web UI requires a modern browser - Chrome, Firefox, Safari, or Edge.
+3. The web UI requires a modern browser - Chrome, Firefox, Safari, or Edge - and a window at least 480 px wide.
+
+### Window too narrow
+
+**Symptoms:**
+
+The workspace area shows "Window too narrow" and a "Continue anyway" button. The header and status bar are still visible.
+
+**Cause:**
+
+The browser window is narrower than 480 px, the minimum width the web UI supports. Browser zoom counts: a 720 px window at 200% zoom is 360 px wide to the page.
+
+**Resolution:**
+
+1. Widen the window, or reduce the browser zoom. The message goes away on its own once the window is 480 px or wider.
+2. Click "Continue anyway" to use the workspace at the current width. Some layouts may be cramped or need horizontal scrolling. The message stays hidden until you reload the page.
 
 ### A workspace says a feature is unavailable
 
