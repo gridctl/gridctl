@@ -10,6 +10,10 @@ import {
   deriveWindowTotals,
   hasMetricsData,
   buildTokenChartData,
+  toTokenPoints,
+  formatChartTick,
+  formatChartBucket,
+  formatChartTooltipTitle,
   type SessionKpis,
 } from '../components/metrics/metricsData';
 import type {
@@ -264,11 +268,131 @@ describe('chart data builders', () => {
     } as TokenMetricsResponse;
     const out = buildTokenChartData(series);
     expect(out).toHaveLength(1);
+    expect(out[0].time).toBe('2026-01-01T00:00:00Z');
     expect(out[0]['Input Tokens']).toBe(3);
     expect(out[0]['Output Tokens']).toBe(2);
   });
 
+  it('toTokenPoints keeps the raw timestamp as time', () => {
+    const out = toTokenPoints([
+      { timestamp: '2026-11-20T09:00:00Z', input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+      { timestamp: '2026-11-21T09:00:00Z', input_tokens: 20, output_tokens: 8, total_tokens: 28 },
+    ]);
+    expect(out.map((r) => r.time)).toEqual(['2026-11-20T09:00:00Z', '2026-11-21T09:00:00Z']);
+  });
+
+  it('buildFocusedTokenChartData keeps the raw timestamp as time', () => {
+    const fleet: TokenMetricsResponse = {
+      range: '7d',
+      interval: '1h',
+      data_points: [
+        { timestamp: '2026-11-20T09:00:00Z', input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        { timestamp: '2026-11-21T09:00:00Z', input_tokens: 20, output_tokens: 8, total_tokens: 28 },
+      ],
+      per_server: {},
+    };
+    const out = buildFocusedTokenChartData(fleet, [
+      { timestamp: '2026-11-21T09:00:00Z', input_tokens: 7, output_tokens: 3, total_tokens: 10 },
+    ]);
+    expect(out.map((r) => r.time)).toEqual(['2026-11-20T09:00:00Z', '2026-11-21T09:00:00Z']);
+    expect(out[0]['Input Tokens']).toBe(0);
+    expect(out[1]['Input Tokens']).toBe(7);
+  });
+
   it('returns [] for null input', () => {
     expect(buildTokenChartData(null)).toEqual([]);
+  });
+});
+
+describe('chart timestamp formatters', () => {
+  it('formatChartTick produces 72 unique month-bearing labels across three days on 7d', () => {
+    const start = Date.parse('2026-11-20T00:00:00Z');
+    const labels = Array.from({ length: 72 }, (_, i) =>
+      formatChartTick(new Date(start + i * 3_600_000).toISOString(), '7d', 'en-US', 'UTC'),
+    );
+    expect(new Set(labels).size).toBe(72);
+    for (const label of labels) {
+      expect(label).toContain('Nov');
+    }
+  });
+
+  it('formatChartTick produces 25 unique weekday-bearing labels across 24h', () => {
+    const start = Date.parse('2026-11-20T09:00:00Z');
+    const labels = Array.from({ length: 25 }, (_, i) =>
+      formatChartTick(new Date(start + i * 3_600_000).toISOString(), '24h', 'en-US', 'UTC'),
+    );
+    expect(new Set(labels).size).toBe(25);
+    expect(labels[0]).toMatch(/^Fri\b/);
+    expect(labels[24]).toMatch(/^Sat\b/);
+  });
+
+  it('formatChartTick keeps hours and minutes only for 30m, 1h, and 6h', () => {
+    for (const range of ['30m', '1h', '6h']) {
+      const label = formatChartTick('2026-11-20T09:05:00Z', range, 'en-US', 'UTC');
+      expect(label).toMatch(/09:05\s*AM/);
+      expect(label).not.toContain('Fri');
+      expect(label).not.toContain('Nov');
+    }
+  });
+
+  it('formatChartTick falls back to month and day for unknown or missing ranges', () => {
+    for (const range of [undefined, '30d']) {
+      const label = formatChartTick('2026-11-20T09:00:00Z', range, 'en-US', 'UTC');
+      expect(label).toContain('Nov');
+      expect(label).toContain('20');
+      expect(label).toMatch(/09:00\s*AM/);
+    }
+  });
+
+  it('formatChartTooltipTitle includes full date, start and end time, and interval suffix', () => {
+    const hourly = formatChartTooltipTitle('2026-11-20T09:00:00Z', '1h', 'en-US', 'UTC');
+    expect(hourly).toContain('Fri');
+    expect(hourly).toContain('Nov');
+    expect(hourly).toContain('20');
+    expect(hourly).toContain('2026');
+    expect(hourly).toContain('09:00');
+    expect(hourly).toContain('10:00');
+    expect(hourly).toContain('1h interval');
+
+    const minute = formatChartTooltipTitle('2026-11-20T09:00:00Z', '1m', 'en-US', 'UTC');
+    expect(minute).toContain('09:00');
+    expect(minute).toContain('09:01');
+    expect(minute).toContain('1m interval');
+
+    const unknown = formatChartTooltipTitle('2026-11-20T09:00:00Z', '5m', 'en-US', 'UTC');
+    expect(unknown).toContain('2026');
+    expect(unknown).toContain('09:00');
+    expect(unknown).not.toContain('–');
+    expect(unknown).not.toContain('interval');
+  });
+
+  it('formatChartBucket includes full date and start-end time without interval suffix', () => {
+    const hourly = formatChartBucket('2026-11-20T09:00:00Z', '1h', 'en-US', 'UTC');
+    expect(hourly).toContain('Fri');
+    expect(hourly).toContain('Nov');
+    expect(hourly).toContain('20');
+    expect(hourly).toContain('2026');
+    expect(hourly).toContain('09:00');
+    expect(hourly).toContain('10:00');
+    expect(hourly).toContain('–');
+    expect(hourly).not.toContain('interval');
+
+    const minute = formatChartBucket('2026-11-20T09:00:00Z', '1m', 'en-US', 'UTC');
+    expect(minute).toContain('09:00');
+    expect(minute).toContain('09:01');
+    expect(minute).not.toContain('interval');
+
+    const unknown = formatChartBucket('2026-11-20T09:00:00Z', undefined, 'en-US', 'UTC');
+    expect(unknown).toContain('2026');
+    expect(unknown).toContain('09:00');
+    expect(unknown).not.toContain('–');
+  });
+
+  it('returns the input unchanged for unparseable timestamps', () => {
+    for (const bad of ['not-a-timestamp', '']) {
+      expect(formatChartTick(bad, '7d', 'en-US', 'UTC')).toBe(bad);
+      expect(formatChartBucket(bad, '1h', 'en-US', 'UTC')).toBe(bad);
+      expect(formatChartTooltipTitle(bad, '1h', 'en-US', 'UTC')).toBe(bad);
+    }
   });
 });
