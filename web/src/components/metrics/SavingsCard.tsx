@@ -34,7 +34,7 @@ function FindingItem({
 
   return (
     <li className="rounded-md px-1.5 py-1.5">
-      <div className="flex items-center gap-2">
+      <div className="flex items-baseline gap-2">
         <span
           className={cn(
             'inline-flex items-center gap-1 flex-shrink-0 rounded border px-1.5 py-0.5 text-3xs uppercase tracking-wider',
@@ -48,12 +48,12 @@ function FindingItem({
           <button
             type="button"
             onClick={() => onOpenFinding(finding)}
-            className="flex-1 min-w-0 truncate text-left text-xs text-text-primary hover:text-primary hover:underline rounded-sm cursor-pointer"
+            className="flex-1 min-w-0 break-words text-left text-xs text-text-primary hover:text-primary hover:underline rounded-sm cursor-pointer"
           >
             {finding.title}
           </button>
         ) : (
-          <span className="flex-1 min-w-0 truncate text-left text-xs text-text-primary">
+          <span className="flex-1 min-w-0 break-words text-left text-xs text-text-primary">
             {finding.title}
           </span>
         )}
@@ -85,7 +85,7 @@ function FindingItem({
           {toolsHref && (
             <Link
               to={toolsHref}
-              aria-label={`Review ${finding.server} in Tools audit`}
+              aria-label={`Review in Tools audit: ${finding.server}`}
               className="font-medium text-primary hover:underline rounded-sm"
             >
               Review in Tools audit

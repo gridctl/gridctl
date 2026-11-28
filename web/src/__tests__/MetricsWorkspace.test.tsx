@@ -943,9 +943,12 @@ describe('MetricsWorkspace Optimize findings card', () => {
       ),
     ).toBeInTheDocument();
 
-    const auditLink = screen.getByRole('link', { name: 'Review zapier in Tools audit' });
+    const auditLink = screen.getByRole('link', { name: 'Review in Tools audit: zapier' });
     expect(auditLink).toHaveAttribute('href', '/tools?server=zapier&audit=1');
     expect(auditLink).toHaveTextContent('Review in Tools audit');
+    const titleButton = screen.getByRole('button', { name: 'Unused server: zapier' });
+    expect(titleButton.className).not.toContain('truncate');
+    expect(titleButton.className).toContain('break-words');
   });
 
   it('explains format_savings_shortfall and omits the Tools audit link', async () => {
@@ -1011,7 +1014,10 @@ describe('MetricsWorkspace Optimize findings card', () => {
     expect(screen.queryByText(/tok\/wk/)).not.toBeInTheDocument();
     // Stack-wide finding has a plain-text title and no Tools link.
     expect(screen.queryByRole('button', { name: 'Stack-wide note' })).not.toBeInTheDocument();
-    expect(screen.getByText('Stack-wide note')).toBeInTheDocument();
+    const stackTitle = screen.getByText('Stack-wide note');
+    expect(stackTitle).toBeInTheDocument();
+    expect(stackTitle.className).not.toContain('truncate');
+    expect(stackTitle.className).toContain('break-words');
   });
 
   it('toggles per-finding remediation with aria-expanded and aria-controls only while open', async () => {
