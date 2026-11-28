@@ -112,6 +112,56 @@ describe('usePolling retry registration', () => {
     unmounted.unmount();
   });
 
+  it('drops a stale in-flight status poll that resolves after usePollingStatusRefresh', async () => {
+    stubPoll();
+    const staleStatus = {
+      ...quietStatus,
+      token_usage: {
+        session: { input_tokens: 100, output_tokens: 40, total_tokens: 140 },
+        per_server: {},
+        per_client: {},
+        format_savings: { original_tokens: 0, formatted_tokens: 0, saved_tokens: 0, savings_percent: 0 },
+      },
+    } as Awaited<ReturnType<typeof api.fetchStatus>>;
+    const clearedStatus = {
+      ...quietStatus,
+      token_usage: {
+        session: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+        per_server: {},
+        per_client: {},
+        format_savings: { original_tokens: 0, formatted_tokens: 0, saved_tokens: 0, savings_percent: 0 },
+      },
+    } as Awaited<ReturnType<typeof api.fetchStatus>>;
+
+    let resolveStale: (value: Awaited<ReturnType<typeof api.fetchStatus>>) => void = () => {};
+    vi.mocked(api.fetchStatus)
+      .mockImplementationOnce(
+        () => new Promise((resolve) => {
+          resolveStale = resolve;
+        }),
+      )
+      .mockResolvedValueOnce(clearedStatus);
+
+    useAuthStore.setState({ authRequired: false, generation: Symbol() });
+    const poller = renderHook(() => usePolling(), { wrapper });
+    const statusRefresh = renderHook(() => usePollingStatusRefresh(), { wrapper });
+    await waitFor(() => expect(api.fetchStatus).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await statusRefresh.result.current();
+    });
+    expect(useStackStore.getState().tokenUsage?.session.total_tokens).toBe(0);
+
+    await act(async () => {
+      resolveStale(staleStatus);
+      await Promise.resolve();
+    });
+    expect(useStackStore.getState().tokenUsage?.session.total_tokens).toBe(0);
+
+    statusRefresh.unmount();
+    poller.unmount();
+  });
+
   it('propagates a status connection failure to pins and the registry', async () => {
     stubPoll();
     const down = new GatewayRequestError('connection', 'down');

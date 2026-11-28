@@ -175,7 +175,7 @@ function DetachedMetricsPageContent() {
       footerStart={
         <>
           {kpis.total > 0 ? `Session total: ${formatCompactNumber(kpis.total)} tokens` : 'No data'}
-          {isPaused ? ' (paused)' : ''}
+          {holdTables ? ' (paused)' : ''}
         </>
       }
     >

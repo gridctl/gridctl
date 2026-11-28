@@ -102,6 +102,7 @@ function pageVisible(): boolean {
 export function usePolling(_options?: { registerRetry?: boolean }) {
   const navigate = useGuardedNavigate();
   const startedRef = useRef(false);
+  const fastSeqRef = useRef(0);
   const slowRunning = useRef(false);
   const slowInFlight = useRef<Promise<void> | null>(null);
   const runSlowRef = useRef<() => Promise<void>>(async () => {});
@@ -142,8 +143,12 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
 
   const runFast = useCallback(async () => {
     const generation = useAuthStore.getState().generation;
-    const current = () => useAuthStore.getState().generation === generation && !useAuthStore.getState().authRequired;
-    if (!current()) return;
+    const authCurrent = () => useAuthStore.getState().generation === generation && !useAuthStore.getState().authRequired;
+    if (!authCurrent()) return;
+    // Monotonic sequence so an older in-flight timer poll cannot overwrite a
+    // newer status refresh (for example after clearing metrics).
+    const seq = ++fastSeqRef.current;
+    const current = () => authCurrent() && fastSeqRef.current === seq;
     if (!startedRef.current) {
       startedRef.current = true;
       setLoading(true);
@@ -187,7 +192,7 @@ export function usePolling(_options?: { registerRetry?: boolean }) {
       // Wait out a slow cycle that started during the outage, then run a
       // fresh one. The in-flight guard makes the second start a no-op when
       // a post-recovery cycle is already running.
-      if (recoverInventory) {
+      if (recoverInventory && current()) {
         void (async () => {
           try {
             const inflight = slowInFlight.current;
