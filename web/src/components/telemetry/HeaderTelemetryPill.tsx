@@ -4,9 +4,10 @@
 // label. Click opens a popover with the three signal toggles and a
 // destructive "Wipe all" button; mutations call the API helpers and
 // hand the refreshed inventory back to the store.
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Database, Power, PowerOff, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/cn';
+import { overrideDivergence } from '../../lib/telemetry-config';
 import { showToast } from '../ui/Toast';
 import { Popover } from '../ui/Popover';
 import { WipeTelemetryDialog } from './WipeTelemetryDialog';
@@ -15,6 +16,7 @@ import {
   updateStackTelemetry,
   wipeTelemetry,
 } from '../../lib/api';
+import { useStackStore } from '../../stores/useStackStore';
 import {
   useInventory,
   useTelemetryConfig,
@@ -36,22 +38,35 @@ const ABBREV: Record<TelemetrySignal, string> = {
 };
 
 // eslint-disable-next-line react-refresh/only-export-components -- test seam; exported for unit tests alongside the pill
-export function buildPillLabel(global: Partial<Record<TelemetrySignal, boolean>>): string {
+export function buildPillLabel(
+  global: Partial<Record<TelemetrySignal, boolean>>,
+  anyOverrideOn = false,
+): string {
   const on = SIGNALS.filter((s) => global[s] === true);
-  if (on.length === 0) return 'Persistence: Off';
-  return `Persistence: ${on.map((s) => ABBREV[s]).join('+')}`;
+  if (on.length > 0) return `Persistence: ${on.map((s) => ABBREV[s]).join('+')}`;
+  if (anyOverrideOn) return 'Persistence: Per-server';
+  return 'Persistence: Off';
 }
 
 export function HeaderTelemetryPill() {
   const config = useTelemetryConfig();
   const inventory = useInventory();
+  const mcpServers = useStackStore((s) => s.mcpServers);
   const [open, setOpen] = useState(false);
   const [wipeOpen, setWipeOpen] = useState(false);
   const [pending, setPending] = useState<TelemetrySignal | 'wipe' | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
-  const anyOn = SIGNALS.some((s) => config.global[s] === true);
-  const label = buildPillLabel(config.global);
+  // The backend installs telemetry writers only for enabled servers, so an
+  // override on a disabled server persists nothing and is excluded here.
+  const disabled = useMemo(
+    () => new Set(mcpServers.filter((s) => s.enabled === false).map((s) => s.name)),
+    [mcpServers],
+  );
+  const anyGlobalOn = SIGNALS.some((s) => config.global[s] === true);
+  const anyOverrideOn = SIGNALS.some((s) => overrideDivergence(config, s, disabled).on > 0);
+  const anyOn = anyGlobalOn || anyOverrideOn;
+  const label = buildPillLabel(config.global, anyOverrideOn);
 
   async function toggleSignal(signal: TelemetrySignal) {
     const current = config.global[signal] === true;
@@ -123,6 +138,13 @@ export function HeaderTelemetryPill() {
             {SIGNALS.map((sig) => {
               const isOn = config.global[sig] === true;
               const isBusy = pending === sig;
+              const divergence = overrideDivergence(config, sig, disabled);
+              const divergenceNote =
+                divergence.on > 0
+                  ? `on for ${divergence.on} ${divergence.on === 1 ? 'server' : 'servers'}`
+                  : divergence.off > 0
+                    ? `off for ${divergence.off} ${divergence.off === 1 ? 'server' : 'servers'}`
+                    : null;
               return (
                 <li key={sig}>
                   <button
@@ -137,17 +159,22 @@ export function HeaderTelemetryPill() {
                       isBusy && 'opacity-60 cursor-wait',
                     )}
                   >
-                    <span className="flex items-center gap-2">
+                    <span className="flex items-center gap-2 min-w-0 text-left">
                       {isOn ? (
-                        <Power size={12} className="text-status-running" />
+                        <Power size={12} className="text-status-running flex-shrink-0" />
                       ) : (
-                        <PowerOff size={12} className="text-text-muted group-hover:text-status-running transition-colors" />
+                        <PowerOff size={12} className="text-text-muted group-hover:text-status-running transition-colors flex-shrink-0" />
                       )}
-                      <span className="text-sm text-text-primary capitalize">{sig}</span>
+                      <span className="min-w-0">
+                        <span className="block text-sm text-text-primary capitalize">{sig}</span>
+                        {divergenceNote && (
+                          <span className="block text-3xs text-text-muted">{divergenceNote}</span>
+                        )}
+                      </span>
                     </span>
                     <span
                       className={cn(
-                        'text-3xs font-mono uppercase tracking-wider px-1.5 py-0.5 rounded',
+                        'text-3xs font-mono uppercase tracking-wider px-1.5 py-0.5 rounded flex-shrink-0',
                         isOn
                           ? 'bg-status-running/10 text-status-running border border-status-running/20'
                           : 'bg-surface-elevated text-text-muted border border-border/40',

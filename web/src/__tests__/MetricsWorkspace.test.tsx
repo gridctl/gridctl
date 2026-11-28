@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import '@testing-library/jest-dom';
 import { MetricsWorkspace } from '../components/workspaces/MetricsWorkspace';
 import { useStackStore } from '../stores/useStackStore';
@@ -341,7 +341,7 @@ describe('MetricsWorkspace', () => {
     });
     renderAt();
     expect(await screen.findByText('Optimize findings')).toBeInTheDocument();
-    expect(screen.getByText('2.3M tok/wk')).toBeInTheDocument();
+    expect(screen.getByText('~2.3M tok/wk')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Unused server: zapier/ }));
     expect(await screen.findByText('Per-Server · session totals')).toBeInTheDocument();
     expect(await screen.findByLabelText('Close inspector')).toBeInTheDocument();
@@ -909,5 +909,229 @@ describe('MetricsWorkspace clear, refresh, and pause feedback', () => {
     await confirmClear();
     await waitFor(() => expect(showToast).toHaveBeenCalledWith('success', 'Metrics cleared'));
     expect(showToast).not.toHaveBeenCalledWith('error', expect.anything(), expect.anything());
+  });
+});
+
+describe('MetricsWorkspace Optimize findings card', () => {
+  it('renders visible summary without title tooltips, unit explanation, and Tools audit link', async () => {
+    const summary = 'Server zapier registered 42 tools with no observed calls (~500 prompts/week).';
+    vi.mocked(fetchOptimizeReport).mockResolvedValue({
+      findings: [
+        {
+          id: 'f-unused',
+          heuristic: 'unused_server',
+          severity: 'warn',
+          title: 'Unused server: zapier',
+          summary,
+          server: 'zapier',
+          impact_tokens_per_week: 2_250_000,
+          remediation: 'mcp-servers:\n  - name: zapier\n    enabled: false',
+          detected_at: 't',
+        },
+      ],
+      health_score: 85,
+      generated_at: 't',
+    });
+    const { container } = renderAt();
+    expect(await screen.findByText('Optimize findings')).toBeInTheDocument();
+    expect(screen.getByText(summary)).toBeInTheDocument();
+    expect(container.querySelector(`[title="${summary}"]`)).toBeNull();
+    expect(screen.getByText('~2.3M tok/wk')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "tok/wk: Estimated schema tokens sent per week for this server's tools. Not recorded usage.",
+      ),
+    ).toBeInTheDocument();
+
+    const auditLink = screen.getByRole('link', { name: 'Review in Tools audit: zapier' });
+    expect(auditLink).toHaveAttribute('href', '/tools?server=zapier&audit=1');
+    expect(auditLink).toHaveTextContent('Review in Tools audit');
+    const titleButton = screen.getByRole('button', { name: 'Unused server: zapier' });
+    expect(titleButton.className).not.toContain('truncate');
+    expect(titleButton.className).toContain('break-words');
+  });
+
+  it('explains format_savings_shortfall and omits the Tools audit link', async () => {
+    vi.mocked(fetchOptimizeReport).mockResolvedValue({
+      findings: [
+        {
+          id: 'f-format',
+          heuristic: 'format_savings_shortfall',
+          severity: 'warn',
+          title: 'Enable TOON output on github',
+          summary: 'Other servers save tokens with TOON output.',
+          server: 'github',
+          impact_tokens_per_week: 50_000,
+          remediation: 'output_format: toon',
+          detected_at: 't',
+        },
+      ],
+      health_score: 92,
+      generated_at: 't',
+    });
+    renderAt();
+    expect(await screen.findByText('Optimize findings')).toBeInTheDocument();
+    expect(screen.getByText('~50k tok/wk')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'tok/wk: Projected output tokens saved per week, from savings measured on other servers.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Tools audit/i })).not.toBeInTheDocument();
+  });
+
+  it('omits both figure and unit line when impact is zero or absent', async () => {
+    vi.mocked(fetchOptimizeReport).mockResolvedValue({
+      findings: [
+        {
+          id: 'f-zero',
+          heuristic: 'unused_server',
+          severity: 'warn',
+          title: 'Unused server: zero',
+          summary: 'Zero impact finding.',
+          server: 'zero',
+          impact_tokens_per_week: 0,
+          remediation: '',
+          detected_at: 't',
+        },
+        {
+          id: 'f-absent',
+          heuristic: 'schema_overhead',
+          severity: 'warn',
+          title: 'Stack-wide note',
+          summary: 'No server and no impact.',
+          remediation: '',
+          detected_at: 't',
+        },
+      ],
+      health_score: 95,
+      generated_at: 't',
+    });
+    renderAt();
+    expect(await screen.findByText('Optimize findings')).toBeInTheDocument();
+    expect(screen.getByText('Zero impact finding.')).toBeInTheDocument();
+    expect(screen.getByText('No server and no impact.')).toBeInTheDocument();
+    expect(screen.queryByText(/tok\/wk/)).not.toBeInTheDocument();
+    // Stack-wide finding has a plain-text title and no Tools link.
+    expect(screen.queryByRole('button', { name: 'Stack-wide note' })).not.toBeInTheDocument();
+    const stackTitle = screen.getByText('Stack-wide note');
+    expect(stackTitle).toBeInTheDocument();
+    expect(stackTitle.className).not.toContain('truncate');
+    expect(stackTitle.className).toContain('break-words');
+  });
+
+  it('toggles per-finding remediation with aria-expanded and aria-controls only while open', async () => {
+    const snippet = 'mcp-servers:\n  - name: zapier\n    tools: [send_email]';
+    vi.mocked(fetchOptimizeReport).mockResolvedValue({
+      findings: [
+        {
+          id: 'f-with-fix',
+          heuristic: 'unused_server',
+          severity: 'warn',
+          title: 'Unused server: zapier',
+          summary: 'Zapier is unused.',
+          server: 'zapier',
+          remediation: snippet,
+          detected_at: 't',
+        },
+        {
+          id: 'f-no-fix',
+          heuristic: 'unused_server',
+          severity: 'warn',
+          title: 'Unused server: empty',
+          summary: 'Empty remediation finding.',
+          server: 'empty',
+          remediation: '   \n  ',
+          detected_at: 't',
+        },
+      ],
+      health_score: 85,
+      generated_at: 't',
+    });
+    renderAt();
+    expect(await screen.findByText('Optimize findings')).toBeInTheDocument();
+
+    const fixButtons = screen.getAllByRole('button', { name: 'Show fix' });
+    expect(fixButtons).toHaveLength(1);
+    const btn = fixButtons[0];
+    expect(btn).toHaveAttribute('aria-expanded', 'false');
+    expect(btn).not.toHaveAttribute('aria-controls');
+    expect(screen.queryByText(/tools: \[send_email\]/)).not.toBeInTheDocument();
+
+    fireEvent.click(btn);
+    expect(btn).toHaveTextContent('Hide fix');
+    expect(btn).toHaveAttribute('aria-expanded', 'true');
+    const controlsId = btn.getAttribute('aria-controls');
+    expect(controlsId).toBeTruthy();
+    const pre = document.getElementById(controlsId!);
+    expect(pre).not.toBeNull();
+    expect(pre?.tagName).toBe('PRE');
+    expect(pre?.textContent).toBe(snippet);
+
+    fireEvent.click(btn);
+    expect(btn).toHaveTextContent('Show fix');
+    expect(btn).toHaveAttribute('aria-expanded', 'false');
+    expect(btn).not.toHaveAttribute('aria-controls');
+    expect(document.getElementById(controlsId!)).toBeNull();
+  });
+
+  it('opens the gateway sidebar on /stack from the overflow button when more than three findings exist', async () => {
+    useStackStore.setState({ selectedNodeId: null });
+    useUIStore.setState({ sidebarOpen: false });
+    vi.mocked(fetchOptimizeReport).mockResolvedValue({
+      findings: [1, 2, 3, 4].map((n) => ({
+        id: `f-${n}`,
+        heuristic: 'unused_server',
+        severity: 'warn' as const,
+        title: `Unused server: srv-${n}`,
+        summary: `Server srv-${n} has no calls.`,
+        server: `srv-${n}`,
+        remediation: '',
+        detected_at: 't',
+      })),
+      health_score: 70,
+      generated_at: 't',
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/metrics']}>
+        <Routes>
+          <Route path="/metrics" element={<MetricsWorkspace />} />
+          <Route path="/stack" element={<div>stack-sentinel</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const overflow = await screen.findByRole('button', {
+      name: "+1 more in the gateway sidebar's Optimize section",
+    });
+    fireEvent.click(overflow);
+
+    expect(await screen.findByText('stack-sentinel')).toBeInTheDocument();
+    expect(useStackStore.getState().selectedNodeId).toBe('gateway');
+    expect(useUIStore.getState().sidebarOpen).toBe(true);
+  });
+
+  it('renders the info-only line without truncation or a title attribute', async () => {
+    const summary = 'Re-run after 24 hours of activity so projections have enough history.';
+    vi.mocked(fetchOptimizeReport).mockResolvedValue({
+      findings: [
+        {
+          id: 'i-only',
+          heuristic: 'need_more_data',
+          severity: 'info',
+          title: 'Need more data',
+          summary,
+          remediation: '',
+          detected_at: 't',
+        },
+      ],
+      health_score: 100,
+      generated_at: 't',
+    });
+    renderAt();
+    const line = await screen.findByText(`Optimize: ${summary}`);
+    expect(line).not.toHaveAttribute('title');
+    expect(line).not.toHaveClass('line-clamp-1');
   });
 });

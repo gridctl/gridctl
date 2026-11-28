@@ -498,6 +498,8 @@ The `gridctl telemetry` CLI operates directly on these files:
 
 The same operations are available over the REST API (`GET /api/telemetry/inventory`, `DELETE /api/telemetry`) and through the web UI's header Persistence pill, sidebar Telemetry section, and graph node dot indicator.
 
+In the web UI, the header Persistence pill lists active stack-global signals (for example `Persistence: Logs+Metrics`). When every stack-global signal is off while at least one enabled server persists a signal through a per-server override, the pill shows `Persistence: Per-server` in its active state rather than `Persistence: Off`; overrides on disabled servers are excluded because the gateway installs telemetry writers only for enabled servers. Each signal row in the pill's popover still reflects and toggles the stack-global value, and adds a note (`on for N server(s)` or `off for N server(s)`) whenever enabled servers diverge from that stack-global setting. In aggregated views (Metrics and Traces), the `persisted from <date>` divider appends `· N server only` (or `· N servers only`) when the stack-global signal is off, counting distinct servers with effective persisted records on disk; when the stack-global signal is on, and in single-server views such as Logs, that suffix is omitted.
+
 **Default off in beta.** The feature stays opt-in until v0.2 stable - stacks without a `telemetry` block continue to behave exactly as today.
 
 ---

@@ -28,7 +28,7 @@ export function PersistedFromMarker({ serverName, signal }: Props) {
   const config = useTelemetryConfig();
   const inventory = useInventory();
 
-  const date = useMemo(() => {
+  const summary = useMemo(() => {
     let records = inventory.filter((r) => r.signal === signal);
     if (serverName) {
       if (!effectiveSignal(config, serverName, signal)) return null;
@@ -48,15 +48,27 @@ export function PersistedFromMarker({ serverName, signal }: Props) {
       if (!acc) return r.oldestTime;
       return r.oldestTime < acc ? r.oldestTime : acc;
     }, null);
-    return earliest ? new Date(earliest) : null;
+    if (!earliest) return null;
+    const serverCount =
+      !serverName && config.global[signal] !== true
+        ? new Set(records.map((r) => r.server)).size
+        : null;
+    return { date: new Date(earliest), serverCount };
   }, [config, inventory, serverName, signal]);
 
-  if (!date) return null;
+  if (!summary) return null;
+
+  const scopeSuffix =
+    summary.serverCount !== null
+      ? ` · ${summary.serverCount} ${summary.serverCount === 1 ? 'server' : 'servers'} only`
+      : '';
 
   return (
     <div className="px-3 py-1.5 flex items-center gap-2 text-3xs text-text-muted font-mono select-none">
       <span aria-hidden className="flex-1 h-px bg-border-subtle" />
-      <span>── persisted from {formatDateOnly(date)} ──</span>
+      <span>
+        ── persisted from {formatDateOnly(summary.date)}{scopeSuffix} ──
+      </span>
       <span aria-hidden className="flex-1 h-px bg-border-subtle" />
     </div>
   );
